@@ -29,6 +29,7 @@ public final class MainLayout extends AppLayout {
         appLogo.addClassName("app-logo");
         appLogo.addThemeVariants(AvatarVariant.AURA_FILLED, AvatarVariant.XSMALL);
 
+        // Message Manager Middleware
         var appName = new Span("M³");
         appName.addClassName("app-name");
 
