@@ -1,0 +1,26 @@
+package com.sysadminanywhere.m3.messaging.repository;
+
+import com.sysadminanywhere.m3.messaging.domain.Rule;
+import com.sysadminanywhere.m3.messaging.domain.RuleType;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface RuleRepository extends JpaRepository<Rule, Long> {
+
+    List<Rule> findByRuleType(RuleType ruleType);
+
+    List<Rule> findBySourceChannel(String sourceChannel);
+
+    List<Rule> findBySourceChannelAndEnabled(String sourceChannel, Boolean enabled);
+
+    @Query("SELECT r FROM Rule r WHERE r.sourceChannel = :sourceChannel AND r.enabled = true ORDER BY r.priority ASC")
+    List<Rule> findEnabledBySourceChannelOrderByPriority(@Param("sourceChannel") String sourceChannel);
+
+    @Query("SELECT r FROM Rule r WHERE r.enabled = true ORDER BY r.priority ASC")
+    List<Rule> findAllEnabledOrderByPriority();
+}

@@ -54,6 +54,7 @@ public final class MainLayout extends AppLayout {
 
     private SideNav createSideNav() {
         var nav = new SideNav();
+        nav.setLabel("123");
         nav.setMinWidth(200, Unit.PIXELS);
         MenuConfiguration.getMenuEntries().forEach(entry -> nav.addItem(createSideNavItem(entry)));
         return nav;
