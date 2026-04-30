@@ -1,0 +1,4 @@
+.view-title h1 {
+    font-size: var(--aura-font-size-l);
+    font-weight: var(--aura-font-weight-semibold);
+}
