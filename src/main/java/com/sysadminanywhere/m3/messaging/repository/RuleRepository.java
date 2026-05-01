@@ -1,5 +1,6 @@
 package com.sysadminanywhere.m3.messaging.repository;
 
+import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.Rule;
 import com.sysadminanywhere.m3.messaging.domain.RuleType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,13 +15,18 @@ public interface RuleRepository extends JpaRepository<Rule, Long> {
 
     List<Rule> findByRuleType(RuleType ruleType);
 
-    List<Rule> findBySourceChannel(String sourceChannel);
+    List<Rule> findBySourceChannel(ChannelSettings sourceChannel);
 
-    List<Rule> findBySourceChannelAndEnabled(String sourceChannel, Boolean enabled);
+    List<Rule> findBySourceChannelAndEnabled(ChannelSettings sourceChannel, Boolean enabled);
 
     @Query("SELECT r FROM Rule r WHERE r.sourceChannel = :sourceChannel AND r.enabled = true ORDER BY r.priority ASC")
-    List<Rule> findEnabledBySourceChannelOrderByPriority(@Param("sourceChannel") String sourceChannel);
+    List<Rule> findEnabledBySourceChannelOrderByPriority(@Param("sourceChannel") ChannelSettings sourceChannel);
 
     @Query("SELECT r FROM Rule r WHERE r.enabled = true ORDER BY r.priority ASC")
     List<Rule> findAllEnabledOrderByPriority();
+
+    List<Rule> findBySourceChannelId(Long channelId);
+
+    @Query("SELECT r FROM Rule r WHERE r.sourceChannel.id = :channelId AND r.enabled = true ORDER BY r.priority ASC")
+    List<Rule> findEnabledBySourceChannelIdOrderByPriority(@Param("channelId") Long channelId);
 }

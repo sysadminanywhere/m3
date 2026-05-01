@@ -22,7 +22,7 @@ public class RuleEngine {
     }
 
     public List<Rule> findApplicableRules(Message<?> springMessage, String channelName) {
-        List<Rule> allRules = ruleService.findEnabledBySourceChannel(channelName);
+        List<Rule> allRules = ruleService.findEnabledBySourceChannelName(channelName);
         List<Rule> applicableRules = new ArrayList<>();
 
         for (Rule rule : allRules) {

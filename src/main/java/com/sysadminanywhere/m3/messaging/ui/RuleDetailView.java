@@ -2,6 +2,7 @@ package com.sysadminanywhere.m3.messaging.ui;
 
 import com.sysadminanywhere.m3.base.ui.ViewTitle;
 import com.sysadminanywhere.m3.messaging.domain.*;
+import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
 import com.sysadminanywhere.m3.messaging.service.RuleService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -21,19 +22,21 @@ import com.vaadin.flow.router.Route;
 class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
 
     private final RuleService ruleService;
+    private final ChannelSettingsService channelSettingsService;
     private Long ruleId;
     private Rule currentRule;
 
     final TextField nameField;
     final ComboBox<RuleType> typeField;
-    final TextField channelField;
+    final ComboBox<ChannelSettings> channelField;
     final com.vaadin.flow.component.textfield.NumberField priorityField;
     final com.vaadin.flow.component.checkbox.Checkbox enabledField;
     final Grid<RuleCondition> conditionGrid;
     final Grid<RuleAction> actionGrid;
 
-    RuleDetailView(RuleService ruleService) {
+    RuleDetailView(RuleService ruleService, ChannelSettingsService channelSettingsService) {
         this.ruleService = ruleService;
+        this.channelSettingsService = channelSettingsService;
 
         nameField = new TextField("Name");
         nameField.setRequired(true);
@@ -42,7 +45,9 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         typeField.setItems(RuleType.values());
         typeField.setRequired(true);
 
-        channelField = new TextField("Source Channel");
+        channelField = new ComboBox<>("Source Channel");
+        channelField.setItems(channelSettingsService.findAll());
+        channelField.setItemLabelGenerator(ChannelSettings::getName);
         channelField.setRequired(true);
 
         priorityField = new com.vaadin.flow.component.textfield.NumberField("Priority");
@@ -113,6 +118,7 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         if (currentRule != null) {
             nameField.setValue(currentRule.getName());
             typeField.setValue(currentRule.getRuleType());
+            channelField.setItems(channelSettingsService.findAll());
             channelField.setValue(currentRule.getSourceChannel());
             priorityField.setValue((double) currentRule.getPriority());
             enabledField.setValue(currentRule.getEnabled());
@@ -122,14 +128,14 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
     }
 
     private void saveRule() {
-        if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue().isBlank()) {
+        if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null) {
             Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             return;
         }
 
         ruleService.updateRule(ruleId, nameField.getValue(), currentRule.getDescription(),
-                typeField.getValue(), channelField.getValue(), (int) (double) priorityField.getValue(), enabledField.getValue());
+                typeField.getValue(), channelField.getValue().getId(), (int) (double) priorityField.getValue(), enabledField.getValue());
         Notification.show("Rule saved", 3000, Notification.Position.BOTTOM_END)
                 .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
     }

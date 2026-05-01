@@ -1,8 +1,10 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
 import com.sysadminanywhere.m3.base.ui.ViewTitle;
+import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.Rule;
 import com.sysadminanywhere.m3.messaging.domain.RuleType;
+import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
 import com.sysadminanywhere.m3.messaging.service.RuleService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -19,18 +21,22 @@ import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 
+import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
+
 @Route(value = "rules")
 @PageTitle("Rules")
-@Menu(order = 2, icon = "icons/rule.svg", title = "Rules")
+@Menu(order = 3, icon = "icons/rule.svg", title = "Rules")
 class RuleListView extends VerticalLayout {
 
     private final RuleService ruleService;
+    private final ChannelSettingsService channelSettingsService;
 
     final Button createBtn;
     final Grid<Rule> ruleGrid;
 
-    RuleListView(RuleService ruleService) {
+    RuleListView(RuleService ruleService, ChannelSettingsService channelSettingsService) {
         this.ruleService = ruleService;
+        this.channelSettingsService = channelSettingsService;
 
         createBtn = new Button("Create Rule", event -> openCreateDialog());
         createBtn.addThemeVariants(ButtonVariant.PRIMARY);
@@ -41,10 +47,16 @@ class RuleListView extends VerticalLayout {
         toolbar.setWidthFull();
 
         ruleGrid = new Grid<>();
-        ruleGrid.setItems(ruleService.findAll());
+        ruleGrid.setItems(query -> {
+            var pageRequest = toSpringPageRequest(query);
+            var rules = ruleService.findAll();
+            return rules.stream()
+                    .skip(pageRequest.getOffset())
+                    .limit(pageRequest.getPageSize());
+        });
         ruleGrid.addColumn(Rule::getName).setHeader("Name");
         ruleGrid.addColumn(Rule::getRuleType).setHeader("Type");
-        ruleGrid.addColumn(Rule::getSourceChannel).setHeader("Source Channel");
+        ruleGrid.addColumn(rule -> rule.getSourceChannel() != null ? rule.getSourceChannel().getName() : "N/A").setHeader("Source Channel");
         ruleGrid.addColumn(Rule::getPriority).setHeader("Priority");
         ruleGrid.addComponentColumn(rule -> {
             var enabledIcon = rule.getEnabled() ? VaadinIcon.CHECK.create() : VaadinIcon.CLOSE.create();
@@ -77,7 +89,9 @@ class RuleListView extends VerticalLayout {
         typeField.setItems(RuleType.values());
         typeField.setRequired(true);
 
-        var channelField = new com.vaadin.flow.component.textfield.TextField("Source Channel");
+        var channelField = new ComboBox<ChannelSettings>("Source Channel");
+        channelField.setItems(channelSettingsService.findAll());
+        channelField.setItemLabelGenerator(ChannelSettings::getName);
         channelField.setRequired(true);
 
         var priorityField = new com.vaadin.flow.component.textfield.NumberField("Priority");
@@ -87,13 +101,13 @@ class RuleListView extends VerticalLayout {
         form.setSpacing(true);
 
         var saveButton = new Button("Save", event -> {
-            if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue().isBlank()) {
+            if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null) {
                 Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 return;
             }
 
-            ruleService.createRule(nameField.getValue(), typeField.getValue(), channelField.getValue(), priorityField.getValue().intValue());
+            ruleService.createRule(nameField.getValue(), typeField.getValue(), channelField.getValue().getId(), priorityField.getValue().intValue());
             ruleGrid.getDataProvider().refreshAll();
             dialog.close();
             Notification.show("Rule created", 3000, Notification.Position.BOTTOM_END)
@@ -121,7 +135,9 @@ class RuleListView extends VerticalLayout {
         typeField.setValue(rule.getRuleType());
         typeField.setRequired(true);
 
-        var channelField = new com.vaadin.flow.component.textfield.TextField("Source Channel");
+        var channelField = new ComboBox<ChannelSettings>("Source Channel");
+        channelField.setItems(channelSettingsService.findAll());
+        channelField.setItemLabelGenerator(ChannelSettings::getName);
         channelField.setValue(rule.getSourceChannel());
         channelField.setRequired(true);
 
@@ -132,14 +148,14 @@ class RuleListView extends VerticalLayout {
         form.setSpacing(true);
 
         var saveButton = new Button("Save", event -> {
-            if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue().isBlank()) {
+            if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null) {
                 Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 return;
             }
 
             ruleService.updateRule(rule.getId(), nameField.getValue(), rule.getDescription(),
-                    typeField.getValue(), channelField.getValue(), priorityField.getValue().intValue(), rule.getEnabled());
+                    typeField.getValue(), channelField.getValue().getId(), priorityField.getValue().intValue(), rule.getEnabled());
             ruleGrid.getDataProvider().refreshAll();
             dialog.close();
             Notification.show("Rule updated", 3000, Notification.Position.BOTTOM_END)

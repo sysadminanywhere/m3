@@ -12,7 +12,6 @@ import java.util.Set;
 public class Rule {
 
     public static final int NAME_MAX_LENGTH = 200;
-    public static final int SOURCE_CHANNEL_MAX_LENGTH = 200;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -30,8 +29,9 @@ public class Rule {
     @Column(name = "rule_type", nullable = false)
     private RuleType ruleType;
 
-    @Column(name = "source_channel", nullable = false, length = SOURCE_CHANNEL_MAX_LENGTH)
-    private String sourceChannel;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "source_channel_id", nullable = false)
+    private ChannelSettings sourceChannel;
 
     @Column(name = "priority", nullable = false)
     private Integer priority = 0;
@@ -55,7 +55,7 @@ public class Rule {
     protected Rule() {
     }
 
-    public Rule(String name, RuleType ruleType, String sourceChannel) {
+    public Rule(String name, RuleType ruleType, ChannelSettings sourceChannel) {
         this.name = name;
         this.ruleType = ruleType;
         this.sourceChannel = sourceChannel;
@@ -96,14 +96,11 @@ public class Rule {
         this.updatedAt = Instant.now();
     }
 
-    public String getSourceChannel() {
+    public ChannelSettings getSourceChannel() {
         return sourceChannel;
     }
 
-    public void setSourceChannel(String sourceChannel) {
-        if (sourceChannel.length() > SOURCE_CHANNEL_MAX_LENGTH) {
-            throw new IllegalArgumentException("Source channel length exceeds " + SOURCE_CHANNEL_MAX_LENGTH);
-        }
+    public void setSourceChannel(ChannelSettings sourceChannel) {
         this.sourceChannel = sourceChannel;
         this.updatedAt = Instant.now();
     }

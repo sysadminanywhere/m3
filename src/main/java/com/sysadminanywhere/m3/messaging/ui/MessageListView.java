@@ -19,7 +19,7 @@ import java.time.format.FormatStyle;
 
 import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
 
-@Route(value = "messages")
+@Route(value = "")
 @PageTitle("Messages")
 @Menu(order = 1, icon = "icons/message.svg", title = "Messages")
 class MessageListView extends VerticalLayout {

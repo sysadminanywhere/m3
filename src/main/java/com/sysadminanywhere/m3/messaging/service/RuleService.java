@@ -13,17 +13,22 @@ public class RuleService {
     private final RuleRepository ruleRepository;
     private final RuleConditionRepository ruleConditionRepository;
     private final RuleActionRepository ruleActionRepository;
+    private final ChannelSettingsRepository channelSettingsRepository;
 
     RuleService(RuleRepository ruleRepository,
                 RuleConditionRepository ruleConditionRepository,
-                RuleActionRepository ruleActionRepository) {
+                RuleActionRepository ruleActionRepository,
+                ChannelSettingsRepository channelSettingsRepository) {
         this.ruleRepository = ruleRepository;
         this.ruleConditionRepository = ruleConditionRepository;
         this.ruleActionRepository = ruleActionRepository;
+        this.channelSettingsRepository = channelSettingsRepository;
     }
 
     @Transactional
-    public Rule createRule(String name, RuleType ruleType, String sourceChannel, Integer priority) {
+    public Rule createRule(String name, RuleType ruleType, Long sourceChannelId, Integer priority) {
+        var sourceChannel = channelSettingsRepository.findById(sourceChannelId)
+                .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + sourceChannelId));
         var rule = new Rule(name, ruleType, sourceChannel);
         rule.setPriority(priority);
         return ruleRepository.save(rule);
@@ -31,8 +36,10 @@ public class RuleService {
 
     @Transactional
     public Rule updateRule(Long ruleId, String name, @jakarta.annotation.Nullable String description,
-                           RuleType ruleType, String sourceChannel, Integer priority, Boolean enabled) {
+                           RuleType ruleType, Long sourceChannelId, Integer priority, Boolean enabled) {
         var rule = ruleRepository.findById(ruleId).orElseThrow();
+        var sourceChannel = channelSettingsRepository.findById(sourceChannelId)
+                .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + sourceChannelId));
         rule.setName(name);
         rule.setDescription(description);
         rule.setRuleType(ruleType);
@@ -63,13 +70,30 @@ public class RuleService {
     }
 
     @Transactional(readOnly = true)
-    public List<Rule> findBySourceChannel(String sourceChannel) {
+    public List<Rule> findBySourceChannel(ChannelSettings sourceChannel) {
         return ruleRepository.findBySourceChannel(sourceChannel);
     }
 
     @Transactional(readOnly = true)
-    public List<Rule> findEnabledBySourceChannel(String sourceChannel) {
+    public List<Rule> findEnabledBySourceChannel(ChannelSettings sourceChannel) {
         return ruleRepository.findEnabledBySourceChannelOrderByPriority(sourceChannel);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Rule> findBySourceChannelId(Long channelId) {
+        return ruleRepository.findBySourceChannelId(channelId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Rule> findEnabledBySourceChannelId(Long channelId) {
+        return ruleRepository.findEnabledBySourceChannelIdOrderByPriority(channelId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Rule> findEnabledBySourceChannelName(String channelName) {
+        return channelSettingsRepository.findByName(channelName)
+                .map(ruleRepository::findEnabledBySourceChannelOrderByPriority)
+                .orElse(List.of());
     }
 
     @Transactional
