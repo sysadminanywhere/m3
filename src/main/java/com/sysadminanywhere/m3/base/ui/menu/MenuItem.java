@@ -17,4 +17,6 @@ public @interface MenuItem {
 
     MenuSection section() default MenuSection.MESSAGING;
 
+    String parent() default "";
+
 }

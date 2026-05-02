@@ -1,6 +1,8 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
 import com.sysadminanywhere.m3.base.ui.ViewTitle;
+import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
+import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.sysadminanywhere.m3.messaging.domain.Message;
 import com.sysadminanywhere.m3.messaging.domain.MessageDirection;
 import com.sysadminanywhere.m3.messaging.domain.MessageStatus;
@@ -9,8 +11,6 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
-import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 
@@ -20,24 +20,18 @@ import java.time.format.FormatStyle;
 
 import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
 
-@Route(value = "")
-@PageTitle("Messages")
-@MenuItem(order = 1, icon = "icons/message.svg", title = "Messages", section = MenuSection.MESSAGING)
-class MessageListView extends VerticalLayout {
+@Route(value = "messages/outbound")
+@PageTitle("Outbound Messages")
+@MenuItem(order = 2, icon = "icons/message.svg", title = "Outbound", section = MenuSection.MESSAGING, parent = "Messages")
+class OutboundMessagesView extends VerticalLayout {
 
     private final MessageService messageService;
 
-    final ComboBox<MessageDirection> directionFilter;
     final ComboBox<MessageStatus> statusFilter;
     final Grid<Message> messageGrid;
 
-    MessageListView(MessageService messageService) {
+    OutboundMessagesView(MessageService messageService) {
         this.messageService = messageService;
-
-        directionFilter = new ComboBox<>("Direction");
-        directionFilter.setItems(MessageDirection.values());
-        directionFilter.setClearButtonVisible(true);
-        directionFilter.addValueChangeListener(event -> refreshGrid());
 
         statusFilter = new ComboBox<>("Status");
         statusFilter.setItems(MessageStatus.values());
@@ -45,7 +39,7 @@ class MessageListView extends VerticalLayout {
         statusFilter.addValueChangeListener(event -> refreshGrid());
 
         var toolbar = new HorizontalLayout();
-        toolbar.add(new ViewTitle("Messages"), directionFilter, statusFilter);
+        toolbar.add(new ViewTitle("Outbound Messages"), statusFilter);
         toolbar.setWrap(true);
         toolbar.setWidthFull();
 
@@ -53,15 +47,17 @@ class MessageListView extends VerticalLayout {
                 .withZone(ZoneId.systemDefault());
 
         messageGrid = new Grid<>();
-        messageGrid.setItems(query -> messageService.list(toSpringPageRequest(query)).stream());
+        messageGrid.setItems(query -> messageService.findByDirection(
+                MessageDirection.OUTBOUND,
+                toSpringPageRequest(query)
+        ).stream().filter(m -> statusFilter.getValue() == null || m.getStatus() == statusFilter.getValue()));
         messageGrid.addColumn(Message::getId).setHeader("ID");
-        messageGrid.addColumn(Message::getDirection).setHeader("Direction");
         messageGrid.addColumn(Message::getStatus).setHeader("Status");
         messageGrid.addColumn(Message::getSourceSystem).setHeader("Source");
         messageGrid.addColumn(Message::getTargetSystem).setHeader("Target");
         messageGrid.addColumn(Message::getPayloadType).setHeader("Type");
         messageGrid.addColumn(msg -> dateTimeFormatter.format(msg.getCreatedAt())).setHeader("Created");
-        messageGrid.setEmptyStateText("No messages found");
+        messageGrid.setEmptyStateText("No outbound messages found");
         messageGrid.setSizeFull();
 
         setSizeFull();

@@ -37,6 +37,7 @@ public class MenuItemRegistry {
                         menuItem.icon(),
                         menuItem.order(),
                         menuItem.section(),
+                        menuItem.parent(),
                         path,
                         viewClass
                 ));

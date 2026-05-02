@@ -16,10 +16,8 @@ import com.vaadin.flow.component.sidenav.SideNav;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.router.Layout;
 
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Layout
 public final class MainLayout extends AppLayout {
@@ -77,9 +75,44 @@ public final class MainLayout extends AppLayout {
             sectionItems.put(section, sectionItem);
 
             List<MenuItemInfo> items = itemsBySection.getOrDefault(section, List.of());
+
+            // Group items by parent
+            Map<String, List<MenuItemInfo>> itemsByParent = items.stream()
+                    .collect(Collectors.groupingBy(
+                            item -> item.parent() != null && !item.parent().isEmpty() ? item.parent() : "",
+                            Collectors.toList()
+                    ));
+
+            // Map to store parent menu items
+            Map<String, SideNavItem> parentItems = new HashMap<>();
+
+            // First pass: create parent items
+            itemsByParent.keySet().stream()
+                    .filter(parent -> !parent.isEmpty())
+                    .forEach(parentTitle -> {
+                        SideNavItem parentItem = new SideNavItem(parentTitle);
+                        parentItems.put(parentTitle, parentItem);
+                        sectionItem.addItem(parentItem);
+                    });
+
+            // Second pass: add items (both root and children)
             items.stream()
                     .sorted(Comparator.comparingInt(MenuItemInfo::order))
-                    .forEach(item -> sectionItem.addItem(createSideNavItem(item)));
+                    .forEach(item -> {
+                        SideNavItem navItem = createSideNavItem(item);
+                        if (item.parent() != null && !item.parent().isEmpty()) {
+                            // Add as child to parent
+                            SideNavItem parent = parentItems.get(item.parent());
+                            if (parent != null) {
+                                parent.addItem(navItem);
+                            } else {
+                                sectionItem.addItem(navItem);
+                            }
+                        } else {
+                            // Add directly to section
+                            sectionItem.addItem(navItem);
+                        }
+                    });
 
             nav.addItem(sectionItem);
         });

@@ -22,7 +22,7 @@ import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRe
 
 @Route(value = "channels")
 @PageTitle("Channels")
-@MenuItem(order = 2, icon = "icons/channel.svg", title = "Channels", section = MenuSection.MESSAGING)
+@MenuItem(order = 2, icon = "icons/channel.svg", title = "Channels", section = MenuSection.SETTINGS)
 class ChannelListView extends VerticalLayout {
 
     private final ChannelSettingsService channelSettingsService;

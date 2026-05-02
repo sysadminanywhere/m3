@@ -26,7 +26,7 @@ import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRe
 
 @Route(value = "rules")
 @PageTitle("Rules")
-@MenuItem(order = 3, icon = "icons/rule.svg", title = "Rules", section = MenuSection.MESSAGING)
+@MenuItem(order = 1, icon = "icons/rule.svg", title = "Rules", section = MenuSection.SETTINGS)
 class RuleListView extends VerticalLayout {
 
     private final RuleService ruleService;

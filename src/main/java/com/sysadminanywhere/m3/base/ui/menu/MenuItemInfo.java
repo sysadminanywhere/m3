@@ -5,6 +5,7 @@ public record MenuItemInfo(
         String icon,
         int order,
         MenuSection section,
+        String parent,
         String path,
         Class<?> viewClass
 ) {
