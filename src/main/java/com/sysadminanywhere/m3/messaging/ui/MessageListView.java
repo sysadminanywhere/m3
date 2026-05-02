@@ -9,7 +9,8 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.router.Menu;
+import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
+import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 
@@ -21,7 +22,7 @@ import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRe
 
 @Route(value = "")
 @PageTitle("Messages")
-@Menu(order = 1, icon = "icons/message.svg", title = "Messages")
+@MenuItem(order = 1, icon = "icons/message.svg", title = "Messages", section = MenuSection.MESSAGING)
 class MessageListView extends VerticalLayout {
 
     private final MessageService messageService;

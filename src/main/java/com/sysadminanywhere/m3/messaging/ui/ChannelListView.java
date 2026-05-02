@@ -13,7 +13,8 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.router.Menu;
+import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
+import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 
@@ -21,7 +22,7 @@ import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRe
 
 @Route(value = "channels")
 @PageTitle("Channels")
-@Menu(order = 2, icon = "icons/channel.svg", title = "Channels")
+@MenuItem(order = 2, icon = "icons/channel.svg", title = "Channels", section = MenuSection.MESSAGING)
 class ChannelListView extends VerticalLayout {
 
     private final ChannelSettingsService channelSettingsService;

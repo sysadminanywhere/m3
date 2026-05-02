@@ -1,5 +1,8 @@
 package com.sysadminanywhere.m3.base.ui;
 
+import com.sysadminanywhere.m3.base.ui.menu.MenuItemInfo;
+import com.sysadminanywhere.m3.base.ui.menu.MenuItemRegistry;
+import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Unit;
 import com.vaadin.flow.component.applayout.AppLayout;
@@ -12,13 +15,20 @@ import com.vaadin.flow.component.orderedlayout.*;
 import com.vaadin.flow.component.sidenav.SideNav;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.router.Layout;
-import com.vaadin.flow.server.menu.MenuConfiguration;
-import com.vaadin.flow.server.menu.MenuEntry;
+
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Layout
 public final class MainLayout extends AppLayout {
 
-    MainLayout() {
+    private final MenuItemRegistry menuItemRegistry;
+    private final Map<MenuSection, SideNavItem> sectionItems = new HashMap<>();
+
+    public MainLayout(MenuItemRegistry menuItemRegistry) {
+        this.menuItemRegistry = menuItemRegistry;
         setPrimarySection(Section.DRAWER);
         addToDrawer(createApplicationHeader(), createApplicationDrawer(), createApplicationFooter());
     }
@@ -54,23 +64,40 @@ public final class MainLayout extends AppLayout {
 
     private SideNav createSideNav() {
         var nav = new SideNav();
-        nav.setLabel("123");
         nav.setMinWidth(200, Unit.PIXELS);
-        MenuConfiguration.getMenuEntries().forEach(entry -> nav.addItem(createSideNavItem(entry)));
+
+        if (menuItemRegistry == null) {
+            return nav;
+        }
+
+        Map<MenuSection, List<MenuItemInfo>> itemsBySection = menuItemRegistry.getMenuItemsBySection();
+
+        menuItemRegistry.getSections().forEach(section -> {
+            SideNavItem sectionItem = new SideNavItem(section.getTitle());
+            sectionItems.put(section, sectionItem);
+
+            List<MenuItemInfo> items = itemsBySection.getOrDefault(section, List.of());
+            items.stream()
+                    .sorted(Comparator.comparingInt(MenuItemInfo::order))
+                    .forEach(item -> sectionItem.addItem(createSideNavItem(item)));
+
+            nav.addItem(sectionItem);
+        });
+
         return nav;
     }
 
-    private SideNavItem createSideNavItem(MenuEntry menuEntry) {
-        if (menuEntry.icon() != null) {
+    private SideNavItem createSideNavItem(MenuItemInfo menuItem) {
+        if (!menuItem.icon().isEmpty()) {
             Component icon = null;
-            if (menuEntry.icon().contains(".svg")) {
-                icon = new SvgIcon(menuEntry.icon());
+            if (menuItem.icon().contains(".svg")) {
+                icon = new SvgIcon(menuItem.icon());
             } else {
-                icon = new Icon(menuEntry.icon());
+                icon = new Icon(menuItem.icon());
             }
-            return new SideNavItem(menuEntry.title(), menuEntry.path(), icon);
+            return new SideNavItem(menuItem.title(), menuItem.path(), icon);
         } else {
-            return new SideNavItem(menuEntry.title(), menuEntry.path());
+            return new SideNavItem(menuItem.title(), menuItem.path());
         }
     }
 }
