@@ -80,95 +80,17 @@ class RuleListView extends VerticalLayout {
     }
 
     private void openCreateDialog() {
-        var dialog = new Dialog();
-        dialog.setHeaderTitle("Create Rule");
-
-        var nameField = new com.vaadin.flow.component.textfield.TextField("Name");
-        nameField.setRequired(true);
-
-        var typeField = new ComboBox<RuleType>("Type");
-        typeField.setItems(RuleType.values());
-        typeField.setRequired(true);
-
-        var channelField = new ComboBox<ChannelSettings>("Source Channel");
-        channelField.setItems(channelSettingsService.findAll());
-        channelField.setItemLabelGenerator(ChannelSettings::getName);
-        channelField.setRequired(true);
-
-        var priorityField = new com.vaadin.flow.component.textfield.NumberField("Priority");
-        priorityField.setValue(0.0);
-
-        var form = new VerticalLayout(nameField, typeField, channelField, priorityField);
-        form.setSpacing(true);
-
-        var saveButton = new Button("Save", event -> {
-            if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null) {
-                Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
-                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
-                return;
-            }
-
-            ruleService.createRule(nameField.getValue(), typeField.getValue(), channelField.getValue().getId(), priorityField.getValue().intValue());
-            ruleGrid.getDataProvider().refreshAll();
-            dialog.close();
-            Notification.show("Rule created", 3000, Notification.Position.BOTTOM_END)
-                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-        });
-        saveButton.addThemeVariants(ButtonVariant.PRIMARY);
-
-        var cancelButton = new Button("Cancel", event -> dialog.close());
-
-        var footer = new HorizontalLayout(saveButton, cancelButton);
-        dialog.add(form, footer);
+        var dialog = new RuleDialog(ruleService, channelSettingsService, v -> refreshGrid());
         dialog.open();
     }
 
     private void openEditDialog(Rule rule) {
-        var dialog = new Dialog();
-        dialog.setHeaderTitle("Edit Rule");
-
-        var nameField = new com.vaadin.flow.component.textfield.TextField("Name");
-        nameField.setValue(rule.getName());
-        nameField.setRequired(true);
-
-        var typeField = new ComboBox<RuleType>("Type");
-        typeField.setItems(RuleType.values());
-        typeField.setValue(rule.getRuleType());
-        typeField.setRequired(true);
-
-        var channelField = new ComboBox<ChannelSettings>("Source Channel");
-        channelField.setItems(channelSettingsService.findAll());
-        channelField.setItemLabelGenerator(ChannelSettings::getName);
-        channelField.setValue(rule.getSourceChannel());
-        channelField.setRequired(true);
-
-        var priorityField = new com.vaadin.flow.component.textfield.NumberField("Priority");
-        priorityField.setValue((double) rule.getPriority());
-
-        var form = new VerticalLayout(nameField, typeField, channelField, priorityField);
-        form.setSpacing(true);
-
-        var saveButton = new Button("Save", event -> {
-            if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null) {
-                Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
-                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
-                return;
-            }
-
-            ruleService.updateRule(rule.getId(), nameField.getValue(), rule.getDescription(),
-                    typeField.getValue(), channelField.getValue().getId(), priorityField.getValue().intValue(), rule.getEnabled());
-            ruleGrid.getDataProvider().refreshAll();
-            dialog.close();
-            Notification.show("Rule updated", 3000, Notification.Position.BOTTOM_END)
-                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-        });
-        saveButton.addThemeVariants(ButtonVariant.PRIMARY);
-
-        var cancelButton = new Button("Cancel", event -> dialog.close());
-
-        var footer = new HorizontalLayout(saveButton, cancelButton);
-        dialog.add(form, footer);
+        var dialog = new RuleDialog(ruleService, channelSettingsService, rule, v -> refreshGrid());
         dialog.open();
+    }
+
+    private void refreshGrid() {
+        ruleGrid.getDataProvider().refreshAll();
     }
 
     private void toggleRuleEnabled(Rule rule) {

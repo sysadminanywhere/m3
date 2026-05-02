@@ -73,7 +73,7 @@ class ChannelListView extends VerticalLayout {
     private HorizontalLayout createActionButtons(ChannelSettings channel) {
         var editButton = new Button(VaadinIcon.EDIT.create());
         editButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
-        editButton.addClickListener(event -> getUI().ifPresent(ui -> ui.navigate("channel/" + channel.getId())));
+        editButton.addClickListener(event -> openChannelDialog(channel));
 
         var toggleButton = new Button(channel.getEnabled() ? VaadinIcon.PAUSE.create() : VaadinIcon.PLAY.create());
         toggleButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
@@ -91,7 +91,12 @@ class ChannelListView extends VerticalLayout {
     }
 
     private void addChannel() {
-        getUI().ifPresent(ui -> ui.navigate("channel"));
+        openChannelDialog(null);
+    }
+
+    private void openChannelDialog(ChannelSettings channel) {
+        var dialog = new ChannelDialog(channelSettingsService, channel, v -> refreshGrid());
+        dialog.open();
     }
 
     private void toggleChannel(ChannelSettings channel) {
