@@ -7,8 +7,11 @@ import com.sysadminanywhere.m3.messaging.domain.Message;
 import com.sysadminanywhere.m3.messaging.domain.MessageDirection;
 import com.sysadminanywhere.m3.messaging.domain.MessageStatus;
 import com.sysadminanywhere.m3.messaging.service.MessageService;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.PageTitle;
@@ -57,6 +60,13 @@ class InboundMessagesView extends VerticalLayout {
         messageGrid.addColumn(Message::getTargetSystem).setHeader("Target");
         messageGrid.addColumn(Message::getPayloadType).setHeader("Type");
         messageGrid.addColumn(msg -> dateTimeFormatter.format(msg.getCreatedAt())).setHeader("Created");
+        messageGrid.addComponentColumn(msg -> {
+            var viewButton = new Button(VaadinIcon.EYE.create());
+            viewButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            viewButton.setTooltipText("View details");
+            viewButton.addClickListener(e -> getUI().ifPresent(ui -> ui.navigate("messages/" + msg.getId())));
+            return viewButton;
+        }).setHeader("Actions").setWidth("80px");
         messageGrid.setEmptyStateText("No inbound messages found");
         messageGrid.setSizeFull();
 

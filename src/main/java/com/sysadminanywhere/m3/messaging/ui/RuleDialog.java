@@ -16,6 +16,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.data.value.ValueChangeMode;
 
 import java.util.function.Consumer;
 
@@ -54,6 +55,17 @@ public class RuleDialog extends Dialog {
         nameField = new TextField("Name");
         nameField.setRequired(true);
         nameField.setWidthFull();
+        nameField.setMaxLength(100);
+        nameField.setHelperText("Max 100 characters");
+        nameField.setValueChangeMode(ValueChangeMode.EAGER);
+        nameField.addValueChangeListener(event -> {
+            if (event.getValue().length() > 100) {
+                nameField.setInvalid(true);
+                nameField.setErrorMessage("Name cannot exceed 100 characters");
+            } else {
+                nameField.setInvalid(false);
+            }
+        });
 
         typeField = new ComboBox<>("Type");
         typeField.setItems(RuleType.values());
@@ -69,6 +81,10 @@ public class RuleDialog extends Dialog {
         priorityField = new NumberField("Priority");
         priorityField.setValue(0.0);
         priorityField.setWidthFull();
+        priorityField.setMin(0);
+        priorityField.setMax(9999);
+        priorityField.setStep(1);
+        priorityField.setErrorMessage("Priority must be between 0 and 9999");
 
         enabledField = new Checkbox("Enabled");
         enabledField.setValue(true);
@@ -160,19 +176,75 @@ public class RuleDialog extends Dialog {
     }
 
     private void saveRule() {
-        if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null) {
-            Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
+        // Validate name
+        if (nameField.getValue().isBlank()) {
+            Notification.show("Name is required", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            nameField.focus();
+            return;
+        }
+
+        if (nameField.getValue().length() > 100) {
+            Notification.show("Name cannot exceed 100 characters", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            nameField.focus();
+            return;
+        }
+
+        // Validate type
+        if (typeField.getValue() == null) {
+            Notification.show("Type is required", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            typeField.focus();
+            return;
+        }
+
+        // Validate source channel
+        if (channelField.getValue() == null) {
+            Notification.show("Source Channel is required", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            channelField.focus();
+            return;
+        }
+
+        // Validate priority
+        var priorityValue = priorityField.getValue();
+        if (priorityValue == null || priorityValue < 0 || priorityValue > 9999) {
+            Notification.show("Priority must be between 0 and 9999", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            priorityField.focus();
+            return;
+        }
+
+        // Validate that channels exist
+        if (channelSettingsService.findAll().isEmpty()) {
+            Notification.show("No channels available. Please create a channel first.", 3000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             return;
         }
 
         try {
+            var selectedChannel = channelField.getValue();
+            if (selectedChannel == null) {
+                Notification.show("Source Channel is required", 3000, Notification.Position.BOTTOM_END)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                channelField.focus();
+                return;
+            }
+
+            Long channelId = selectedChannel.getId();
+            if (channelId == null) {
+                Notification.show("Invalid channel selected", 3000, Notification.Position.BOTTOM_END)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
+
             if (currentRule == null) {
                 // Create new rule
                 var newRule = ruleService.createRule(
                         nameField.getValue(),
                         typeField.getValue(),
-                        channelField.getValue().getId(),
+                        channelId,
                         (int) (double) priorityField.getValue()
                 );
                 this.currentRule = newRule;
@@ -181,7 +253,7 @@ public class RuleDialog extends Dialog {
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             } else {
                 ruleService.updateRule(ruleId, nameField.getValue(), currentRule.getDescription(),
-                        typeField.getValue(), channelField.getValue().getId(), (int) (double) priorityField.getValue(), enabledField.getValue());
+                        typeField.getValue(), channelId, (int) (double) priorityField.getValue(), enabledField.getValue());
                 Notification.show("Rule saved", 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             }
@@ -209,6 +281,8 @@ public class RuleDialog extends Dialog {
         fieldField.setPlaceholder("header.sourceSystem or payload.type");
         fieldField.setRequired(true);
         fieldField.setWidthFull();
+        fieldField.setMaxLength(255);
+        fieldField.setHelperText("Max 255 characters");
 
         var operatorField = new ComboBox<ConditionOperator>("Operator");
         operatorField.setItems(ConditionOperator.values());
@@ -218,6 +292,8 @@ public class RuleDialog extends Dialog {
         var valueField = new TextField("Value");
         valueField.setRequired(true);
         valueField.setWidthFull();
+        valueField.setMaxLength(500);
+        valueField.setHelperText("Max 500 characters");
 
         var logicalOpField = new ComboBox<LogicalOperator>("Logical Operator");
         logicalOpField.setItems(LogicalOperator.values());
@@ -276,10 +352,14 @@ public class RuleDialog extends Dialog {
         var targetChannelField = new TextField("Target Channel");
         targetChannelField.setVisible(false);
         targetChannelField.setWidthFull();
+        targetChannelField.setRequired(true);
+        targetChannelField.setMaxLength(255);
 
         var transformationScriptField = new TextField("Transformation Script");
         transformationScriptField.setVisible(false);
         transformationScriptField.setWidthFull();
+        transformationScriptField.setRequired(true);
+        transformationScriptField.setMaxLength(1000);
 
         var filterResultField = new Checkbox("Filter Result (pass)");
         filterResultField.setVisible(false);
@@ -287,10 +367,14 @@ public class RuleDialog extends Dialog {
         var metadataKeyField = new TextField("Metadata Key");
         metadataKeyField.setVisible(false);
         metadataKeyField.setWidthFull();
+        metadataKeyField.setRequired(true);
+        metadataKeyField.setMaxLength(255);
 
         var metadataValueField = new TextField("Metadata Value");
         metadataValueField.setVisible(false);
         metadataValueField.setWidthFull();
+        metadataValueField.setRequired(true);
+        metadataValueField.setMaxLength(500);
 
         typeField.addValueChangeListener(event -> {
             var actionType = event.getValue();
@@ -313,6 +397,36 @@ public class RuleDialog extends Dialog {
                 Notification.show("Please select action type", 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 return;
+            }
+
+            // Validate type-specific required fields
+            if (typeField.getValue() == ActionType.ROUTE && targetChannelField.getValue().isBlank()) {
+                Notification.show("Target Channel is required for ROUTE action", 3000, Notification.Position.BOTTOM_END)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                targetChannelField.focus();
+                return;
+            }
+
+            if (typeField.getValue() == ActionType.TRANSFORM && transformationScriptField.getValue().isBlank()) {
+                Notification.show("Transformation Script is required for TRANSFORM action", 3000, Notification.Position.BOTTOM_END)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                transformationScriptField.focus();
+                return;
+            }
+
+            if (typeField.getValue() == ActionType.ENRICH) {
+                if (metadataKeyField.getValue().isBlank()) {
+                    Notification.show("Metadata Key is required for ENRICH action", 3000, Notification.Position.BOTTOM_END)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    metadataKeyField.focus();
+                    return;
+                }
+                if (metadataValueField.getValue().isBlank()) {
+                    Notification.show("Metadata Value is required for ENRICH action", 3000, Notification.Position.BOTTOM_END)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    metadataValueField.focus();
+                    return;
+                }
             }
 
             var action = ruleService.addAction(ruleId, typeField.getValue());

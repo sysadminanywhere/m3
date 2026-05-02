@@ -3,7 +3,9 @@ package com.sysadminanywhere.m3.messaging.service;
 import com.sysadminanywhere.m3.messaging.domain.ChannelDirection;
 import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.ChannelType;
+import com.sysadminanywhere.m3.messaging.integration.config.DirectoryInboundIntegration;
 import com.sysadminanywhere.m3.messaging.repository.ChannelSettingsRepository;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,9 +17,12 @@ import java.util.Optional;
 public class ChannelSettingsService {
 
     private final ChannelSettingsRepository channelSettingsRepository;
+    private final DirectoryInboundIntegration directoryInboundIntegration;
 
-    public ChannelSettingsService(ChannelSettingsRepository channelSettingsRepository) {
+    public ChannelSettingsService(ChannelSettingsRepository channelSettingsRepository,
+                                  @Lazy DirectoryInboundIntegration directoryInboundIntegration) {
         this.channelSettingsRepository = channelSettingsRepository;
+        this.directoryInboundIntegration = directoryInboundIntegration;
     }
 
     @Transactional(readOnly = true)
@@ -78,7 +83,9 @@ public class ChannelSettingsService {
             channel.setProperties(properties);
         }
 
-        return channelSettingsRepository.save(channel);
+        var savedChannel = channelSettingsRepository.save(channel);
+        directoryInboundIntegration.restartChannel(savedChannel);
+        return savedChannel;
     }
 
     @Transactional
@@ -100,11 +107,14 @@ public class ChannelSettingsService {
             channel.setProperties(properties);
         }
 
-        return channelSettingsRepository.save(channel);
+        var savedChannel = channelSettingsRepository.save(channel);
+        directoryInboundIntegration.restartChannel(savedChannel);
+        return savedChannel;
     }
 
     @Transactional
     public void deleteChannel(Long channelId) {
+        directoryInboundIntegration.stopChannel(channelId);
         channelSettingsRepository.deleteById(channelId);
     }
 
@@ -113,7 +123,8 @@ public class ChannelSettingsService {
         var channel = channelSettingsRepository.findById(channelId)
                 .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + channelId));
         channel.setEnabled(!channel.getEnabled());
-        channelSettingsRepository.save(channel);
+        var savedChannel = channelSettingsRepository.save(channel);
+        directoryInboundIntegration.restartChannel(savedChannel);
     }
 
     @Transactional(readOnly = true)
@@ -155,7 +166,7 @@ public class ChannelSettingsService {
                     "directoryPath", "",
                     "filePattern", "*",
                     "pollingInterval", "5000",
-                    "deleteAfterProcessing", "false",
+                    "deleteAfterProcessing", "true",
                     "recursive", "false"
             );
             case RABBITMQ -> Map.of(

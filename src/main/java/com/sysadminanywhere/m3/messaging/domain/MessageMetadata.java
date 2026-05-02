@@ -8,7 +8,7 @@ import jakarta.annotation.Nullable;
 public class MessageMetadata {
 
     public static final int KEY_MAX_LENGTH = 100;
-    public static final int VALUE_MAX_LENGTH = 1000;
+    public static final int VALUE_MAX_LENGTH = 5000;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

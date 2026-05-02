@@ -11,7 +11,7 @@ import java.util.Set;
 @Table(name = "message")
 public class Message {
 
-    public static final int PAYLOAD_MAX_LENGTH = 10000;
+    public static final int PAYLOAD_MAX_LENGTH = 1_000_000;
     public static final int SOURCE_SYSTEM_MAX_LENGTH = 100;
     public static final int TARGET_SYSTEM_MAX_LENGTH = 100;
     public static final int PAYLOAD_TYPE_MAX_LENGTH = 50;
@@ -29,7 +29,7 @@ public class Message {
     @Column(name = "status", nullable = false)
     private MessageStatus status = MessageStatus.PENDING;
 
-    @Column(name = "payload", nullable = false, length = PAYLOAD_MAX_LENGTH)
+    @Column(name = "payload", nullable = false, columnDefinition = "TEXT")
     private String payload;
 
     @Column(name = "payload_type", nullable = false, length = PAYLOAD_TYPE_MAX_LENGTH)

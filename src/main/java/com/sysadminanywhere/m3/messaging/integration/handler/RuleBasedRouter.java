@@ -22,12 +22,20 @@ public class RuleBasedRouter {
     @Router(inputChannel = "ruleRoutingChannel")
     public String routeMessage(Message<?> message) {
         String channelName = (String) message.getHeaders().get("channelName");
+        String fileName = (String) message.getHeaders().get("fileName");
+        
+        log.info("Router received message from channel='{}', fileName='{}', payload type={}", 
+                channelName, fileName, message.getPayload().getClass().getSimpleName());
+        log.debug("Message headers: {}", message.getHeaders());
+        
         if (channelName == null) {
             log.warn("No channelName header found, routing to defaultChannel");
             return "defaultChannel";
         }
 
         List<Rule> applicableRules = ruleEngine.findApplicableRules(message, channelName);
+        log.info("Found {} applicable rules for channel '{}'", applicableRules.size(), channelName);
+        
         String targetChannel = ruleEngine.determineTargetChannel(message, applicableRules);
 
         if (targetChannel != null) {

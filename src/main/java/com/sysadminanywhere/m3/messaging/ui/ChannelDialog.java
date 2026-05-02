@@ -4,6 +4,7 @@ import com.sysadminanywhere.m3.messaging.domain.ChannelDirection;
 import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.ChannelType;
 import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
+import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -65,6 +66,17 @@ public class ChannelDialog extends Dialog {
         nameField = new TextField("Name");
         nameField.setRequired(true);
         nameField.setWidthFull();
+        nameField.setMaxLength(ChannelSettings.NAME_MAX_LENGTH);
+        nameField.setHelperText("Max " + ChannelSettings.NAME_MAX_LENGTH + " characters");
+        nameField.setValueChangeMode(ValueChangeMode.EAGER);
+        nameField.addValueChangeListener(event -> {
+            if (event.getValue().length() > ChannelSettings.NAME_MAX_LENGTH) {
+                nameField.setInvalid(true);
+                nameField.setErrorMessage("Name cannot exceed " + ChannelSettings.NAME_MAX_LENGTH + " characters");
+            } else {
+                nameField.setInvalid(false);
+            }
+        });
 
         typeField = new ComboBox<>("Type");
         typeField.setItems(ChannelType.values());
@@ -78,6 +90,8 @@ public class ChannelDialog extends Dialog {
 
         descriptionField = new TextArea("Description");
         descriptionField.setWidthFull();
+        descriptionField.setMaxLength(ChannelSettings.DESCRIPTION_MAX_LENGTH);
+        descriptionField.setHelperText("Max " + ChannelSettings.DESCRIPTION_MAX_LENGTH + " characters");
 
         enabledField = new Checkbox("Enabled");
         enabledField.setValue(true);
@@ -278,6 +292,10 @@ public class ChannelDialog extends Dialog {
         var field = new NumberField(label);
         field.setValue(value);
         field.setWidthFull();
+        field.setMin(1);
+        field.setMax(65535);
+        field.setStep(1);
+        field.setErrorMessage("Port must be between 1 and 65535");
         numberFields.put(key, field);
         return field;
     }
@@ -309,9 +327,58 @@ public class ChannelDialog extends Dialog {
     }
 
     private void saveChannel() {
-        if (nameField.getValue().isBlank() || typeField.getValue() == null || directionField.getValue() == null) {
-            Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
+        // Validate required fields
+        if (nameField.getValue().isBlank()) {
+            Notification.show("Name is required", 3000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            nameField.focus();
+            return;
+        }
+
+        if (typeField.getValue() == null) {
+            Notification.show("Type is required", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            typeField.focus();
+            return;
+        }
+
+        if (directionField.getValue() == null) {
+            Notification.show("Direction is required", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            directionField.focus();
+            return;
+        }
+
+        // Validate name length
+        if (nameField.getValue().length() > ChannelSettings.NAME_MAX_LENGTH) {
+            Notification.show("Name cannot exceed " + ChannelSettings.NAME_MAX_LENGTH + " characters", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            nameField.focus();
+            return;
+        }
+
+        // Validate description length
+        if (descriptionField.getValue() != null && descriptionField.getValue().length() > ChannelSettings.DESCRIPTION_MAX_LENGTH) {
+            Notification.show("Description cannot exceed " + ChannelSettings.DESCRIPTION_MAX_LENGTH + " characters", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            descriptionField.focus();
+            return;
+        }
+
+        // Check for duplicate name when creating new channel
+        if (currentChannel == null && channelSettingsService.existsByName(nameField.getValue())) {
+            Notification.show("Channel with name '" + nameField.getValue() + "' already exists", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            nameField.focus();
+            return;
+        }
+
+        // Check for duplicate name when renaming existing channel
+        if (currentChannel != null && !currentChannel.getName().equals(nameField.getValue())
+                && channelSettingsService.existsByName(nameField.getValue())) {
+            Notification.show("Channel with name '" + nameField.getValue() + "' already exists", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            nameField.focus();
             return;
         }
 
