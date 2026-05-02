@@ -7,6 +7,7 @@ import com.sysadminanywhere.m3.messaging.domain.Message;
 import com.sysadminanywhere.m3.messaging.domain.MessageDirection;
 import com.sysadminanywhere.m3.messaging.domain.MessageStatus;
 import com.sysadminanywhere.m3.messaging.service.MessageService;
+import com.sysadminanywhere.m3.messaging.repository.MessageMetadataRepository;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -29,12 +30,17 @@ import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRe
 class InboundMessagesView extends VerticalLayout {
 
     private final MessageService messageService;
+    private final MessageMetadataRepository metadataRepository;
+    private final MessageDetailDialog detailDialog;
 
     final ComboBox<MessageStatus> statusFilter;
     final Grid<Message> messageGrid;
 
-    InboundMessagesView(MessageService messageService) {
+    InboundMessagesView(MessageService messageService, MessageMetadataRepository metadataRepository) {
         this.messageService = messageService;
+        this.metadataRepository = metadataRepository;
+        this.detailDialog = new MessageDetailDialog(messageService, metadataRepository);
+        this.detailDialog.setOnDeleteCallback(id -> refreshGrid());
 
         statusFilter = new ComboBox<>("Status");
         statusFilter.setItems(MessageStatus.values());
@@ -64,7 +70,7 @@ class InboundMessagesView extends VerticalLayout {
             var viewButton = new Button(VaadinIcon.EYE.create());
             viewButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
             viewButton.setTooltipText("View details");
-            viewButton.addClickListener(e -> getUI().ifPresent(ui -> ui.navigate("messages/" + msg.getId())));
+            viewButton.addClickListener(e -> detailDialog.openMessage(msg.getId()));
             return viewButton;
         }).setHeader("Actions").setWidth("80px");
         messageGrid.setEmptyStateText("No inbound messages found");
