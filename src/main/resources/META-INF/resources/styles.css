@@ -230,13 +230,6 @@ body {
     overflow: auto;
 }
 
-.view-title h1 {
-    margin: 0;
-    color: var(--m3-ink);
-    font-size: 22px;
-    line-height: 1.25;
-}
-
 .page-toolbar {
     box-sizing: border-box;
     align-items: flex-end;

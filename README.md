@@ -29,8 +29,7 @@ src/main/java/com/sysadminanywhere/m3/
 ├── Application.java                    # Application entry point
 ├── base/                               # Shared UI components
 │   └── ui/
-│       ├── MainLayout.java
-│       └── ViewTitle.java
+│       └── MainLayout.java
 └── messaging/                          # Core messaging feature
     ├── domain/                         # Domain entities & enums
     │   ├── Message.java                  # Message entity

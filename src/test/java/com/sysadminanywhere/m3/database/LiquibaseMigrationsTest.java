@@ -1,6 +1,5 @@
 package com.sysadminanywhere.m3.database;
 
-import com.sysadminanywhere.m3.examplefeature.Task;
 import com.sysadminanywhere.m3.messaging.domain.*;
 import liquibase.Contexts;
 import liquibase.LabelExpression;
@@ -20,7 +19,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,7 +45,7 @@ class LiquibaseMigrationsTest {
     @Test
     void createsFreshSchemaCompatibleWithAllEntitiesAndDoesNotReapplyChanges() throws Exception {
         migrate();
-        validateMappingsAndPersistTask();
+        validateMappingsAndPersistPool();
         assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(6);
         assertThat(number("SELECT count(*) FROM rule_worker_pool WHERE name = 'default'")).isEqualTo(1);
         assertThat(number("SELECT increment_by FROM pg_sequences WHERE schemaname = current_schema() AND sequencename = 'task_seq'")).isEqualTo(50);
@@ -74,7 +72,7 @@ class LiquibaseMigrationsTest {
 
         migrate();
 
-        validateMappingsAndPersistTask();
+        validateMappingsAndPersistPool();
         assertThat(number("SELECT count(*) FROM message WHERE message_id = 1 AND payload = 'preserve me'")).isEqualTo(1);
         assertThat(number("SELECT count(*) FROM rule WHERE rule_id=1 AND worker_pool_id=(SELECT worker_pool_id FROM rule_worker_pool WHERE name='default')")).isEqualTo(1);
         assertThat(number("SELECT desired_replicas FROM rule_worker_pool WHERE name='default'")).isEqualTo(3);
@@ -92,7 +90,7 @@ class LiquibaseMigrationsTest {
 
         migrate();
 
-        validateMappingsAndPersistTask();
+        validateMappingsAndPersistPool();
         assertThat(number("SELECT count(*) FROM rule WHERE worker_pool_id=(SELECT worker_pool_id FROM rule_worker_pool WHERE name='default')")).isEqualTo(1);
         assertThat(number("SELECT count(*) FROM message WHERE payload='preserve me'")).isEqualTo(1);
     }
@@ -105,7 +103,7 @@ class LiquibaseMigrationsTest {
 
         migrate();
 
-        validateMappingsAndPersistTask();
+        validateMappingsAndPersistPool();
         assertThat(number("SELECT desired_replicas FROM rule_worker_pool WHERE name='default'")).isEqualTo(2);
         assertThat(number("SELECT pending_jobs_per_worker FROM rule_worker_pool WHERE name='default'")).isEqualTo(50);
         assertThat(number("SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname='idx_rule_job_pool_claim'")).isEqualTo(1);
@@ -129,7 +127,7 @@ class LiquibaseMigrationsTest {
                 .addAnnotatedClass(MessageMetadata.class).addAnnotatedClass(Rule.class)
                 .addAnnotatedClass(RuleCondition.class).addAnnotatedClass(RuleAction.class)
                 .addAnnotatedClass(RuleWorkerPool.class).addAnnotatedClass(RuleExecutionJob.class)
-                .addAnnotatedClass(WorkerPoolMetricSample.class).addAnnotatedClass(Task.class)
+                .addAnnotatedClass(WorkerPoolMetricSample.class)
                 .setPhysicalNamingStrategy(new PhysicalNamingStrategySnakeCaseImpl())
                 .setProperty("hibernate.connection.url", jdbcUrl)
                 .setProperty("hibernate.connection.username", POSTGRES.getUsername())
@@ -138,18 +136,22 @@ class LiquibaseMigrationsTest {
                 .buildSessionFactory();
     }
 
-    private void createHibernateSchema() {
+    private void createHibernateSchema() throws SQLException {
         try (SessionFactory ignored = hibernate("create")) { }
+        // Reproduce the removed starter feature to check that upgrades preserve legacy data.
+        execute("CREATE SEQUENCE task_seq START WITH 1 INCREMENT BY 50; "
+                + "CREATE TABLE task(task_id BIGINT PRIMARY KEY, description VARCHAR(300) NOT NULL, "
+                + "creation_date TIMESTAMP(6) WITH TIME ZONE NOT NULL, due_date DATE)");
     }
 
-    private void validateMappingsAndPersistTask() throws SQLException {
-        long previousMaxId = number("SELECT COALESCE(MAX(task_id), 0) FROM task");
+    private void validateMappingsAndPersistPool() throws SQLException {
+        long previousMaxId = number("SELECT COALESCE(MAX(worker_pool_id), 0) FROM rule_worker_pool");
         try (SessionFactory factory = hibernate("validate"); var session = factory.openSession()) {
             session.beginTransaction();
-            Task task = new Task("sequence check", Instant.now());
-            session.persist(task);
+            RuleWorkerPool pool = new RuleWorkerPool("identity-check", 1, 1, 4);
+            session.persist(pool);
             session.getTransaction().commit();
-            assertThat(task.getId()).isGreaterThan(previousMaxId);
+            assertThat(pool.getId()).isGreaterThan(previousMaxId);
         }
     }
 

@@ -8,7 +8,7 @@ Run the application normally with `./mvnw spring-boot:run`, or start the stack w
 
 The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml`. It records six changesets:
 
-1. Channels, channel properties, messages, message metadata and the mapped example task entity.
+1. Channels, channel properties, messages, message metadata and the legacy task table.
 2. Rules, rule conditions and rule actions.
 3. Worker pools, rule assignments and durable rule execution jobs; upgrades for older autoscaling and claim/result columns.
 4. Worker pool CPU/RAM metric samples.
@@ -16,6 +16,8 @@ The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml
 6. The `default` worker pool and assignments for existing rules without a pool.
 
 Liquibase creates `databasechangelog` and `databasechangeloglock` in the current PostgreSQL schema. Its lock serializes concurrent control-plane startup. Existing changesets are checked by checksum and are not rerun.
+
+The starter task feature has been removed from the application. Its table and sequence remain in the immutable baseline for compatibility with existing databases; M3 no longer reads or writes them.
 
 Workers use `spring.liquibase.enabled=false` and only validate mappings. Start the control plane before launching standalone workers. Docker workers created by the UI receive `SPRING_LIQUIBASE_ENABLED=false` and `SPRING_JPA_HIBERNATE_DDL_AUTO=validate` explicitly. Rebuild the shared image when deploying new migrations so the UI and workers use the same schema version.
 

@@ -76,10 +76,6 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.integration</groupId>
-            <artifactId>spring-integration-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.integration</groupId>
             <artifactId>spring-integration-ftp</artifactId>
         </dependency>
         <dependency>
@@ -105,11 +101,6 @@
             <artifactId>spring-integration-file</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.github.mwiede</groupId>
-            <artifactId>jsch</artifactId>
-            <version>0.2.21</version>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
@@ -120,11 +111,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.vaadin</groupId>
-            <artifactId>browserless-test-junit6</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
