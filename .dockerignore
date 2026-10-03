@@ -1,0 +1,13 @@
+.git
+.idea
+.vscode
+.mvn/wrapper/maven-wrapper.jar
+target
+out
+output
+.playwright-cli
+node_modules
+src/main/frontend/generated
+.env
+.env.*
+!.env.example

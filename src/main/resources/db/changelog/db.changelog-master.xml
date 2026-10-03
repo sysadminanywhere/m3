@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   logicalFilePath="db/changelog/db.changelog-master.xml"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.31.xsd">
+    <preConditions onFail="HALT" onError="HALT">
+        <dbms type="postgresql"/>
+    </preConditions>
+
+    <!-- Keep these IDs and paths stable. Add new changesets for subsequent changes. -->
+    <changeSet id="001-messaging-schema" author="m3">
+        <sqlFile path="changes/001-messaging-schema.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="002-rule-schema" author="m3">
+        <sqlFile path="changes/002-rule-schema.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="003-worker-schema" author="m3">
+        <sqlFile path="changes/003-worker-schema.sql" relativeToChangelogFile="true" splitStatements="false"/>
+    </changeSet>
+    <changeSet id="004-worker-metrics" author="m3">
+        <sqlFile path="changes/004-worker-metrics.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="005-query-indexes" author="m3">
+        <sqlFile path="changes/005-query-indexes.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="006-default-worker-pool" author="m3">
+        <sqlFile path="changes/006-default-worker-pool.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+</databaseChangeLog>
