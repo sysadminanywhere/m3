@@ -27,4 +27,7 @@
     <changeSet id="006-default-worker-pool" author="m3">
         <sqlFile path="changes/006-default-worker-pool.sql" relativeToChangelogFile="true"/>
     </changeSet>
+    <changeSet id="007-message-receipt-outbox" author="m3">
+        <sqlFile path="changes/007-message-receipt-outbox.sql" relativeToChangelogFile="true"/>
+    </changeSet>
 </databaseChangeLog>

@@ -4,6 +4,10 @@ M3 is a lightweight, extensible messaging middleware platform built with Spring 
 
 ## Features
 
+### Durable ingestion and receipt notifications
+
+Messages and metadata are saved before receipt notifications are published to RabbitMQ. A transactional outbox retries failures. External services fetch data using `GET /api/v1/messages/{id}`; source adapters submit through `POST /api/v1/channels/{channelId}/messages`. See [the ingestion contract and API](docs/message-ingestion.md).
+
 ### Channel Management
 - **Multi-Protocol Support**: Configure channels for FTP, SFTP, Kafka, RabbitMQ, and local directories
 - **Inbound/Outbound Channels**: Support for both incoming and outgoing message flows
@@ -81,7 +85,7 @@ The Vaadin application stores incoming messages and creates durable per-rule job
 
 Open **Administration → Workers** to create pools, set target/minimum/maximum container counts, and optionally auto-scale from pending plus processing jobs with a per-worker threshold. The UI samples CPU and memory utilization for each pool every 30 seconds and shows current, peak, and 30-day average values. Open a rule and choose its worker pool to move it; unfinished jobs follow the new assignment after any active claim transaction completes.
 
-`docker compose up --build -d` starts PostgreSQL, the Docker socket proxy, and the Vaadin app. The proxy needs access to the local Docker socket and is kept on the internal Compose network. Worker containers are created by the app and are not exposed on a host port. Each pool consumes its own jobs using PostgreSQL row locks, so replicas in that pool can process concurrently. When the control plane shuts down cleanly, it removes its managed worker containers so `docker compose down` can remove the project network as well.
+`docker compose up --build -d` starts PostgreSQL, RabbitMQ, the Docker socket proxy, and the Vaadin app. The proxy needs access to the local Docker socket and is kept on the internal Compose network. Worker containers are created by the app and are not exposed on a host port. Each pool consumes its own jobs using PostgreSQL row locks, so replicas in that pool can process concurrently. When the control plane shuts down cleanly, it removes its managed worker containers so `docker compose down` can remove the project network as well.
 
 ### Configuration
 

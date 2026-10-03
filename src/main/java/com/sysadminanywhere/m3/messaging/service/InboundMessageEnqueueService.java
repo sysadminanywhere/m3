@@ -17,29 +17,48 @@ public class InboundMessageEnqueueService {
     private final RuleRepository ruleRepository;
     private final RuleExecutionJobRepository jobRepository;
     private final ObjectMapper objectMapper;
+    private final MessageReceiptOutbox receipts;
 
     public InboundMessageEnqueueService(MessageRepository messageRepository, RuleRepository ruleRepository,
-                                        RuleExecutionJobRepository jobRepository, ObjectMapper objectMapper) {
+                                        RuleExecutionJobRepository jobRepository, ObjectMapper objectMapper,
+                                        MessageReceiptOutbox receipts) {
         this.messageRepository = messageRepository;
         this.ruleRepository = ruleRepository;
         this.jobRepository = jobRepository;
         this.objectMapper = objectMapper;
+        this.receipts = receipts;
     }
 
     @Transactional
-    public void enqueue(Object payload, MessageHeaders headers) {
+    public com.sysadminanywhere.m3.messaging.domain.Message enqueue(Object payload, MessageHeaders headers) {
         String source = stringHeader(headers, "sourceSystem", stringHeader(headers, "channelName", "unknown"));
         String target = stringHeader(headers, "targetSystem", null);
         String payloadType = stringHeader(headers, "payloadType", "json");
         String json = serialize(payload);
         var stored = new com.sysadminanywhere.m3.messaging.domain.Message(MessageDirection.INBOUND, json, payloadType);
+        stored.setPayload(json);
+        stored.setPayloadType(payloadType);
         stored.setSourceSystem(source);
         stored.setTargetSystem(target);
-        for (String key : new String[]{"fileName", "fileSize", "encoding", "filePath", "channelName"}) {
-            Object value = headers.get(key);
-            if (value != null) stored.addMetadata(key, value.toString());
+        headers.forEach((key, value) -> {
+            if (!(payload instanceof byte[] && key.equals("encoding"))
+                    && !java.util.Set.of("id", "timestamp", "metadata").contains(key)
+                    && (value instanceof String || value instanceof Number || value instanceof Boolean)) {
+                addMetadata(stored, key, value.toString());
+            }
+        });
+        if (headers.get("metadata") instanceof Map<?, ?> metadata) {
+            metadata.forEach((key, value) -> {
+                if (!(key instanceof String) || !(value instanceof String))
+                    throw new IllegalArgumentException("Metadata keys and values must be strings");
+                if (headers.containsKey(key.toString()))
+                    throw new IllegalArgumentException("Metadata cannot override a source header: " + key);
+                addMetadata(stored, key.toString(), value.toString());
+            });
         }
-        stored = messageRepository.save(stored);
+        if (payload instanceof byte[]) addMetadata(stored, "encoding", "base64");
+        messageRepository.save(stored);
+        receipts.record(stored.getId());
 
         var rules = ruleRepository.findBySourceChannelNameAndEnabled(source, true);
         int jobs = 0;
@@ -52,11 +71,18 @@ public class InboundMessageEnqueueService {
             stored.setStatus(MessageStatus.PROCESSED);
             stored.setProcessedAt(java.time.Instant.now());
         }
+        return stored;
+    }
+
+    private static void addMetadata(com.sysadminanywhere.m3.messaging.domain.Message message, String key, String value) {
+        if (key.isBlank() || key.length() > MessageMetadata.KEY_MAX_LENGTH || value.length() > MessageMetadata.VALUE_MAX_LENGTH)
+            throw new IllegalArgumentException("Metadata exceeds the supported key/value lengths");
+        message.addMetadata(key, value);
     }
 
     private String serialize(Object payload) {
         if (payload instanceof String value) return value;
-        if (payload instanceof byte[] bytes) return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        if (payload instanceof byte[] bytes) return java.util.Base64.getEncoder().encodeToString(bytes);
         try { return objectMapper.writeValueAsString(payload); }
         catch (Exception e) { throw new IllegalArgumentException("Could not serialize inbound payload", e); }
     }

@@ -17,15 +17,19 @@ import java.util.List;
 public class MessageService {
 
     private final MessageRepository messageRepository;
+    private final MessageReceiptOutbox receipts;
 
-    MessageService(MessageRepository messageRepository) {
+    MessageService(MessageRepository messageRepository, MessageReceiptOutbox receipts) {
         this.messageRepository = messageRepository;
+        this.receipts = receipts;
     }
 
     @Transactional
     public Message createMessage(MessageDirection direction, String payload, String payloadType) {
         var message = new Message(direction, payload, payloadType);
-        return messageRepository.save(message);
+        var saved = messageRepository.save(message);
+        if (direction == MessageDirection.INBOUND) receipts.record(saved.getId());
+        return saved;
     }
 
     @Transactional
@@ -34,7 +38,9 @@ public class MessageService {
         var message = new Message(direction, payload, payloadType);
         message.setSourceSystem(sourceSystem);
         message.setTargetSystem(targetSystem);
-        return messageRepository.save(message);
+        var saved = messageRepository.save(message);
+        if (direction == MessageDirection.INBOUND) receipts.record(saved.getId());
+        return saved;
     }
 
     @Transactional(readOnly = true)

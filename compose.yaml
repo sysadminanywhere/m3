@@ -17,6 +17,23 @@ services:
       retries: 10
       start_period: 10s
 
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-m3}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-m3}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   docker-api:
     image: ghcr.io/tecnativa/docker-socket-proxy:v0.5.0
     restart: unless-stopped
@@ -41,6 +58,8 @@ services:
         condition: service_healthy
       docker-api:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
     stop_grace_period: 120s
     environment:
       PORT: 8080
@@ -55,8 +74,12 @@ services:
       M3_DOCKER_API_URL: http://docker-api:2375
       M3_WORKER_IMAGE: m3:local
       M3_WORKER_NETWORK: ${COMPOSE_PROJECT_NAME:-m3}_default
+      M3_BROKER_RABBIT_HOST: rabbitmq
+      M3_BROKER_RABBIT_USERNAME: ${RABBITMQ_USER:-m3}
+      M3_BROKER_RABBIT_PASSWORD: ${RABBITMQ_PASSWORD:-m3}
     ports:
       - "${M3_PORT:-8080}:8080"
 
 volumes:
   postgres_data:
+  rabbitmq_data:

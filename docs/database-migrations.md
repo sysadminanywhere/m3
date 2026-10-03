@@ -6,7 +6,7 @@ PostgreSQL schema changes are managed by Liquibase 5, using the version supplied
 
 Run the application normally with `./mvnw spring-boot:run`, or start the stack with `docker compose up --build -d`. Liquibase uses the same datasource credentials as the application. There is no separate migration container or manually ordered SQL import.
 
-The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml`. It records six changesets:
+The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml`. It records seven changesets:
 
 1. Channels, channel properties, messages, message metadata and the legacy task table.
 2. Rules, rule conditions and rule actions.
@@ -14,6 +14,7 @@ The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml
 4. Worker pool CPU/RAM metric samples.
 5. Indexes for worker claims, message history, rule lookup and metrics.
 6. The `default` worker pool and assignments for existing rules without a pool.
+7. The durable outbox for receipt notifications to external consumers.
 
 Liquibase creates `databasechangelog` and `databasechangeloglock` in the current PostgreSQL schema. Its lock serializes concurrent control-plane startup. Existing changesets are checked by checksum and are not rerun.
 
