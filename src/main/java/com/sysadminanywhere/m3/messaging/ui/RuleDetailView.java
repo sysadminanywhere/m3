@@ -1,9 +1,9 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
-import com.sysadminanywhere.m3.base.ui.ViewTitle;
 import com.sysadminanywhere.m3.messaging.domain.*;
 import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
 import com.sysadminanywhere.m3.messaging.service.RuleService;
+import com.sysadminanywhere.m3.messaging.service.RuleWorkerPoolService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -17,12 +17,15 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.router.PageTitle;
 
 @Route(value = "rules/:ruleId")
+@PageTitle("Rule Details")
 class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
 
     private final RuleService ruleService;
     private final ChannelSettingsService channelSettingsService;
+    private final RuleWorkerPoolService workerPoolService;
     private Long ruleId;
     private Rule currentRule;
 
@@ -31,12 +34,15 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
     final ComboBox<ChannelSettings> channelField;
     final com.vaadin.flow.component.textfield.NumberField priorityField;
     final com.vaadin.flow.component.checkbox.Checkbox enabledField;
+    final ComboBox<com.sysadminanywhere.m3.messaging.domain.RuleWorkerPool> workerPoolField;
     final Grid<RuleCondition> conditionGrid;
     final Grid<RuleAction> actionGrid;
 
-    RuleDetailView(RuleService ruleService, ChannelSettingsService channelSettingsService) {
+    RuleDetailView(RuleService ruleService, ChannelSettingsService channelSettingsService,
+                   RuleWorkerPoolService workerPoolService) {
         this.ruleService = ruleService;
         this.channelSettingsService = channelSettingsService;
+        this.workerPoolService = workerPoolService;
 
         nameField = new TextField("Name");
         nameField.setRequired(true);
@@ -56,7 +62,13 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         enabledField = new com.vaadin.flow.component.checkbox.Checkbox("Enabled");
         enabledField.setValue(true);
 
-        var form = new HorizontalLayout(nameField, typeField, channelField, priorityField, enabledField);
+        workerPoolField = new ComboBox<>("Worker pool");
+        workerPoolField.setItems(workerPoolService.findAll());
+        workerPoolField.setItemLabelGenerator(com.sysadminanywhere.m3.messaging.domain.RuleWorkerPool::getName);
+        workerPoolField.setRequired(true);
+        workerPoolField.setHelperText("Choose where this rule will execute");
+
+        var form = new HorizontalLayout(nameField, typeField, channelField, workerPoolField, priorityField, enabledField);
         form.setWrap(true);
         form.setWidthFull();
 
@@ -65,7 +77,8 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
 
         var backButton = new Button("Back to Rules", event -> getUI().ifPresent(ui -> ui.navigate(RuleListView.class)));
 
-        var toolbar = new HorizontalLayout(new ViewTitle("Rule Details"), saveButton, backButton);
+        var toolbar = new HorizontalLayout(saveButton, backButton);
+        toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();
 
@@ -122,13 +135,15 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
             channelField.setValue(currentRule.getSourceChannel());
             priorityField.setValue((double) currentRule.getPriority());
             enabledField.setValue(currentRule.getEnabled());
+            workerPoolField.setItems(workerPoolService.findAll());
+            workerPoolField.setValue(currentRule.getWorkerPool());
             conditionGrid.setItems(currentRule.getConditions());
             actionGrid.setItems(currentRule.getActions());
         }
     }
 
     private void saveRule() {
-        if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null) {
+        if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null || workerPoolField.getValue() == null) {
             Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             return;
@@ -136,6 +151,7 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
 
         ruleService.updateRule(ruleId, nameField.getValue(), currentRule.getDescription(),
                 typeField.getValue(), channelField.getValue().getId(), (int) (double) priorityField.getValue(), enabledField.getValue());
+        ruleService.assignWorkerPool(ruleId, workerPoolField.getValue().getId());
         Notification.show("Rule saved", 3000, Notification.Position.BOTTOM_END)
                 .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
     }

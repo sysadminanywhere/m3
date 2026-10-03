@@ -27,6 +27,10 @@ public interface RuleRepository extends JpaRepository<Rule, Long> {
 
     List<Rule> findBySourceChannelId(Long channelId);
 
+    @Query("SELECT r FROM Rule r WHERE r.sourceChannel.name = :channelName AND r.enabled = :enabled ORDER BY r.priority ASC")
+    List<Rule> findBySourceChannelNameAndEnabled(@Param("channelName") String channelName,
+                                                  @Param("enabled") Boolean enabled);
+
     @Query("SELECT r FROM Rule r WHERE r.sourceChannel.id = :channelId AND r.enabled = true ORDER BY r.priority ASC")
     List<Rule> findEnabledBySourceChannelIdOrderByPriority(@Param("channelId") Long channelId);
 }

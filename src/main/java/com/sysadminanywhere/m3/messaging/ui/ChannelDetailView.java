@@ -1,6 +1,5 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
-import com.sysadminanywhere.m3.base.ui.ViewTitle;
 import com.sysadminanywhere.m3.messaging.domain.ChannelDirection;
 import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.ChannelType;
@@ -26,6 +25,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Route(value = "channel/:channelId?")
+@PageTitle("Channel Settings")
 class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
 
     private final ChannelSettingsService channelSettingsService;
@@ -98,7 +98,8 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
 
         var backButton = new Button("Back to Channels", event -> getUI().ifPresent(ui -> ui.navigate(ChannelListView.class)));
 
-        var toolbar = new HorizontalLayout(new ViewTitle("Channel Settings"), saveButton, backButton);
+        var toolbar = new HorizontalLayout(saveButton, backButton);
+        toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();
 

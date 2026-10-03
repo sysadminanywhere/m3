@@ -39,6 +39,10 @@ public class Rule {
     @Column(name = "enabled", nullable = false)
     private Boolean enabled = true;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "worker_pool_id")
+    private RuleWorkerPool workerPool;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -120,6 +124,13 @@ public class Rule {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+        this.updatedAt = Instant.now();
+    }
+
+    public RuleWorkerPool getWorkerPool() { return workerPool; }
+
+    public void setWorkerPool(RuleWorkerPool workerPool) {
+        this.workerPool = workerPool;
         this.updatedAt = Instant.now();
     }
 

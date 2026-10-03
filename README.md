@@ -76,17 +76,33 @@ src/main/java/com/sysadminanywhere/m3/
 - Maven 3.9+ (or use the included `./mvnw` wrapper)
 - PostgreSQL database
 
+### Worker runtime
+
+The Vaadin application stores incoming messages and creates durable per-rule jobs in PostgreSQL. Rule execution runs in separate headless containers built from the same image. On startup the control plane creates the default worker pool and reconciles its configured replica count through the restricted Docker API proxy.
+
+Open **Administration → Workers** to create pools, set target/minimum/maximum container counts, and optionally auto-scale from pending plus processing jobs with a per-worker threshold. The UI samples CPU and memory utilization for each pool every 30 seconds and shows current, peak, and 30-day average values. Open a rule and choose its worker pool to move it; unfinished jobs follow the new assignment after any active claim transaction completes.
+
+`docker compose up --build -d` starts PostgreSQL, the Docker socket proxy, and the Vaadin app. The proxy needs access to the local Docker socket and is kept on the internal Compose network. Worker containers are created by the app and are not exposed on a host port. Each pool consumes its own jobs using PostgreSQL row locks, so replicas in that pool can process concurrently. When the control plane shuts down cleanly, it removes its managed worker containers so `docker compose down` can remove the project network as well.
+
 ### Configuration
 Create or update `application.properties`:
 
 ```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/m3
-spring.datasource.username=postgres
-spring.datasource.password=yourpassword
+spring.datasource.url=${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/m3}
+spring.datasource.username=${SPRING_DATASOURCE_USERNAME:postgres}
+spring.datasource.password=${SPRING_DATASOURCE_PASSWORD:password}
 spring.jpa.hibernate.ddl-auto=update
 ```
 
 ### Run in Development Mode
+
+Start PostgreSQL in the background first:
+
+```bash
+docker compose up -d db
+```
+
+Then start the app from the IDE or with the Maven wrapper:
 
 Using Maven wrapper:
 ```bash
@@ -98,6 +114,8 @@ Or on Windows:
 mvnw.cmd
 ```
 
+The local app defaults to the same database name and credentials as the Compose database. If you change the Compose credentials, also set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the IDE run configuration.
+
 ### Build for Production
 
 ```bash
@@ -105,6 +123,26 @@ mvnw.cmd
 ```
 
 ### Docker Build
+
+Start the application and PostgreSQL with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+Open [http://localhost:8080](http://localhost:8080). The database is exposed on port 5432 and stored in the `postgres_data` volume.
+
+The default database credentials are for local development. Set `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, or `M3_PORT` in a `.env` file to change the defaults.
+
+Stop the services with:
+
+```bash
+docker compose down
+```
+
+To remove the database volume as well, use `docker compose down --volumes`.
+
+To build the image without starting the services:
 
 ```bash
 docker build -t m3:latest .

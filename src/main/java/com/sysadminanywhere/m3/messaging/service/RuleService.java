@@ -14,15 +14,21 @@ public class RuleService {
     private final RuleConditionRepository ruleConditionRepository;
     private final RuleActionRepository ruleActionRepository;
     private final ChannelSettingsRepository channelSettingsRepository;
+    private final RuleWorkerPoolRepository workerPoolRepository;
+    private final RuleExecutionJobRepository executionJobRepository;
 
     RuleService(RuleRepository ruleRepository,
                 RuleConditionRepository ruleConditionRepository,
                 RuleActionRepository ruleActionRepository,
-                ChannelSettingsRepository channelSettingsRepository) {
+                ChannelSettingsRepository channelSettingsRepository,
+                RuleWorkerPoolRepository workerPoolRepository,
+                RuleExecutionJobRepository executionJobRepository) {
         this.ruleRepository = ruleRepository;
         this.ruleConditionRepository = ruleConditionRepository;
         this.ruleActionRepository = ruleActionRepository;
         this.channelSettingsRepository = channelSettingsRepository;
+        this.workerPoolRepository = workerPoolRepository;
+        this.executionJobRepository = executionJobRepository;
     }
 
     @Transactional
@@ -30,6 +36,7 @@ public class RuleService {
         var sourceChannel = channelSettingsRepository.findById(sourceChannelId)
                 .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + sourceChannelId));
         var rule = new Rule(name, ruleType, sourceChannel);
+        workerPoolRepository.findByName("default").ifPresent(rule::setWorkerPool);
         rule.setPriority(priority);
         return ruleRepository.save(rule);
     }
@@ -126,5 +133,15 @@ public class RuleService {
         var rule = ruleRepository.findById(ruleId).orElseThrow();
         rule.setEnabled(!rule.getEnabled());
         ruleRepository.save(rule);
+    }
+
+    @Transactional
+    public void assignWorkerPool(Long ruleId, Long workerPoolId) {
+        if (workerPoolId == null) throw new IllegalArgumentException("A worker pool must be assigned");
+        var rule = ruleRepository.findById(ruleId).orElseThrow();
+        var pool = workerPoolRepository.findById(workerPoolId).orElseThrow();
+        rule.setWorkerPool(pool);
+        ruleRepository.save(rule);
+        executionJobRepository.moveUnfinishedJobs(ruleId, workerPoolId);
     }
 }

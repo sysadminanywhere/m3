@@ -1,6 +1,5 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
-import com.sysadminanywhere.m3.base.ui.ViewTitle;
 import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.sysadminanywhere.m3.messaging.domain.Message;
@@ -48,7 +47,8 @@ class OutboundMessagesView extends VerticalLayout {
         statusFilter.addValueChangeListener(event -> refreshGrid());
 
         var toolbar = new HorizontalLayout();
-        toolbar.add(new ViewTitle("Outbound Messages"), statusFilter);
+        toolbar.add(statusFilter);
+        toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();
 
@@ -60,19 +60,20 @@ class OutboundMessagesView extends VerticalLayout {
                 MessageDirection.OUTBOUND,
                 toSpringPageRequest(query)
         ).stream().filter(m -> statusFilter.getValue() == null || m.getStatus() == statusFilter.getValue()));
-        messageGrid.addColumn(Message::getId).setHeader("ID");
-        messageGrid.addColumn(Message::getStatus).setHeader("Status");
-        messageGrid.addColumn(Message::getSourceSystem).setHeader("Source");
-        messageGrid.addColumn(Message::getTargetSystem).setHeader("Target");
-        messageGrid.addColumn(Message::getPayloadType).setHeader("Type");
-        messageGrid.addColumn(msg -> dateTimeFormatter.format(msg.getCreatedAt())).setHeader("Created");
+        messageGrid.addColumn(Message::getId).setHeader("ID").setWidth("52px").setFlexGrow(0);
+        messageGrid.addColumn(Message::getStatus).setHeader("Status").setWidth("80px").setFlexGrow(0);
+        messageGrid.addColumn(Message::getSourceSystem).setHeader("Source").setWidth("88px").setFlexGrow(1);
+        messageGrid.addColumn(Message::getTargetSystem).setHeader("Target").setWidth("84px").setFlexGrow(1);
+        messageGrid.addColumn(Message::getPayloadType).setHeader("Type").setWidth("70px").setFlexGrow(0);
+        messageGrid.addColumn(msg -> dateTimeFormatter.format(msg.getCreatedAt())).setHeader("Created")
+                .setWidth("130px").setFlexGrow(0);
         messageGrid.addComponentColumn(msg -> {
             var viewButton = new Button(VaadinIcon.EYE.create());
             viewButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
             viewButton.setTooltipText("View details");
             viewButton.addClickListener(e -> detailDialog.openMessage(msg.getId()));
             return viewButton;
-        }).setHeader("Actions").setWidth("80px");
+        }).setHeader("Actions").setWidth("76px").setFlexGrow(0);
         messageGrid.setEmptyStateText("No outbound messages found");
         messageGrid.setSizeFull();
 

@@ -5,6 +5,7 @@ import com.sysadminanywhere.m3.messaging.service.RuleEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.integration.annotation.Router;
 import org.springframework.messaging.Message;
 import org.springframework.stereotype.Component;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 @Component
+@Profile("!worker")
 public class RuleBasedRouter {
 
     private static final Logger log = LoggerFactory.getLogger(RuleBasedRouter.class);

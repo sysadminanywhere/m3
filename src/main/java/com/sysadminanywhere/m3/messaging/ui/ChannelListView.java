@@ -1,6 +1,5 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
-import com.sysadminanywhere.m3.base.ui.ViewTitle;
 import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.ChannelType;
 import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
@@ -42,7 +41,8 @@ class ChannelListView extends VerticalLayout {
         addButton.addThemeVariants(ButtonVariant.PRIMARY);
 
         var toolbar = new HorizontalLayout();
-        toolbar.add(new ViewTitle("Channels"), typeFilter, addButton);
+        toolbar.add(typeFilter, addButton);
+        toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();
 
@@ -56,13 +56,18 @@ class ChannelListView extends VerticalLayout {
                     .skip(pageRequest.getOffset())
                     .limit(pageRequest.getPageSize());
         });
-        channelGrid.addColumn(ChannelSettings::getName).setHeader("Name").setSortable(true);
-        channelGrid.addColumn(ChannelSettings::getChannelType).setHeader("Type").setSortable(true);
-        channelGrid.addColumn(ChannelSettings::getDirection).setHeader("Direction").setSortable(true);
+        channelGrid.addColumn(ChannelSettings::getName).setHeader("Name").setSortable(true)
+                .setWidth("100px").setFlexGrow(1);
+        channelGrid.addColumn(ChannelSettings::getChannelType).setHeader("Type").setSortable(true)
+                .setWidth("70px").setFlexGrow(0);
+        channelGrid.addColumn(ChannelSettings::getDirection).setHeader("Direction").setSortable(true)
+                .setWidth("100px").setFlexGrow(0);
         channelGrid.addColumn(settings -> settings.getEnabled() ? "Enabled" : "Disabled")
-                .setHeader("Status").setSortable(true);
-        channelGrid.addColumn(ChannelSettings::getDescription).setHeader("Description");
-        channelGrid.addComponentColumn(this::createActionButtons).setHeader("Actions");
+                .setHeader("Status").setSortable(true).setWidth("75px").setFlexGrow(0);
+        channelGrid.addColumn(ChannelSettings::getDescription).setHeader("Description")
+                .setWidth("90px").setFlexGrow(1);
+        channelGrid.addComponentColumn(this::createActionButtons).setHeader("Actions")
+                .setWidth("120px").setFlexGrow(0);
         channelGrid.setEmptyStateText("No channels found");
         channelGrid.setSizeFull();
 

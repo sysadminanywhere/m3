@@ -4,133 +4,171 @@ import com.sysadminanywhere.m3.base.ui.menu.MenuItemInfo;
 import com.sysadminanywhere.m3.base.ui.menu.MenuItemRegistry;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.Unit;
-import com.vaadin.flow.component.applayout.AppLayout;
-import com.vaadin.flow.component.avatar.Avatar;
-import com.vaadin.flow.component.avatar.AvatarVariant;
+import com.vaadin.flow.component.HasElement;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Image;
+import com.vaadin.flow.component.html.NativeButton;
 import com.vaadin.flow.component.html.Span;
-import com.vaadin.flow.component.icon.Icon;
-import com.vaadin.flow.component.icon.SvgIcon;
-import com.vaadin.flow.component.orderedlayout.*;
-import com.vaadin.flow.component.sidenav.SideNav;
-import com.vaadin.flow.component.sidenav.SideNavItem;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.router.AfterNavigationEvent;
+import com.vaadin.flow.router.AfterNavigationObserver;
 import com.vaadin.flow.router.Layout;
+import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.router.RouterLayout;
+import com.vaadin.flow.router.RouterLink;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
+/** The navigation rail and workspace share one frame, matching the reference layout. */
 @Layout
-public final class MainLayout extends AppLayout {
-
+public final class MainLayout extends Div implements RouterLayout, AfterNavigationObserver {
     private final MenuItemRegistry menuItemRegistry;
-    private final Map<MenuSection, SideNavItem> sectionItems = new HashMap<>();
+    private final Div secondaryNavigation = new Div();
+    private final Div viewContainer = new Div();
+    private final H3 pageTitle = new H3();
+    private final Map<MenuSection, NativeButton> sectionButtons = new EnumMap<>(MenuSection.class);
+    private final Map<String, RouterLink> pageLinks = new LinkedHashMap<>();
+    private MenuSection activeSection;
+    private String currentPath = "";
+    private Component currentView;
 
     public MainLayout(MenuItemRegistry menuItemRegistry) {
         this.menuItemRegistry = menuItemRegistry;
-        setPrimarySection(Section.DRAWER);
-        addToDrawer(createApplicationHeader(), createApplicationDrawer(), createApplicationFooter());
-    }
-
-    private Component createApplicationHeader() {
-        // TODO Replace with real application logo and name
-        var appLogo = new Avatar("M³");
-        appLogo.addClassName("app-logo");
-        appLogo.addThemeVariants(AvatarVariant.AURA_FILLED, AvatarVariant.XSMALL);
-
-        // Message Manager Middleware
-        var appName = new Span("M³");
-        appName.addClassName("app-name");
-
-        var header = new HorizontalLayout(appLogo, appName);
-        header.setAlignItems(FlexComponent.Alignment.CENTER);
-        header.setPadding(true);
-        return header;
-    }
-
-    private Component createApplicationDrawer() {
-        var scroller = new Scroller(createSideNav());
-        scroller.addThemeVariants(ScrollerVariant.OVERFLOW_INDICATORS);
-        return scroller;
-    }
-
-    private Component createApplicationFooter() {
-        var footer = new VerticalLayout(new Span("Made with ❤️ with Vaadin"));
-        footer.setAlignItems(FlexComponent.Alignment.CENTER);
-        footer.addClassName("app-footer");
-        return footer;
-    }
-
-    private SideNav createSideNav() {
-        var nav = new SideNav();
-        nav.setMinWidth(200, Unit.PIXELS);
-
-        if (menuItemRegistry == null) {
-            return nav;
-        }
-
-        Map<MenuSection, List<MenuItemInfo>> itemsBySection = menuItemRegistry.getMenuItemsBySection();
-
-        menuItemRegistry.getSections().forEach(section -> {
-            SideNavItem sectionItem = new SideNavItem(section.getTitle());
-            sectionItems.put(section, sectionItem);
-
-            List<MenuItemInfo> items = itemsBySection.getOrDefault(section, List.of());
-
-            // Group items by parent
-            Map<String, List<MenuItemInfo>> itemsByParent = items.stream()
-                    .collect(Collectors.groupingBy(
-                            item -> item.parent() != null && !item.parent().isEmpty() ? item.parent() : "",
-                            Collectors.toList()
-                    ));
-
-            // Map to store parent menu items
-            Map<String, SideNavItem> parentItems = new HashMap<>();
-
-            // First pass: create parent items
-            itemsByParent.keySet().stream()
-                    .filter(parent -> !parent.isEmpty())
-                    .forEach(parentTitle -> {
-                        SideNavItem parentItem = new SideNavItem(parentTitle);
-                        parentItems.put(parentTitle, parentItem);
-                        sectionItem.addItem(parentItem);
-                    });
-
-            // Second pass: add items (both root and children)
-            items.stream()
-                    .sorted(Comparator.comparingInt(MenuItemInfo::order))
-                    .forEach(item -> {
-                        SideNavItem navItem = createSideNavItem(item);
-                        if (item.parent() != null && !item.parent().isEmpty()) {
-                            // Add as child to parent
-                            SideNavItem parent = parentItems.get(item.parent());
-                            if (parent != null) {
-                                parent.addItem(navItem);
-                            } else {
-                                sectionItem.addItem(navItem);
-                            }
-                        } else {
-                            // Add directly to section
-                            sectionItem.addItem(navItem);
-                        }
-                    });
-
-            nav.addItem(sectionItem);
-        });
-
-        return nav;
-    }
-
-    private SideNavItem createSideNavItem(MenuItemInfo menuItem) {
-        if (!menuItem.icon().isEmpty()) {
-            Component icon = null;
-            if (menuItem.icon().contains(".svg")) {
-                icon = new SvgIcon(menuItem.icon());
-            } else {
-                icon = new Icon(menuItem.icon());
+        addClassName("m3-shell");
+        Div rail = new Div();
+        rail.addClassName("primary-navigation");
+        rail.getElement().setAttribute("role", "navigation");
+        rail.getElement().setAttribute("aria-label", "Sections");
+        Image logo = new Image("icons/m3-cube.svg", "M3");
+        logo.addClassName("navigation-logo");
+        rail.add(logo);
+        Div sections = new Div();
+        sections.addClassName("primary-nav-sections");
+        for (MenuSection section : menuItemRegistry.getSections()) {
+            NativeButton button = new NativeButton();
+            button.addClassName("primary-nav-button");
+            button.getElement().setAttribute("aria-label", section.getTitle());
+            String iconName = switch (section) {
+                case MESSAGING -> "globe";
+                case SETTINGS -> "messages";
+                case ADMINISTRATION -> "settings";
+            };
+            button.add(icon(iconName), new Span(section == MenuSection.ADMINISTRATION ? "Admin" : section.getTitle()));
+            if (section == MenuSection.SETTINGS) {
+                Span dot = new Span();
+                dot.addClassName("navigation-status-dot");
+                button.add(dot);
             }
-            return new SideNavItem(menuItem.title(), menuItem.path(), icon);
-        } else {
-            return new SideNavItem(menuItem.title(), menuItem.path());
+            button.addClickListener(event -> showSection(section));
+            sectionButtons.put(section, button);
+            sections.add(button);
         }
+        rail.add(sections);
+        secondaryNavigation.addClassName("secondary-navigation");
+        secondaryNavigation.getElement().setAttribute("role", "navigation");
+        secondaryNavigation.getElement().setAttribute("aria-label", "Pages");
+        pageTitle.addClassName("app-page-title");
+        viewContainer.addClassName("view-container");
+        Div main = new Div(pageTitle, viewContainer);
+        main.addClassName("main-panel");
+        main.getElement().setAttribute("role", "main");
+        Div workspace = new Div(secondaryNavigation, main);
+        workspace.addClassName("workspace-frame");
+        add(rail, workspace);
+        var sectionsList = menuItemRegistry.getSections();
+        if (!sectionsList.isEmpty()) showSection(sectionsList.get(0));
+    }
+
+    @Override
+    public void showRouterLayoutContent(HasElement content) {
+        viewContainer.removeAll();
+        currentView = content instanceof Component component ? component : null;
+        if (content != null) viewContainer.getElement().appendChild(content.getElement());
+    }
+
+    @Override
+    public void afterNavigation(AfterNavigationEvent event) {
+        currentPath = event.getLocation().getPath();
+        MenuItemInfo currentItem = menuItemRegistry.getMenuItems().stream()
+                .filter(item -> item.path().equals(currentPath) || currentPath.startsWith(item.path() + "/"))
+                .findFirst().orElse(null);
+        PageTitle title = currentView == null ? null : currentView.getClass().getAnnotation(PageTitle.class);
+        pageTitle.setText(title != null ? title.value() : currentItem != null ? currentItem.title() : "M3");
+        if (currentItem != null && currentItem.section() != activeSection) showSection(currentItem.section());
+        else if (currentPath.startsWith("channel/")) showSection(MenuSection.SETTINGS);
+        updateCurrentLink();
+    }
+
+    private void showSection(MenuSection section) {
+        activeSection = section;
+        sectionButtons.forEach((itemSection, button) -> {
+            button.setClassName("active", itemSection == section);
+            button.getElement().setAttribute("aria-pressed", String.valueOf(itemSection == section));
+        });
+        secondaryNavigation.removeAll();
+        pageLinks.clear();
+        H3 title = new H3(section.getTitle());
+        title.addClassName("secondary-navigation-title");
+        NativeButton create = new NativeButton();
+        create.addClassName("secondary-navigation-create");
+        create.getElement().setAttribute("aria-label", "Create new item");
+        create.add(icon("plus"));
+        create.addClickListener(event -> triggerPageCreateAction());
+        Div header = new Div(title, create);
+        header.addClassName("secondary-navigation-header");
+        Div nav = new Div();
+        nav.addClassName("section-side-nav");
+        menuItemRegistry.getMenuItems().stream().filter(item -> item.section() == section)
+                .sorted(Comparator.comparingInt(MenuItemInfo::order)).forEach(item -> {
+                    RouterLink link = new RouterLink();
+                    link.setRoute(item.viewClass().asSubclass(Component.class));
+                    link.add(icon(switch (item.title()) {
+                        case "Inbound" -> "inbound";
+                        case "Outbound" -> "outbound";
+                        case "Rules" -> "filter";
+                        case "Channels" -> "link";
+                        case "Workers" -> "cube";
+                        default -> "file";
+                    }), new Span(item.title()));
+                    link.addClassName("section-nav-link");
+                    pageLinks.put(item.path(), link);
+                    nav.add(link);
+                });
+        secondaryNavigation.add(header, nav);
+        updateCurrentLink();
+    }
+
+    private void updateCurrentLink() {
+        pageLinks.forEach((path, link) -> {
+            boolean current = path.equals(currentPath) || currentPath.startsWith(path + "/");
+            link.setClassName("current", current);
+            if (current) link.getElement().setAttribute("aria-current", "page");
+            else link.getElement().removeAttribute("aria-current");
+        });
+    }
+
+    private Image icon(String name) {
+        Image image = new Image("icons/navigation/" + name + ".svg", "");
+        image.addClassName("navigation-icon");
+        image.getElement().setAttribute("aria-hidden", "true");
+        return image;
+    }
+
+    private void triggerPageCreateAction() {
+        Button action = findPrimaryAction(currentView);
+        if (action == null) Notification.show("No create action is available on this page");
+        else action.getElement().callJsFunction("click");
+    }
+
+    private Button findPrimaryAction(Component component) {
+        if (component == null) return null;
+        if (component instanceof Button button && button.getThemeNames().contains("primary")) return button;
+        return component.getChildren().map(this::findPrimaryAction).filter(java.util.Objects::nonNull)
+                .findFirst().orElse(null);
     }
 }

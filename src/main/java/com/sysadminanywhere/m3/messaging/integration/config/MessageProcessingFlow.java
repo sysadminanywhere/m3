@@ -4,19 +4,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.messaging.Message;
+import com.sysadminanywhere.m3.messaging.service.InboundMessageEnqueueService;
 
 import java.io.File;
 import java.nio.file.Files;
 
 @Configuration
+@Profile("!worker")
 public class MessageProcessingFlow {
 
     private static final Logger log = LoggerFactory.getLogger(MessageProcessingFlow.class);
 
     @Bean
-    public IntegrationFlow messageInputToRouterFlow() {
+    public IntegrationFlow messageInputToRouterFlow(InboundMessageEnqueueService enqueueService) {
         return IntegrationFlow.from("messageInputChannel")
                 .log("messageInputChannel.received", m -> "Received from channel: " + m.getHeaders().get("channelName"))
                 .handle((payload, headers) -> {
@@ -48,7 +51,10 @@ public class MessageProcessingFlow {
                     log.info("Payload passed through without transformation");
                     return payload;
                 })
-                .channel("ruleRoutingChannel")
+                .handle((payload, headers) -> {
+                    enqueueService.enqueue(payload, new org.springframework.messaging.MessageHeaders(headers));
+                    return null;
+                })
                 .get();
     }
 
