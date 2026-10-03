@@ -31,6 +31,12 @@ class RuleServiceTest {
     @Mock
     private ChannelSettingsRepository channelSettingsRepository;
 
+    @Mock
+    private RuleWorkerPoolRepository workerPoolRepository;
+
+    @Mock
+    private RuleExecutionJobRepository executionJobRepository;
+
     @InjectMocks
     private RuleService ruleService;
 
@@ -47,6 +53,8 @@ class RuleServiceTest {
     void createRule_WhenSourceChannelExists_ShouldCreateRule() {
         // Given
         when(channelSettingsRepository.findById(1L)).thenReturn(Optional.of(sourceChannel));
+        RuleWorkerPool defaultPool = new RuleWorkerPool("default", 1, 1, 4);
+        when(workerPoolRepository.findByName("default")).thenReturn(Optional.of(defaultPool));
         when(ruleRepository.save(any(Rule.class))).thenAnswer(inv -> {
             Rule r = inv.getArgument(0);
             return r;
@@ -62,6 +70,7 @@ class RuleServiceTest {
         assertThat(result.getSourceChannel()).isEqualTo(sourceChannel);
         assertThat(result.getPriority()).isEqualTo(10);
         assertThat(result.getEnabled()).isTrue();
+        assertThat(result.getWorkerPool()).isSameAs(defaultPool);
         verify(ruleRepository).save(result);
     }
 

@@ -65,7 +65,7 @@ src/main/java/com/sysadminanywhere/m3/
 
 - **Backend**: Spring Boot 4.0.6, Spring Integration 7.0.4
 - **Frontend**: Vaadin 25.1.3 (Java-based web UI)
-- **Database**: PostgreSQL (with Spring Data JPA)
+- **Database**: PostgreSQL, Spring Data JPA and Liquibase migrations
 - **Build**: Maven
 - **Java**: JDK 21
 
@@ -85,13 +85,17 @@ Open **Administration → Workers** to create pools, set target/minimum/maximum 
 `docker compose up --build -d` starts PostgreSQL, the Docker socket proxy, and the Vaadin app. The proxy needs access to the local Docker socket and is kept on the internal Compose network. Worker containers are created by the app and are not exposed on a host port. Each pool consumes its own jobs using PostgreSQL row locks, so replicas in that pool can process concurrently. When the control plane shuts down cleanly, it removes its managed worker containers so `docker compose down` can remove the project network as well.
 
 ### Configuration
+
+Database migrations run automatically in the UI application before Hibernate validates the schema. Worker containers validate the shared schema and do not run migrations. Existing compatible Hibernate databases can be adopted without recreating tables. See [Database migrations](docs/database-migrations.md) for the changelog, upgrade procedure, Maven commands and integration tests.
+
 Create or update `application.properties`:
 
 ```properties
 spring.datasource.url=${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/m3}
 spring.datasource.username=${SPRING_DATASOURCE_USERNAME:postgres}
 spring.datasource.password=${SPRING_DATASOURCE_PASSWORD:password}
-spring.jpa.hibernate.ddl-auto=update
+spring.liquibase.change-log=classpath:db/changelog/db.changelog-master.xml
+spring.jpa.hibernate.ddl-auto=validate
 ```
 
 ### Run in Development Mode
