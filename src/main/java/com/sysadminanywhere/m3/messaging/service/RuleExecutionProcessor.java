@@ -46,7 +46,8 @@ public class RuleExecutionProcessor {
         List<Number> rows = entityManager.createNativeQuery("""
                 select j.job_id from rule_execution_job j
                 join rule_worker_pool p on p.worker_pool_id = j.worker_pool_id
-                where p.name = :pool and j.status = 'PENDING'
+                join message m on m.message_id = j.message_id
+                where p.name = :pool and j.status = 'PENDING' and m.direction = 'INBOUND'
                 order by j.created_at, j.job_id
                 limit 1 for update of j skip locked
                 """)

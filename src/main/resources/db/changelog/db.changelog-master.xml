@@ -30,4 +30,10 @@
     <changeSet id="007-message-receipt-outbox" author="m3">
         <sqlFile path="changes/007-message-receipt-outbox.sql" relativeToChangelogFile="true"/>
     </changeSet>
+    <changeSet id="008-source-delivery-receipts" author="m3">
+        <sqlFile path="changes/008-source-delivery-receipts.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="009-outbound-delivery" author="m3">
+        <sqlFile path="changes/009-outbound-delivery.sql" relativeToChangelogFile="true"/>
+    </changeSet>
 </databaseChangeLog>

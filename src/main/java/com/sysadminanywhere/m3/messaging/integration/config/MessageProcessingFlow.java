@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.integration.dsl.IntegrationFlow;
-import org.springframework.messaging.Message;
+import com.sysadminanywhere.m3.messaging.source.FilePayloads;
 import com.sysadminanywhere.m3.messaging.service.InboundMessageEnqueueService;
 
 import java.io.File;
@@ -30,7 +30,8 @@ public class MessageProcessingFlow {
                     if (payload instanceof File file) {
                         try {
                             log.info("Reading file: {} ({} bytes)", file.getAbsolutePath(), file.length());
-                            byte[] fileBytes = Files.readAllBytes(file.toPath());
+                            byte[] fileBytes;
+                            try (var input = Files.newInputStream(file.toPath())) { fileBytes = FilePayloads.read(input); }
                             String base64Content = java.util.Base64.getEncoder().encodeToString(fileBytes);
                             log.info("File read and encoded to Base64, length: {} chars", base64Content.length());
                             return org.springframework.messaging.support.MessageBuilder

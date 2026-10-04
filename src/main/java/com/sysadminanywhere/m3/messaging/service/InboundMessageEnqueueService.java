@@ -53,6 +53,8 @@ public class InboundMessageEnqueueService {
                     throw new IllegalArgumentException("Metadata keys and values must be strings");
                 if (headers.containsKey(key.toString()))
                     throw new IllegalArgumentException("Metadata cannot override a source header: " + key);
+                if (payload instanceof byte[] && key.equals("encoding"))
+                    throw new IllegalArgumentException("Binary payload encoding is managed by the ingestion service");
                 addMetadata(stored, key.toString(), value.toString());
             });
         }
@@ -63,7 +65,7 @@ public class InboundMessageEnqueueService {
         var rules = ruleRepository.findBySourceChannelNameAndEnabled(source, true);
         int jobs = 0;
         for (Rule rule : rules) {
-            if (!Boolean.TRUE.equals(rule.getEnabled()) || rule.getWorkerPool() == null) continue;
+            if (!Boolean.TRUE.equals(rule.getEnabled()) || rule.getRuleType() != RuleType.INBOUND || rule.getWorkerPool() == null) continue;
             jobRepository.save(new RuleExecutionJob(stored, rule, rule.getWorkerPool()));
             jobs++;
         }

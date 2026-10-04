@@ -3,6 +3,8 @@ package com.sysadminanywhere.m3.messaging.ui;
 import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.ChannelType;
 import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
+import com.sysadminanywhere.m3.messaging.source.SourceHealth;
+import com.sysadminanywhere.m3.messaging.domain.ChannelDirection;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -29,7 +31,7 @@ class ChannelListView extends VerticalLayout {
     final ComboBox<ChannelType> typeFilter;
     final Grid<ChannelSettings> channelGrid;
 
-    ChannelListView(ChannelSettingsService channelSettingsService) {
+    ChannelListView(ChannelSettingsService channelSettingsService, SourceHealth sourceHealth) {
         this.channelSettingsService = channelSettingsService;
 
         typeFilter = new ComboBox<>("Type");
@@ -41,7 +43,7 @@ class ChannelListView extends VerticalLayout {
         addButton.addThemeVariants(ButtonVariant.PRIMARY);
 
         var toolbar = new HorizontalLayout();
-        toolbar.add(typeFilter, addButton);
+        toolbar.add(typeFilter, new Button("Refresh", event -> refreshGrid()), addButton);
         toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();
@@ -64,6 +66,12 @@ class ChannelListView extends VerticalLayout {
                 .setWidth("100px").setFlexGrow(0);
         channelGrid.addColumn(settings -> settings.getEnabled() ? "Enabled" : "Disabled")
                 .setHeader("Status").setSortable(true).setWidth("75px").setFlexGrow(0);
+        channelGrid.addColumn(settings -> {
+            if (settings.getDirection() != ChannelDirection.INBOUND) return "—";
+            if (!Boolean.TRUE.equals(settings.getEnabled())) return "STOPPED";
+            var state = sourceHealth.get(settings.getId());
+            return state.error() == null ? state.status() : state.status() + " (" + state.error() + ")";
+        }).setHeader("Receiver").setWidth("170px").setFlexGrow(0);
         channelGrid.addColumn(ChannelSettings::getDescription).setHeader("Description")
                 .setWidth("90px").setFlexGrow(1);
         channelGrid.addComponentColumn(this::createActionButtons).setHeader("Actions")

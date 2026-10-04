@@ -3,7 +3,7 @@ package com.sysadminanywhere.m3.messaging.service;
 import com.sysadminanywhere.m3.messaging.domain.ChannelDirection;
 import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.ChannelType;
-import com.sysadminanywhere.m3.messaging.integration.config.DirectoryInboundIntegration;
+import com.sysadminanywhere.m3.messaging.source.InboundSourceRegistry;
 import com.sysadminanywhere.m3.messaging.repository.ChannelSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ class ChannelSettingsServiceTest {
     private ChannelSettingsRepository channelSettingsRepository;
 
     @Mock
-    private DirectoryInboundIntegration directoryInboundIntegration;
+    private InboundSourceRegistry sourceRegistry;
 
     @InjectMocks
     private ChannelSettingsService channelSettingsService;
@@ -141,7 +141,7 @@ class ChannelSettingsServiceTest {
         assertThat(result.getEnabled()).isTrue();
         assertThat(result.getCreatedAt()).isNotNull();
         verify(channelSettingsRepository).save(result);
-        verify(directoryInboundIntegration).restartChannel(result);
+        verify(sourceRegistry).restartChannel(result);
     }
 
     @Test
@@ -185,7 +185,7 @@ class ChannelSettingsServiceTest {
         assertThat(result.getDescription()).isEqualTo("Updated description");
         assertThat(result.getEnabled()).isFalse();
         assertThat(result.getUpdatedAt()).isNotNull();
-        verify(directoryInboundIntegration).restartChannel(result);
+        verify(sourceRegistry).restartChannel(result);
     }
 
     @Test
@@ -211,7 +211,7 @@ class ChannelSettingsServiceTest {
         channelSettingsService.deleteChannel(1L);
 
         // Then
-        verify(directoryInboundIntegration).stopChannel(1L);
+        verify(sourceRegistry).stopChannel(1L);
         verify(channelSettingsRepository).deleteById(1L);
     }
 
@@ -227,7 +227,7 @@ class ChannelSettingsServiceTest {
 
         // Then
         verify(channel).setEnabled(false);
-        verify(directoryInboundIntegration).restartChannel(any());
+        verify(sourceRegistry).restartChannel(any());
     }
 
     @Test

@@ -3,7 +3,7 @@ package com.sysadminanywhere.m3.messaging.service;
 import com.sysadminanywhere.m3.messaging.domain.ChannelDirection;
 import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.ChannelType;
-import com.sysadminanywhere.m3.messaging.integration.config.DirectoryInboundIntegration;
+import com.sysadminanywhere.m3.messaging.source.InboundSourceRegistry;
 import com.sysadminanywhere.m3.messaging.repository.ChannelSettingsRepository;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -17,12 +17,12 @@ import java.util.Optional;
 public class ChannelSettingsService {
 
     private final ChannelSettingsRepository channelSettingsRepository;
-    private final DirectoryInboundIntegration directoryInboundIntegration;
+    private final InboundSourceRegistry sourceRegistry;
 
     public ChannelSettingsService(ChannelSettingsRepository channelSettingsRepository,
-                                  @Lazy DirectoryInboundIntegration directoryInboundIntegration) {
+                                  @Lazy InboundSourceRegistry sourceRegistry) {
         this.channelSettingsRepository = channelSettingsRepository;
-        this.directoryInboundIntegration = directoryInboundIntegration;
+        this.sourceRegistry = sourceRegistry;
     }
 
     @Transactional(readOnly = true)
@@ -52,12 +52,14 @@ public class ChannelSettingsService {
 
     @Transactional(readOnly = true)
     public List<ChannelSettings> findEnabledInboundChannels() {
-        return channelSettingsRepository.findByChannelTypeAndDirectionAndEnabledTrue(null, ChannelDirection.INBOUND);
+        return channelSettingsRepository.findByDirection(ChannelDirection.INBOUND).stream()
+                .filter(channel -> Boolean.TRUE.equals(channel.getEnabled())).toList();
     }
 
     @Transactional(readOnly = true)
     public List<ChannelSettings> findEnabledOutboundChannels() {
-        return channelSettingsRepository.findByChannelTypeAndDirectionAndEnabledTrue(null, ChannelDirection.OUTBOUND);
+        return channelSettingsRepository.findByDirection(ChannelDirection.OUTBOUND).stream()
+                .filter(channel -> Boolean.TRUE.equals(channel.getEnabled())).toList();
     }
 
     @Transactional(readOnly = true)
@@ -73,18 +75,26 @@ public class ChannelSettingsService {
     @Transactional
     public ChannelSettings createChannel(String name, ChannelType channelType, ChannelDirection direction,
                                           String description, Map<String, String> properties) {
+        return createChannel(name, channelType, direction, description, properties, true);
+    }
+
+    @Transactional
+    public ChannelSettings createChannel(String name, ChannelType channelType, ChannelDirection direction,
+                                          String description, Map<String, String> properties, boolean enabled) {
         if (channelSettingsRepository.existsByName(name)) {
             throw new IllegalArgumentException("Channel with name '" + name + "' already exists");
         }
 
         var channel = new ChannelSettings(name, channelType, direction);
+        channel.setEnabled(enabled);
         channel.setDescription(description);
         if (properties != null) {
             channel.setProperties(properties);
         }
 
+        sourceRegistry.validate(channel);
         var savedChannel = channelSettingsRepository.save(channel);
-        directoryInboundIntegration.restartChannel(savedChannel);
+        sourceRegistry.restartChannel(savedChannel);
         return savedChannel;
     }
 
@@ -107,14 +117,15 @@ public class ChannelSettingsService {
             channel.setProperties(properties);
         }
 
+        sourceRegistry.validate(channel);
         var savedChannel = channelSettingsRepository.save(channel);
-        directoryInboundIntegration.restartChannel(savedChannel);
+        sourceRegistry.restartChannel(savedChannel);
         return savedChannel;
     }
 
     @Transactional
     public void deleteChannel(Long channelId) {
-        directoryInboundIntegration.stopChannel(channelId);
+        sourceRegistry.stopChannel(channelId);
         channelSettingsRepository.deleteById(channelId);
     }
 
@@ -123,8 +134,9 @@ public class ChannelSettingsService {
         var channel = channelSettingsRepository.findById(channelId)
                 .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + channelId));
         channel.setEnabled(!channel.getEnabled());
+        sourceRegistry.validate(channel);
         var savedChannel = channelSettingsRepository.save(channel);
-        directoryInboundIntegration.restartChannel(savedChannel);
+        sourceRegistry.restartChannel(savedChannel);
     }
 
     @Transactional(readOnly = true)
@@ -160,7 +172,7 @@ public class ChannelSettingsService {
                     "groupId", "m3-consumer",
                     "autoOffsetReset", "earliest",
                     "keyDeserializer", "org.apache.kafka.common.serialization.StringDeserializer",
-                    "valueDeserializer", "org.apache.kafka.common.serialization.StringDeserializer"
+                    "valueDeserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer"
             );
             case DIRECTORY -> Map.of(
                     "directoryPath", "",

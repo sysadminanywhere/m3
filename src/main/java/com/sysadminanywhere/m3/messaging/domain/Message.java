@@ -12,8 +12,8 @@ import java.util.Set;
 public class Message {
 
     public static final int PAYLOAD_MAX_LENGTH = 1_000_000;
-    public static final int SOURCE_SYSTEM_MAX_LENGTH = 100;
-    public static final int TARGET_SYSTEM_MAX_LENGTH = 100;
+    public static final int SOURCE_SYSTEM_MAX_LENGTH = 200;
+    public static final int TARGET_SYSTEM_MAX_LENGTH = 200;
     public static final int PAYLOAD_TYPE_MAX_LENGTH = 50;
 
     @Id

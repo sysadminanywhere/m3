@@ -8,6 +8,10 @@ M3 is a lightweight, extensible messaging middleware platform built with Spring 
 
 Messages and metadata are saved before receipt notifications are published to RabbitMQ. A transactional outbox retries failures. External services fetch data using `GET /api/v1/messages/{id}`; source adapters submit through `POST /api/v1/channels/{channelId}/messages`. See [the ingestion contract and API](docs/message-ingestion.md).
 
+### Durable outgoing delivery
+
+Submit a payload and metadata with `ruleId` to `POST /api/v1/messages/outbound`. M3 stores the message and delivery job atomically, then workers apply the selected rule and deliver to DIRECTORY, FTP, SFTP, Kafka or RabbitMQ. Delivery status, retries and submission deduplication are available through the API. See [outgoing messages](docs/outbound-messages.md).
+
 ### Channel Management
 - **Multi-Protocol Support**: Configure channels for FTP, SFTP, Kafka, RabbitMQ, and local directories
 - **Inbound/Outbound Channels**: Support for both incoming and outgoing message flows

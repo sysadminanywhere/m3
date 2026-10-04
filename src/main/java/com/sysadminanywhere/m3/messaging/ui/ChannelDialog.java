@@ -144,6 +144,8 @@ public class ChannelDialog extends Dialog {
     }
 
     private void clearForm() {
+        typeField.setEnabled(true);
+        directionField.setEnabled(true);
         nameField.clear();
         typeField.clear();
         directionField.setValue(ChannelDirection.INBOUND);
@@ -160,6 +162,8 @@ public class ChannelDialog extends Dialog {
         enabledField.setValue(channel.getEnabled());
 
         loadPropertyFields(channel.getProperties());
+        typeField.setEnabled(false);
+        directionField.setEnabled(false);
     }
 
     private void onTypeChanged(ChannelType type) {
@@ -210,7 +214,9 @@ public class ChannelDialog extends Dialog {
         var passiveModeField = createCheckbox("passiveMode", "Passive Mode", Boolean.parseBoolean(properties.getOrDefault("passiveMode", "true")));
         var deleteRemoteField = createCheckbox("deleteRemoteFiles", "Delete Remote Files", Boolean.parseBoolean(properties.getOrDefault("deleteRemoteFiles", "false")));
 
-        advancedTabContent.add(passiveModeField, deleteRemoteField);
+        advancedTabContent.add(passiveModeField, deleteRemoteField,
+                createNumberField("pollingInterval", "Polling Interval (ms)", Double.parseDouble(properties.getOrDefault("pollingInterval", "5000"))),
+                createNumberField("minFileAgeMs", "Minimum File Age (ms)", Double.parseDouble(properties.getOrDefault("minFileAgeMs", "1000"))));
     }
 
     private void setupSftpFields(Map<String, String> properties) {
@@ -226,7 +232,12 @@ public class ChannelDialog extends Dialog {
 
         var deleteRemoteField = createCheckbox("deleteRemoteFiles", "Delete Remote Files", Boolean.parseBoolean(properties.getOrDefault("deleteRemoteFiles", "false")));
 
-        advancedTabContent.add(deleteRemoteField);
+        advancedTabContent.add(deleteRemoteField,
+                createTextField("knownHostsPath", "Known Hosts File", properties.getOrDefault("knownHostsPath", "")),
+                createCheckbox("allowUnknownKeys", "Allow Unknown Host Keys", Boolean.parseBoolean(properties.getOrDefault("allowUnknownKeys", "false"))),
+                createPasswordField("privateKeyPassphrase", "Private Key Passphrase", properties.getOrDefault("privateKeyPassphrase", "")),
+                createNumberField("pollingInterval", "Polling Interval (ms)", Double.parseDouble(properties.getOrDefault("pollingInterval", "5000"))),
+                createNumberField("minFileAgeMs", "Minimum File Age (ms)", Double.parseDouble(properties.getOrDefault("minFileAgeMs", "1000"))));
     }
 
     private void setupKafkaFields(Map<String, String> properties) {
@@ -238,9 +249,14 @@ public class ChannelDialog extends Dialog {
 
         var autoOffsetField = createTextField("autoOffsetReset", "Auto Offset Reset", properties.getOrDefault("autoOffsetReset", "earliest"));
         var keyDeserializerField = createTextField("keyDeserializer", "Key Deserializer", properties.getOrDefault("keyDeserializer", "org.apache.kafka.common.serialization.StringDeserializer"));
-        var valueDeserializerField = createTextField("valueDeserializer", "Value Deserializer", properties.getOrDefault("valueDeserializer", "org.apache.kafka.common.serialization.StringDeserializer"));
+        var valueDeserializerField = createTextField("valueDeserializer", "Value Deserializer", properties.getOrDefault("valueDeserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer"));
 
-        advancedTabContent.add(autoOffsetField, keyDeserializerField, valueDeserializerField);
+        advancedTabContent.add(autoOffsetField, keyDeserializerField, valueDeserializerField,
+                createTextField("kafka.security.protocol", "Security Protocol", properties.getOrDefault("kafka.security.protocol", "PLAINTEXT")),
+                createTextField("kafka.sasl.mechanism", "SASL Mechanism", properties.getOrDefault("kafka.sasl.mechanism", "")),
+                createPasswordField("kafka.sasl.jaas.config", "SASL JAAS Configuration", properties.getOrDefault("kafka.sasl.jaas.config", "")),
+                createTextField("kafka.ssl.truststore.location", "SSL Truststore Path", properties.getOrDefault("kafka.ssl.truststore.location", "")),
+                createPasswordField("kafka.ssl.truststore.password", "SSL Truststore Password", properties.getOrDefault("kafka.ssl.truststore.password", "")));
     }
 
     private void setupDirectoryFields(Map<String, String> properties) {
@@ -253,7 +269,8 @@ public class ChannelDialog extends Dialog {
         var deleteAfterProcessingField = createCheckbox("deleteAfterProcessing", "Delete After Processing", Boolean.parseBoolean(properties.getOrDefault("deleteAfterProcessing", "false")));
         var recursiveField = createCheckbox("recursive", "Recursive Scan", Boolean.parseBoolean(properties.getOrDefault("recursive", "false")));
 
-        advancedTabContent.add(pollingIntervalField, deleteAfterProcessingField, recursiveField);
+        advancedTabContent.add(pollingIntervalField, deleteAfterProcessingField, recursiveField,
+                createNumberField("minFileAgeMs", "Minimum File Age (ms)", Double.parseDouble(properties.getOrDefault("minFileAgeMs", "1000"))));
     }
 
     private void setupRabbitMqFields(Map<String, String> properties) {
@@ -269,7 +286,8 @@ public class ChannelDialog extends Dialog {
         var exchangeField = createTextField("exchange", "Exchange Name", properties.getOrDefault("exchange", ""));
         var routingKeyField = createTextField("routingKey", "Routing Key", properties.getOrDefault("routingKey", ""));
 
-        advancedTabContent.add(queueField, exchangeField, routingKeyField);
+        advancedTabContent.add(queueField, exchangeField, routingKeyField,
+                createCheckbox("declareQueue", "Declare Durable Queue and Binding", Boolean.parseBoolean(properties.getOrDefault("declareQueue", "false"))));
     }
 
     private TextField createTextField(String key, String label, String value) {
@@ -316,7 +334,7 @@ public class ChannelDialog extends Dialog {
     }
 
     private Map<String, String> collectProperties() {
-        Map<String, String> properties = new HashMap<>();
+        Map<String, String> properties = new HashMap<>(currentChannel == null ? Map.of() : currentChannel.getProperties());
 
         textFields.forEach((key, field) -> properties.put(key, field.getValue()));
         passwordFields.forEach((key, field) -> properties.put(key, field.getValue()));
@@ -391,7 +409,7 @@ public class ChannelDialog extends Dialog {
                         typeField.getValue(),
                         directionField.getValue(),
                         descriptionField.getValue().isBlank() ? null : descriptionField.getValue(),
-                        properties
+                        properties, enabledField.getValue()
                 );
                 Notification.show("Channel created", 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);

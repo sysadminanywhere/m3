@@ -2,6 +2,7 @@ package com.sysadminanywhere.m3.messaging.domain;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "rule_execution_job", indexes = {
@@ -48,6 +49,15 @@ public class RuleExecutionJob {
     @Column(name = "claimed_at")
     private Instant claimedAt;
 
+    @Column(name = "attempts", nullable = false)
+    private int attempts;
+
+    @Column(name = "next_attempt_at", nullable = false)
+    private Instant nextAttemptAt = Instant.now();
+
+    @Column(name = "claim_token")
+    private UUID claimToken;
+
     protected RuleExecutionJob() {}
 
     public RuleExecutionJob(Message message, Rule rule, RuleWorkerPool workerPool) {
@@ -64,17 +74,25 @@ public class RuleExecutionJob {
     public String getWorkerId() { return workerId; }
     public String getErrorMessage() { return errorMessage; }
     public String getResult() { return result; }
+    public Long getMessageId() { return message.getId(); }
+    public int getAttempts() { return attempts; }
+    public Instant getNextAttemptAt() { return nextAttemptAt; }
+    public UUID getClaimToken() { return claimToken; }
 
     public void claim(String workerId) {
         this.status = RuleJobStatus.PROCESSING;
         this.workerId = workerId;
         this.claimedAt = Instant.now();
+        this.claimToken = UUID.randomUUID();
+        this.attempts++;
     }
 
     public void complete() {
         this.status = RuleJobStatus.COMPLETED;
         this.completedAt = Instant.now();
         this.claimedAt = null;
+        this.claimToken = null;
+        this.errorMessage = null;
     }
 
     public void setResult(String result) { this.result = result; }
@@ -84,5 +102,21 @@ public class RuleExecutionJob {
         this.errorMessage = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
         this.completedAt = Instant.now();
         this.claimedAt = null;
+        this.claimToken = null;
+    }
+
+    public void retry(Throwable error, long delaySeconds) {
+        this.status = RuleJobStatus.PENDING;
+        this.errorMessage = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+        this.nextAttemptAt = Instant.now().plusSeconds(delaySeconds);
+        this.claimedAt = null;
+        this.claimToken = null;
+        this.workerId = null;
+        this.completedAt = null;
+    }
+
+    public void retryNow() {
+        retry(new IllegalStateException("Retry requested"), 0);
+        this.attempts = 0;
     }
 }

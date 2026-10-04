@@ -117,7 +117,7 @@ public class RuleEngine {
 
     public String determineTargetChannel(Message<?> springMessage, List<Rule> applicableRules) {
         for (Rule rule : applicableRules) {
-            for (RuleAction action : rule.getActions()) {
+            for (RuleAction action : orderedActions(rule)) {
                 if (action.getActionType() == ActionType.ROUTE && action.getTargetChannel() != null) {
                     return action.getTargetChannel();
                 }
@@ -131,7 +131,7 @@ public class RuleEngine {
         Map<String, Object> headers = new HashMap<>(springMessage.getHeaders());
 
         for (Rule rule : applicableRules) {
-            for (RuleAction action : rule.getActions()) {
+            for (RuleAction action : orderedActions(rule)) {
                 if (action.getActionType() == ActionType.TRANSFORM && action.getTransformationScript() != null) {
                     payload = applyTransformation(payload, action.getTransformationScript());
                 } else if (action.getActionType() == ActionType.ENRICH) {
@@ -156,12 +156,17 @@ public class RuleEngine {
 
     public boolean shouldFilter(Message<?> springMessage, List<Rule> applicableRules) {
         for (Rule rule : applicableRules) {
-            for (RuleAction action : rule.getActions()) {
+            for (RuleAction action : orderedActions(rule)) {
                 if (action.getActionType() == ActionType.FILTER && action.getFilterResult() != null) {
                     return !action.getFilterResult();
                 }
             }
         }
         return false;
+    }
+
+    private static List<RuleAction> orderedActions(Rule rule) {
+        return rule.getActions().stream().sorted(Comparator.comparing(RuleAction::getPriority)
+                .thenComparing(RuleAction::getId, Comparator.nullsLast(Comparator.naturalOrder()))).toList();
     }
 }

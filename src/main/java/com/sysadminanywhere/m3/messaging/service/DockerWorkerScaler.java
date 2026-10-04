@@ -22,6 +22,8 @@ public class DockerWorkerScaler {
     private final String apiUrl;
     private final String image;
     private final String network;
+    private final String filesVolume;
+    private final int outboundMaxAttempts;
     private final String datasourceUrl;
     private final String datasourceUsername;
     private final String datasourcePassword;
@@ -31,6 +33,8 @@ public class DockerWorkerScaler {
     public DockerWorkerScaler(@Value("${m3.docker.api-url:}") String apiUrl,
                               @Value("${m3.worker.image:m3:local}") String image,
                               @Value("${m3.worker.network:}") String network,
+                              @Value("${m3.worker.files-volume:}") String filesVolume,
+                              @Value("${m3.outbound.max-attempts:20}") int outboundMaxAttempts,
                               @Value("${spring.datasource.url}") String datasourceUrl,
                               @Value("${spring.datasource.username}") String datasourceUsername,
                               @Value("${spring.datasource.password}") String datasourcePassword,
@@ -38,6 +42,8 @@ public class DockerWorkerScaler {
         this.apiUrl = apiUrl == null ? "" : apiUrl.replaceAll("/+$", "");
         this.image = image;
         this.network = network;
+        this.filesVolume = filesVolume;
+        this.outboundMaxAttempts = outboundMaxAttempts;
         this.datasourceUrl = datasourceUrl;
         this.datasourceUsername = datasourceUsername;
         this.datasourcePassword = datasourcePassword;
@@ -140,15 +146,21 @@ public class DockerWorkerScaler {
                 "SPRING_JPA_HIBERNATE_DDL_AUTO=validate",
                 "SPRING_LIQUIBASE_ENABLED=false",
                 "SPRING_JPA_SHOW_SQL=false",
+                "M3_OUTBOUND_MAX_ATTEMPTS=" + outboundMaxAttempts,
                 "M3_WORKER_POOL=" + pool.getName(),
                 "M3_WORKER_INDEX=" + index
         );
+        Map<String, Object> hostConfig = new HashMap<>();
+        hostConfig.put("NetworkMode", network);
+        hostConfig.put("RestartPolicy", Map.of("Name", "unless-stopped"));
+        if (!filesVolume.isBlank()) hostConfig.put("Mounts", List.of(
+                Map.of("Type", "volume", "Source", filesVolume, "Target", "/data")));
         Map<String, Object> body = Map.of(
                 "Image", image,
                 "Cmd", List.of("--spring.profiles.active=worker"),
                 "Env", env,
                 "Labels", Map.of("m3.worker.pool", pool.getName(), "m3.worker.managed", "true"),
-                "HostConfig", Map.of("NetworkMode", network, "RestartPolicy", Map.of("Name", "unless-stopped"))
+                "HostConfig", hostConfig
         );
         String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
         JsonNode created = mapper.readTree(request("POST", "/containers/create?name=" + encodedName,

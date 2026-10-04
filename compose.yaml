@@ -74,12 +74,17 @@ services:
       M3_DOCKER_API_URL: http://docker-api:2375
       M3_WORKER_IMAGE: m3:local
       M3_WORKER_NETWORK: ${COMPOSE_PROJECT_NAME:-m3}_default
+      M3_WORKER_FILES_VOLUME: ${COMPOSE_PROJECT_NAME:-m3}_message_files
+      M3_OUTBOUND_MAX_ATTEMPTS: ${M3_OUTBOUND_MAX_ATTEMPTS:-20}
       M3_BROKER_RABBIT_HOST: rabbitmq
       M3_BROKER_RABBIT_USERNAME: ${RABBITMQ_USER:-m3}
       M3_BROKER_RABBIT_PASSWORD: ${RABBITMQ_PASSWORD:-m3}
     ports:
       - "${M3_PORT:-8080}:8080"
+    volumes:
+      - message_files:/data
 
 volumes:
   postgres_data:
   rabbitmq_data:
+  message_files:
