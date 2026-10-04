@@ -22,7 +22,11 @@ public class WorkerPoolReconciler implements ApplicationRunner {
     public WorkerPoolReconciler(WorkerPoolCapacityService capacityService) { this.capacityService = capacityService; }
 
     @Override
-    public void run(ApplicationArguments args) { reconcile(); }
+    public void run(ApplicationArguments args) {
+        if (!capacityService.isConfigured())
+            log.warn("Docker worker controller is not configured. The UI does not execute rules. Start a separate worker with the worker profile and the rule's pool, or configure Docker Compose.");
+        reconcile();
+    }
 
     @Scheduled(fixedDelayString = "${m3.worker.reconcile-delay-ms:30000}", initialDelayString = "${m3.worker.reconcile-delay-ms:30000}")
     public void reconcile() {

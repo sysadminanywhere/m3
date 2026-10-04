@@ -53,6 +53,8 @@ public class SourceHealth {
         var values = workers(id);
         return values.stream().map(WorkerState::state)
                 .filter(state -> !"RUNNING".equals(state.status()) && !"STALE".equals(state.status())).findFirst()
-                .orElseGet(() -> values.isEmpty() ? new State("STOPPED", null, null) : values.stream().map(WorkerState::state).filter(state -> "RUNNING".equals(state.status())).findFirst().orElse(values.getFirst().state()));
+                .orElseGet(() -> values.isEmpty() ? new State("NO_WORKER", null,
+                        "No receiver heartbeat. Start a worker for this rule's pool; the UI alone does not load files. Check Administration > Workers.")
+                        : values.stream().map(WorkerState::state).filter(state -> "RUNNING".equals(state.status())).findFirst().orElse(values.getFirst().state()));
     }
 }

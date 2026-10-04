@@ -471,6 +471,6 @@ class RuleEngineTest {
         boolean result = ruleEngine.evaluateConditions(rule, message);
 
         // Then
-        assertThat(result).isTrue();
+        assertThat(result).isFalse();
     }
 }

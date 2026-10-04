@@ -59,12 +59,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
                 case ADMINISTRATION -> "settings";
             };
             button.add(icon(iconName), new Span(section == MenuSection.ADMINISTRATION ? "Admin" : section.getTitle()));
-            if (section == MenuSection.SETTINGS) {
-                Span dot = new Span();
-                dot.addClassName("navigation-status-dot");
-                button.add(dot);
-            }
-            button.addClickListener(event -> showSection(section));
+            button.addClickListener(event -> navigateToSection(section));
             sectionButtons.put(section, button);
             sections.add(button);
         }
@@ -102,6 +97,14 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         if (currentItem != null && currentItem.section() != activeSection) showSection(currentItem.section());
         else if (currentPath.startsWith("channel/")) showSection(MenuSection.SETTINGS);
         updateCurrentLink();
+    }
+
+    private void navigateToSection(MenuSection section) {
+        showSection(section);
+        menuItemRegistry.getMenuItems().stream()
+                .filter(item -> item.section() == section)
+                .min(Comparator.comparingInt(MenuItemInfo::order))
+                .ifPresent(item -> getUI().ifPresent(ui -> ui.navigate(item.viewClass().asSubclass(Component.class))));
     }
 
     private void showSection(MenuSection section) {

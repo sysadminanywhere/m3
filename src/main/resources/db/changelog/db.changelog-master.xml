@@ -60,4 +60,7 @@
     <changeSet id="017-endpoint-only-settings" author="m3">
         <sqlFile path="changes/017-endpoint-only-settings.sql" relativeToChangelogFile="true"/>
     </changeSet>
+    <changeSet id="018-inbound-message-target" author="m3">
+        <sqlFile path="changes/018-inbound-message-target.sql" relativeToChangelogFile="true"/>
+    </changeSet>
 </databaseChangeLog>

@@ -152,7 +152,7 @@ public class RuleExecutionProcessor {
             outbound.setPayloadType(changed ? PayloadCodec.outputType(stored.getPayloadType(),output) : stored.getPayloadType());
             outbound.addMetadata("payloadType",outbound.getPayloadType());
             outbound.setSourceSystem(stored.getSourceSystem());
-            outbound.setTargetSystem(target);
+            outbound.setTargetSystem(destination.getName());
             var metadata = new TreeMap<String, String>();
             outbound.getMetadata().forEach(value -> metadata.put(value.getKey(), value.getValue()));
             metadata.remove("encoding");
@@ -164,6 +164,7 @@ public class RuleExecutionProcessor {
             var deliveryJob = new RuleExecutionJob(outbound, routingRule, routingRule.getWorkerPool());
             deliveryJob.setResult(serializedPlan);
             jobs.save(deliveryJob);
+            stored.setTargetSystem(destination.getName());
         }
         setFinalStatus(stored, MessageStatus.PROCESSED);
     }

@@ -12,6 +12,8 @@ public class DirectoryOutboundTransport implements OutboundTransport {
     @Override public void send(ChannelSettings channel, long id, PreparedOutboundDelivery delivery) throws IOException {
         String directory = channel.getProperties().get("directoryPath");
         if (directory == null || directory.isBlank()) throw new IllegalArgumentException("directoryPath is required");
+        if (java.io.File.separatorChar != '\\' && directory.matches("(?i)^[a-z]:[\\\\/].*"))
+            throw new IllegalArgumentException("Windows destination path is unavailable in a Linux worker; mount the directory and use its container path");
         Path root = Path.of(directory).toAbsolutePath().normalize();
         Path target = root.resolve(OutboundChannelSender.fileName(id, delivery)).normalize();
         if (!target.getParent().equals(root)) throw new IllegalArgumentException("Output file must stay in the configured directory");

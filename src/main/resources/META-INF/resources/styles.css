@@ -101,16 +101,6 @@ body {
     outline-offset: 2px;
 }
 
-.navigation-status-dot {
-    position: absolute;
-    top: 4px;
-    right: 6px;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #2363d7;
-}
-
 .workspace-frame {
     display: grid;
     grid-template-columns: 225px minmax(0, 1fr);

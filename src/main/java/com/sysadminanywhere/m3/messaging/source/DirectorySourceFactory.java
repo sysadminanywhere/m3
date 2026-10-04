@@ -24,8 +24,11 @@ public class DirectorySourceFactory implements InboundSourceFactory {
         FilePayloads.matches(source.value("filePattern", "*"), "example");
     }
     @Override public AutoCloseable start(InboundSourceSpec source) throws IOException {
+        if (java.io.File.separatorChar != '\\' && source.required("directoryPath").matches("(?i)^[a-z]:[\\\\/].*"))
+            throw new IllegalArgumentException("Windows source path is unavailable in a Linux worker; mount the directory and use its container path");
         Path root = Path.of(source.required("directoryPath")).toAbsolutePath().normalize();
-        Files.createDirectories(root);
+        if (!Files.isDirectory(root))
+            throw new IllegalArgumentException("Source directory does not exist in the worker filesystem: " + root);
         return polls.schedule(source, () -> poll(source, root));
     }
     void poll(InboundSourceSpec source, Path root) throws Exception {

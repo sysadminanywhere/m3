@@ -42,6 +42,7 @@ class MessageServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(messageService, "entityManager", entityManager);
         testMessage = new Message(MessageDirection.INBOUND, "{\"data\": \"test\"}", "application/json");
     }
 

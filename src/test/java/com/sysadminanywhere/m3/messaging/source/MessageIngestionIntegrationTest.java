@@ -293,7 +293,7 @@ class MessageIngestionIntegrationTest {
         }
         waitForStorageFailure(source);
         jdbc().execute("DROP TRIGGER reject_test_message ON message");
-        receiptAndApi(source.getName(), binary(), "kafkaKey", "order-1");
+        receiptAndApi(source.getName(), binary(), "kafkaKey", Base64.getEncoder().encodeToString("order-1".getBytes(StandardCharsets.UTF_8)));
         disableLoading(source); disableLoading(source);
         await().during(Duration.ofSeconds(1)).atMost(Duration.ofSeconds(10))
                 .untilAsserted(() -> assertThat(messageCount(source.getName())).isEqualTo(1));
@@ -440,31 +440,34 @@ class MessageIngestionIntegrationTest {
 
     @Test @Order(10)
     void outboundRestartsWorkerAndRetriesBrokerFailureUsingPersistedPlan() throws Exception {
-        String queue = "outgoing-retry-" + UUID.randomUUID();
-        var target = channels().createChannel("retry-output", ChannelType.RABBITMQ, ChannelDirection.OUTBOUND, null,
-                Map.of("host", RABBIT.getHost(), "port", RABBIT.getMappedPort(5672).toString(), "username", "m3", "password", "m3", "queue", queue, "declareQueue", "true"));
-        long rule = outboundRule(target);
-        var response = submit(rule, "durable outbound", "text/plain", Map.of("traceId", "retry-42"), "retry-outgoing");
-        assertThat(response.statusCode()).as(response.body()).isEqualTo(202);
-        long id = json().readTree(response.body()).path("id").asLong();
-        assertThat(RABBIT.execInContainer("rabbitmqctl", "stop_app").getExitCode()).isZero();
+        receiverWorker.close(); receiverWorker = null;
         try {
+            String queue = "outgoing-retry-" + UUID.randomUUID();
+            var target = channels().createChannel("retry-output", ChannelType.RABBITMQ, ChannelDirection.OUTBOUND, null,
+                    Map.of("host", RABBIT.getHost(), "port", RABBIT.getMappedPort(5672).toString(), "username", "m3", "password", "m3", "queue", queue, "declareQueue", "true"));
+            long rule = outboundRule(target);
+            var response = submit(rule, "durable outbound", "text/plain", Map.of("traceId", "retry-42"), "retry-outgoing");
+            assertThat(response.statusCode()).as(response.body()).isEqualTo(202);
+            long id = json().readTree(response.body()).path("id").asLong();
+            assertThat(RABBIT.execInContainer("rabbitmqctl", "stop_app").getExitCode()).isZero();
+            try {
+                try (var worker = worker("default")) {
+                    // Broker shutdown can also fail RabbitMQ's background confirm cleanup.
+                    // Verify the durable job state rather than unrelated client cleanup threads.
+                    await().dontCatchUncaughtExceptions().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+                        assertThat(jdbc().queryForObject("SELECT attempts FROM rule_execution_job WHERE message_id=?", Integer.class, id)).isPositive();
+                        assertThat(jdbc().queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?", String.class, id)).isEqualTo("PENDING");
+                        assertThat(jdbc().queryForObject("SELECT result FROM rule_execution_job WHERE message_id=?", String.class, id)).contains("channelId");
+                    });
+                }
+            } finally { RABBIT.execInContainer("rabbitmqctl", "start_app"); }
             try (var worker = worker("default")) {
-                // Broker shutdown can also fail RabbitMQ's background confirm cleanup.
-                // Verify the durable job state rather than unrelated client cleanup threads.
-                await().dontCatchUncaughtExceptions().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
-                    assertThat(jdbc().queryForObject("SELECT attempts FROM rule_execution_job WHERE message_id=?", Integer.class, id)).isPositive();
-                    assertThat(jdbc().queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?", String.class, id)).isEqualTo("PENDING");
-                    assertThat(jdbc().queryForObject("SELECT result FROM rule_execution_job WHERE message_id=?", String.class, id)).contains("channelId");
-                });
+                await().dontCatchUncaughtExceptions().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, id)).isEqualTo("SENT"));
             }
-        } finally { RABBIT.execInContainer("rabbitmqctl", "start_app"); }
-        try (var worker = worker("default")) {
-            await().dontCatchUncaughtExceptions().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, id)).isEqualTo("SENT"));
-        }
-        var outgoing = rabbit().receive(queue, 10000);
-        assertThat(new String(outgoing.getBody(), StandardCharsets.UTF_8)).isEqualTo("durable outbound");
-        assertThat(outgoing.getMessageProperties().getHeaders()).containsEntry("traceId", "retry-42");
+            var outgoing = rabbit().receive(queue, 10000);
+            assertThat(new String(outgoing.getBody(), StandardCharsets.UTF_8)).isEqualTo("durable outbound");
+            assertThat(outgoing.getMessageProperties().getHeaders()).containsEntry("traceId", "retry-42");
+        } finally { receiverWorker = worker("default"); }
     }
 
     @Test @Order(11)
@@ -492,5 +495,64 @@ class MessageIngestionIntegrationTest {
             await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, id)).isEqualTo("SENT"));
         }
         assertThat(Files.readString(directory.resolve("message-" + id + "-payload.dat"))).isEqualTo("blocked");
+    }
+
+    @Test @Order(12)
+    void directoryLoadingRuleRoutesFileAndRetainsOriginalBytes() throws Exception {
+        Path inputDirectory = Files.createDirectories(temp.resolve("route-in"));
+        Path outputDirectory = temp.resolve("route-out");
+        var target = channels().createChannel("directory-route-output", ChannelType.DIRECTORY, ChannelDirection.OUTBOUND,
+                null, Map.of("directoryPath", outputDirectory.toString()));
+        var source = source("directory-route-input", ChannelType.DIRECTORY, Map.of("directoryPath", inputDirectory.toString()));
+        var service = app.getBean(RuleService.class);
+        var rule = service.findById(loadingRuleId(source));
+        service.saveConfiguration(rule.getId(), rule.getName(), null, RuleType.INBOUND, source.getId(), 0, true,
+                rule.getWorkerPool().getId(), target.getId(), Map.of("pollingInterval", "100", "minFileAgeMs", "1",
+                        "deleteAfterProcessing", "true", "filePattern", "*.bin"));
+        receiverWorker.getBean(InboundSourceRegistry.class).reconcile();
+        Path input = file(inputDirectory);
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+            assertThat(jdbc().queryForObject("SELECT count(*) FROM message WHERE source_system=? AND direction='OUTBOUND' AND status='SENT'",
+                    Long.class, source.getName())).isEqualTo(1);
+        });
+        long original = jdbc().queryForObject("SELECT message_id FROM message WHERE source_system=? AND direction='INBOUND'", Long.class, source.getName());
+        long copy = jdbc().queryForObject("SELECT message_id FROM message WHERE source_system=? AND direction='OUTBOUND'", Long.class, source.getName());
+        assertThat(input).doesNotExist();
+        assertThat(Files.readAllBytes(outputDirectory.resolve("message-" + copy + "-payload.bin"))).isEqualTo(binary());
+        assertThat(jdbc().queryForObject("SELECT payload_bytes FROM message WHERE message_id=?", byte[].class, original)).isEqualTo(binary());
+        assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, original)).isEqualTo("PROCESSED");
+        assertThat(jdbc().queryForObject("SELECT value FROM message_metadata WHERE message_id=? AND key='sourceMessageId'", String.class, copy))
+                .isEqualTo(Long.toString(original));
+        assertThat(jdbc().queryForObject("SELECT count(*) FROM rule_execution_job WHERE message_id=? AND status='COMPLETED'", Long.class, copy)).isEqualTo(1);
+    }
+
+    @Test @Order(13)
+    void forwardingStoredFileCreatesIndependentDeliveryAndDeduplicatesRequests() throws Exception {
+        Path inputDirectory = Files.createDirectories(temp.resolve("forward-in"));
+        var source = source("forward-file-input", ChannelType.DIRECTORY, Map.of("directoryPath", inputDirectory.toString(), "charset", "windows-1251"));
+        file(inputDirectory);
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(messageCount(source.getName())).isEqualTo(1));
+        long original = jdbc().queryForObject("SELECT message_id FROM message WHERE source_system=?", Long.class, source.getName());
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?",
+                String.class, original)).isEqualTo("PROCESSED"));
+        Path outputDirectory = temp.resolve("forward-out");
+        var target = channels().createChannel("forward-file-output", ChannelType.DIRECTORY, ChannelDirection.OUTBOUND, null,
+                Map.of("directoryPath", outputDirectory.toString()));
+        long rule = outboundRule(target);
+        var before = get("/api/v1/messages/" + original).body();
+        var request = HttpRequest.newBuilder(api("/api/v1/messages/" + original + "/forward"))
+                .header("Content-Type", "application/json").header("Idempotency-Key", "forward-file-test")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"ruleId\":" + rule + "}")).build();
+        var response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(202);
+        long copy = json().readTree(response.body()).path("id").asLong();
+        var repeated = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(repeated.statusCode()).as(repeated.body()).isEqualTo(202);
+        assertThat(json().readTree(repeated.body()).path("id").asLong()).isEqualTo(copy);
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, copy)).isEqualTo("SENT"));
+        assertThat(Files.readAllBytes(outputDirectory.resolve("message-" + copy + "-payload.bin"))).isEqualTo(binary());
+        assertThat(get("/api/v1/messages/" + original).body()).isEqualTo(before);
+        assertThat(json().readTree(get("/api/v1/messages/" + copy).body()).path("charset").asText()).isEqualTo("windows-1251");
+        assertThat(jdbc().queryForObject("SELECT count(*) FROM rule_execution_job WHERE message_id=?", Long.class, copy)).isEqualTo(1);
     }
 }

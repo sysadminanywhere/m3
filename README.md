@@ -127,6 +127,16 @@ Or on Windows:
 mvnw.cmd
 ```
 
+The UI alone does not execute rules or load files. For a local Windows run, start a separate worker in another terminal after the UI has completed database migrations:
+
+```powershell
+.\scripts\run-worker.ps1 -Pool default
+```
+
+The pool must match the rule's **Worker Pool**. Set the same datasource and receipt broker environment variables in both processes. Keep the worker running; stopping the UI does not stop it. For another pool, start another worker with that pool's name. The **Receiver** column shows `NO_WORKER` until a worker reports its heartbeat, with a tooltip explaining how to start it.
+
+Local Windows workers use Windows endpoint paths directly. Docker workers use Linux paths: mount files into the shared `/data` volume and configure endpoints such as `/data/in` and `/data/out`. A Windows `D:\...` path is not a usable Linux container path. An inbound directory must already exist and be readable in the worker filesystem. For directory delivery, output names are `message-<id>-<original-name>` to avoid replacing existing files. Enabling `deleteAfterProcessing` in the loading rule removes the input file only after its bytes, metadata and job commit to the database; otherwise the input file stays in place.
+
 The local app defaults to the same database name and credentials as the Compose database. If you change the Compose credentials, also set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the IDE run configuration.
 
 Local runs use RabbitMQ at `localhost:5672`. If you change the broker port or credentials, set `M3_BROKER_RABBIT_PORT`, `M3_BROKER_RABBIT_USERNAME` and `M3_BROKER_RABBIT_PASSWORD` in the IDE as well. When the broker is unavailable, messages remain saved and receipt notifications wait in the outbox until the connection is restored.

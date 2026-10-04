@@ -34,7 +34,8 @@ class RuleListView extends VerticalLayout {
     final Button createBtn;
     final Grid<Rule> ruleGrid;
 
-    RuleListView(RuleService ruleService, ChannelSettingsService channelSettingsService, com.sysadminanywhere.m3.messaging.source.SourceHealth sourceHealth) {
+    RuleListView(RuleService ruleService, ChannelSettingsService channelSettingsService, com.sysadminanywhere.m3.messaging.source.SourceHealth sourceHealth,
+            com.sysadminanywhere.m3.messaging.service.WorkerPoolCapacityService capacity) {
         this.ruleService = ruleService;
         this.channelSettingsService = channelSettingsService;
 
@@ -43,6 +44,11 @@ class RuleListView extends VerticalLayout {
 
         var toolbar = new HorizontalLayout();
         toolbar.add(createBtn);
+        if (!capacity.isConfigured()) {
+            var hint = new com.vaadin.flow.component.html.Span("UI does not execute rules. Start a separate worker for the assigned pool: scripts/run-worker.ps1 -Pool default, or configure Docker Compose.");
+            hint.getStyle().set("color", "var(--lumo-error-text-color)").set("white-space", "normal");
+            toolbar.add(hint);
+        }
         toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();

@@ -77,6 +77,8 @@ public class RuleDialog extends Dialog {
         channelField = new ComboBox<>("Source Channel");
         channelField.setItems(channelSettingsService.findAll());
         channelField.setItemLabelGenerator(ChannelSettings::getName);
+        channelField.addValueChangeListener(event -> loadingField.setChannelType(
+                event.getValue() == null ? null : event.getValue().getChannelType()));
         channelField.setRequired(true);
         channelField.setWidthFull();
 

@@ -1,46 +1,71 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sysadminanywhere.m3.messaging.source.InboundSourceSpec;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.TextField;
 import java.util.*;
 
-final class ChannelExtraSettings extends TextArea {
-    private static final ObjectMapper JSON=new ObjectMapper();
-    private Set<String> visible=Set.of();
+final class ChannelExtraSettings extends VerticalLayout {
+    private record PropertyRow(TextField key, TextArea value, HorizontalLayout layout) { }
+    private final VerticalLayout propertyRows = new VerticalLayout();
+    private final List<PropertyRow> rows = new ArrayList<>();
+    private Set<String> visible = Set.of();
+
     ChannelExtraSettings() {
-        super("Additional connection properties (JSON)");
-        setWidthFull(); setHeight("160px");
-        setHelperText("Additional protocol settings, for example kafka.security.protocol. Loading policy belongs to the rule.");
+        setWidthFull(); setPadding(false); setSpacing(true);
+        propertyRows.setWidthFull(); propertyRows.setPadding(false);
+        var addProperty = new Button("Add property", VaadinIcon.PLUS.create(), event -> addRow("", ""));
+        addProperty.addThemeVariants(ButtonVariant.LUMO_SMALL);
+        var hint = new Span("Additional protocol settings, for example kafka.security.protocol. Loading policy belongs to the rule.");
+        hint.getStyle().set("white-space", "normal");
+        add(new Span("Additional connection properties"), hint, propertyRows, addProperty);
     }
-    void load(Map<String,String> properties,Set<String> visible) {
-        this.visible=Set.copyOf(visible);
-        var extra=new TreeMap<String,String>(properties);
+    private void addRow(String name, String content) {
+        var key = new TextField("Key"); key.setMaxLength(255); key.setValue(name); key.setWidth("240px");
+        var value = new TextArea("Value"); value.setValue(content); value.setMinHeight("80px");
+        value.setWidthFull();
+        var remove = new Button(VaadinIcon.TRASH.create());
+        remove.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
+        remove.setAriaLabel("Remove connection property");
+        var layout = new HorizontalLayout(key, value, remove);
+        layout.setWidthFull(); layout.setWrap(true); layout.setAlignItems(Alignment.END);
+        layout.setFlexGrow(1, value);
+        var row = new PropertyRow(key, value, layout);
+        remove.addClickListener(event -> { rows.remove(row); propertyRows.remove(layout); });
+        rows.add(row); propertyRows.add(layout);
+    }
+    void load(Map<String,String> properties, Set<String> visible) {
+        this.visible = Set.copyOf(visible);
+        rows.clear(); propertyRows.removeAll();
+        var extra = new TreeMap<>(properties);
         visible.forEach(extra::remove); InboundSourceSpec.LOADING_KEYS.forEach(extra::remove);
         extra.remove("keyDeserializer"); extra.remove("valueDeserializer");
-        try { setValue(extra.isEmpty() ? "" : JSON.writerWithDefaultPrettyPrinter().writeValueAsString(extra)); }
-        catch (Exception error) { throw new IllegalArgumentException("Could not display connection properties",error); }
+        extra.forEach(this::addRow);
     }
     Map<String,String> settings() {
-        var result=new HashMap<String,String>();
-        if (getValue().isBlank()) return result;
-        try {
-            var root=JSON.readTree(getValue());
-            if (!root.isObject()) throw new IllegalArgumentException("Additional properties must be a JSON object");
-            var fields=root.properties().iterator();
-            while (fields.hasNext()) {
-                var entry=fields.next();
-                if (entry.getKey().isBlank() || entry.getKey().length()>255 || visible.contains(entry.getKey())
-                        || InboundSourceSpec.LOADING_KEYS.contains(entry.getKey())
-                        || Set.of("keyDeserializer","valueDeserializer").contains(entry.getKey()))
-                    throw new IllegalArgumentException("Use the dedicated field or rule settings for: "+entry.getKey());
-                if (!entry.getValue().isValueNode() || entry.getValue().isNull())
-                    throw new IllegalArgumentException("Connection property values must be strings, numbers or booleans");
-                result.put(entry.getKey(),entry.getValue().asText());
-            }
-            return result;
-        } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
-            throw new IllegalArgumentException("Invalid additional connection properties JSON");
+        var result = new HashMap<String,String>();
+        for (var row : rows) {
+            String key = row.key().getValue().trim();
+            String value = row.value().getValue();
+            row.key().setInvalid(false);
+            if (key.isEmpty() && value.isEmpty()) continue;
+            if (key.isEmpty() || key.length() > 255) fail(row, "Enter a property key (1–255 characters)");
+            if (visible.contains(key) || InboundSourceSpec.LOADING_KEYS.contains(key)
+                    || Set.of("keyDeserializer", "valueDeserializer").contains(key))
+                fail(row, "Use the dedicated field or rule settings for: " + key);
+            if (result.containsKey(key)) fail(row, "Duplicate connection property: " + key);
+            result.put(key, value);
         }
+        return result;
+    }
+    private static void fail(PropertyRow row, String message) {
+        row.key().setInvalid(true); row.key().setErrorMessage(message);
+        throw new IllegalArgumentException(message);
     }
 }
