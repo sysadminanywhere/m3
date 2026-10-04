@@ -33,6 +33,7 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
     final ComboBox<RuleType> typeField;
     final ComboBox<ChannelSettings> channelField;
     final ComboBox<ChannelSettings> destinationField;
+    final RuleFlowPreview flow = new RuleFlowPreview();
     final RuleLoadingSettings loadingField = new RuleLoadingSettings();
     final com.vaadin.flow.component.textfield.NumberField priorityField;
     final com.vaadin.flow.component.checkbox.Checkbox enabledField;
@@ -64,6 +65,8 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         destinationField.setItems(channelSettingsService.findByDirection(ChannelDirection.OUTBOUND));
         destinationField.setItemLabelGenerator(channel -> channel.getName() + (Boolean.TRUE.equals(channel.getEnabled()) ? "" : " (disabled)"));
         destinationField.setClearButtonVisible(true);
+        channelField.addValueChangeListener(e -> updateFlow());
+        destinationField.addValueChangeListener(e -> updateFlow());
         destinationField.setHelperText("Select the outbound channel that receives this message");
         typeField.addValueChangeListener(event -> {
             boolean outbound = event.getValue() == RuleType.OUTBOUND;
@@ -100,13 +103,14 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
 
         conditionGrid = new Grid<>();
         conditionGrid.addColumn(RuleCondition::getField).setHeader("Field");
-        conditionGrid.addColumn(RuleCondition::getOperator).setHeader("Operator");
+        conditionGrid.addColumn(c -> RuleConditionEditorDialog.operatorLabel(c.getOperator())).setHeader("Comparison");
+        conditionGrid.addColumn(RuleCondition::getLogicalOperator).setHeader("Combine");
         conditionGrid.addColumn(RuleCondition::getValue).setHeader("Value");
         conditionGrid.addComponentColumn(condition -> {
             var deleteButton = new Button(VaadinIcon.TRASH.create());
             deleteButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
             deleteButton.addClickListener(event -> deleteCondition(condition));
-            return deleteButton;
+            return new HorizontalLayout(new Button("Edit", e -> new RuleConditionEditorDialog(ruleService, ruleId, condition, () -> refreshSteps()).open()), deleteButton);
         }).setHeader("Actions");
         conditionGrid.setEmptyStateText("No conditions");
 
@@ -115,13 +119,14 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         var conditionSection = new VerticalLayout(conditionGrid, addConditionButton);
 
         actionGrid = new Grid<>();
+        actionGrid.addColumn(RuleAction::getPriority).setHeader("Order").setWidth("80px").setFlexGrow(0);
         actionGrid.addColumn(RuleAction::getActionType).setHeader("Type");
         actionGrid.addColumn(RuleActionEditorDialog::description).setHeader("Parameters");
         actionGrid.addComponentColumn(action -> {
             var deleteButton = new Button(VaadinIcon.TRASH.create());
             deleteButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
             deleteButton.addClickListener(event -> deleteAction(action));
-            return deleteButton;
+            return new HorizontalLayout(new Button("Edit", e -> new RuleActionEditorDialog(ruleService, ruleId, action, () -> refreshSteps()).open()), deleteButton);
         }).setHeader("Actions");
         actionGrid.setEmptyStateText("No actions");
 
@@ -131,7 +136,9 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
 
         setSizeFull();
         loadingField.setVisible(false);
-        add(toolbar, form, loadingField, conditionSection, actionSection);
+        add(toolbar, form, loadingField, flow, conditionSection, actionSection);
+        typeField.addValueChangeListener(e -> updateFlow());
+        updateFlow();
     }
 
     @Override
@@ -156,9 +163,10 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
             workerPoolField.setItems(workerPoolService.findAll());
             workerPoolField.setValue(currentRule.getWorkerPool());
             conditionGrid.setItems(currentRule.getConditions());
-            actionGrid.setItems(currentRule.getActions().stream().filter(action -> action.getActionType() != ActionType.ROUTE).toList());
+            actionGrid.setItems(RuleActionEditorDialog.orderedActions(currentRule));
             destinationField.setValue(channelSettingsService.findByDirection(ChannelDirection.OUTBOUND).stream()
                     .filter(channel -> channel.getName().equals(currentRule.getDestinationChannelName())).findFirst().orElse(null));
+            updateFlow();
         }
     }
 
@@ -193,60 +201,15 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
     }
 
     private void addCondition() {
-        var dialog = new com.vaadin.flow.component.dialog.Dialog();
-        dialog.setHeaderTitle("Add Condition");
-
-        var fieldField = new TextField("Field");
-        fieldField.setPlaceholder("header.sourceSystem or payload.type");
-        fieldField.setRequired(true);
-
-        var operatorField = new ComboBox<ConditionOperator>("Operator");
-        operatorField.setItems(ConditionOperator.values());
-        operatorField.setRequired(true);
-
-        var valueField = new TextField("Value");
-        valueField.setRequired(true);
-
-        var logicalOpField = new ComboBox<LogicalOperator>("Combine with previous conditions");
-        logicalOpField.setItems(LogicalOperator.values());
-        logicalOpField.setValue(LogicalOperator.AND);
-        logicalOpField.setHelperText("Conditions follow creation order. AND has priority over OR; the first connector is ignored.");
-
-        var form = new VerticalLayout(fieldField, operatorField, valueField, logicalOpField);
-        form.setSpacing(true);
-
-        var saveButton = new Button("Add", event -> {
-            if (fieldField.getValue().isBlank() || operatorField.getValue() == null || valueField.getValue().isBlank()) {
-                Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
-                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
-                return;
-            }
-
-            try {
-                ruleService.addCondition(ruleId, fieldField.getValue(), operatorField.getValue(),
-                        valueField.getValue(), logicalOpField.getValue());
-            } catch (IllegalArgumentException invalid) {
-                Notification.show(invalid.getMessage(),4000,Notification.Position.BOTTOM_END)
-                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
-                return;
-            }
-            loadRule();
-            dialog.close();
-            Notification.show("Condition added", 3000, Notification.Position.BOTTOM_END)
-                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-        });
-        saveButton.addThemeVariants(ButtonVariant.PRIMARY);
-
-        var cancelButton = new Button("Cancel", event -> dialog.close());
-
-        var footer = new HorizontalLayout(saveButton, cancelButton);
-        dialog.add(form, footer);
-        dialog.open();
+        if (currentRule == null) {
+            Notification.show("Please save the rule first", 3000, Notification.Position.BOTTOM_END); return;
+        }
+        new RuleConditionEditorDialog(ruleService, ruleId, null, () -> refreshSteps()).open();
     }
 
     private void deleteCondition(RuleCondition condition) {
         ruleService.deleteCondition(condition.getId());
-        loadRule();
+        refreshSteps();
         Notification.show("Condition deleted", 3000, Notification.Position.BOTTOM_END);
     }
 
@@ -256,11 +219,22 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
                     .addThemeVariants(NotificationVariant.LUMO_WARNING);
             return;
         }
-        new RuleActionEditorDialog(ruleService, ruleId, () -> loadRule()).open();
+        new RuleActionEditorDialog(ruleService, ruleId, () -> refreshSteps()).open();
     }
     private void deleteAction(RuleAction action) {
         ruleService.deleteAction(action.getId());
-        loadRule();
+        refreshSteps();
         Notification.show("Action deleted", 3000, Notification.Position.BOTTOM_END);
+    }
+    private void refreshSteps() {
+        currentRule = ruleService.findById(ruleId);
+        if (currentRule != null) {
+            conditionGrid.setItems(currentRule.getConditions());
+            actionGrid.setItems(RuleActionEditorDialog.orderedActions(currentRule));
+            updateFlow();
+        }
+    }
+    private void updateFlow() {
+        flow.show(currentRule, typeField.getValue() == RuleType.OUTBOUND ? null : channelField.getValue(), destinationField.getValue());
     }
 }

@@ -113,6 +113,13 @@ public class RuleService {
     @Transactional
     public RuleCondition addCondition(Long ruleId, String field, ConditionOperator operator, String value, LogicalOperator logicalOperator) {
         var rule = ruleRepository.findById(ruleId).orElseThrow();
+        validateCondition(field, operator, value, logicalOperator);
+        var condition = new RuleCondition(rule, field, operator, value);
+        condition.setLogicalOperator(logicalOperator);
+        return ruleConditionRepository.save(condition);
+    }
+
+    private static void validateCondition(String field, ConditionOperator operator, String value, LogicalOperator logicalOperator) {
         if (field == null || field.isBlank() || field.length() > RuleCondition.FIELD_MAX_LENGTH
                 || !(field.equals("payload") || field.startsWith("header.") && field.length() > 7
                      || field.startsWith("payload.") && field.length() > 8))
@@ -127,8 +134,14 @@ public class RuleService {
             try { new java.math.BigDecimal(value); }
             catch (NumberFormatException invalid) { throw new IllegalArgumentException("Numeric conditions require a numeric value"); }
         }
-        var condition = new RuleCondition(rule, field, operator, value);
-        condition.setLogicalOperator(logicalOperator);
+    }
+
+    @Transactional
+    public RuleCondition updateCondition(Long ruleId, Long conditionId, String field, ConditionOperator operator, String value, LogicalOperator logicalOperator) {
+        validateCondition(field, operator, value, logicalOperator);
+        var condition = ruleConditionRepository.findById(conditionId).orElseThrow();
+        if (!condition.getRule().getId().equals(ruleId)) throw new IllegalArgumentException("Condition belongs to another rule");
+        condition.setField(field); condition.setOperator(operator); condition.setValue(value); condition.setLogicalOperator(logicalOperator);
         return ruleConditionRepository.save(condition);
     }
 
@@ -217,8 +230,27 @@ public class RuleService {
     @Transactional
     public RuleAction createAction(Long ruleId, ActionType type, String script, Boolean filter, String key, String value) {
         var rule = ruleRepository.findById(ruleId).orElseThrow();
-        if (type == null || type == ActionType.ROUTE) throw new IllegalArgumentException("Select the destination in the rule form");
         var action = new RuleAction(rule, type);
+        configureAction(action, type, script, filter, key, value);
+        return ruleActionRepository.save(action);
+    }
+
+    @Transactional
+    public RuleAction saveVisualAction(Long ruleId, Long actionId, ActionType type, String script, Boolean filter, String key, String value, Integer priority) {
+        if (priority == null || priority < 0 || priority > 9999) throw new IllegalArgumentException("Execution order must be between 0 and 9999");
+        var action = actionId == null ? new RuleAction(ruleRepository.findById(ruleId).orElseThrow(), type)
+                : ruleActionRepository.findById(actionId).orElseThrow();
+        if (!action.getRule().getId().equals(ruleId)) throw new IllegalArgumentException("Action belongs to another rule");
+        if (actionId != null && action.getActionType() == ActionType.ROUTE) throw new IllegalArgumentException("Select the destination in the rule form");
+        configureAction(action, type, script, filter, key, value);
+        action.setPriority(priority);
+        return ruleActionRepository.save(action);
+    }
+
+    private static void configureAction(RuleAction action, ActionType type, String script, Boolean filter, String key, String value) {
+        if (type == null || type == ActionType.ROUTE) throw new IllegalArgumentException("Select the destination in the rule form");
+        action.setActionType(type);
+        action.setTransformationScript(null); action.setFilterResult(null); action.setMetadataKey(null); action.setMetadataValue(null);
         if (type == ActionType.TRANSFORM) {
             if (script == null || script.isBlank()) throw new IllegalArgumentException("Transformation script is required");
             RuleEngine.validateTransformation(script);
@@ -230,7 +262,6 @@ public class RuleService {
             if (key == null || key.isBlank() || value == null || value.isBlank()) throw new IllegalArgumentException("Metadata key and value are required");
             action.setMetadataKey(key); action.setMetadataValue(value);
         }
-        return ruleActionRepository.save(action);
     }
 
     @Transactional

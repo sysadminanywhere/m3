@@ -32,6 +32,7 @@ public class RuleDialog extends Dialog {
     final ComboBox<RuleType> typeField;
     final ComboBox<ChannelSettings> channelField;
     final ComboBox<ChannelSettings> destinationField;
+    final RuleFlowPreview flow = new RuleFlowPreview();
     final RuleLoadingSettings loadingField = new RuleLoadingSettings();
     final NumberField priorityField;
     final Checkbox enabledField;
@@ -87,6 +88,8 @@ public class RuleDialog extends Dialog {
         destinationField.setItemLabelGenerator(channel -> channel.getName() + (Boolean.TRUE.equals(channel.getEnabled()) ? "" : " (disabled)"));
         destinationField.setWidthFull();
         destinationField.setClearButtonVisible(true);
+        channelField.addValueChangeListener(e -> updateFlow());
+        destinationField.addValueChangeListener(e -> updateFlow());
         destinationField.setHelperText("Select the outbound channel that receives this message");
         typeField.addValueChangeListener(event -> {
             boolean outbound = event.getValue() == RuleType.OUTBOUND;
@@ -113,13 +116,14 @@ public class RuleDialog extends Dialog {
         // Conditions section
         conditionGrid = new Grid<>();
         conditionGrid.addColumn(RuleCondition::getField).setHeader("Field");
-        conditionGrid.addColumn(RuleCondition::getOperator).setHeader("Operator");
+        conditionGrid.addColumn(c -> RuleConditionEditorDialog.operatorLabel(c.getOperator())).setHeader("Comparison");
+        conditionGrid.addColumn(RuleCondition::getLogicalOperator).setHeader("Combine");
         conditionGrid.addColumn(RuleCondition::getValue).setHeader("Value");
         conditionGrid.addComponentColumn(condition -> {
             var deleteButton = new Button(VaadinIcon.TRASH.create());
             deleteButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
             deleteButton.addClickListener(event -> deleteCondition(condition));
-            return deleteButton;
+            return new HorizontalLayout(new Button("Edit", e -> new RuleConditionEditorDialog(ruleService, ruleId, condition, () -> refreshRule()).open()), deleteButton);
         }).setHeader("Actions");
         conditionGrid.setEmptyStateText("No conditions");
         conditionGrid.setHeight("150px");
@@ -137,13 +141,14 @@ public class RuleDialog extends Dialog {
 
         // Actions section
         actionGrid = new Grid<>();
+        actionGrid.addColumn(RuleAction::getPriority).setHeader("Order").setWidth("80px").setFlexGrow(0);
         actionGrid.addColumn(RuleAction::getActionType).setHeader("Type");
         actionGrid.addColumn(RuleActionEditorDialog::description).setHeader("Parameters");
         actionGrid.addComponentColumn(action -> {
             var deleteButton = new Button(VaadinIcon.TRASH.create());
             deleteButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
             deleteButton.addClickListener(event -> deleteAction(action));
-            return deleteButton;
+            return new HorizontalLayout(new Button("Edit", e -> new RuleActionEditorDialog(ruleService, ruleId, action, () -> refreshRule()).open()), deleteButton);
         }).setHeader("Actions");
         actionGrid.setEmptyStateText("No actions");
         actionGrid.setHeight("150px");
@@ -160,7 +165,7 @@ public class RuleDialog extends Dialog {
         actionSection.setPadding(false);
 
         loadingField.setVisible(false);
-        var content = new VerticalLayout(form, loadingField, conditionSection, actionSection);
+        var content = new VerticalLayout(form, loadingField, flow, conditionSection, actionSection);
         content.setSpacing(true);
         content.setPadding(false);
         content.setWidthFull();
@@ -180,6 +185,8 @@ public class RuleDialog extends Dialog {
         if (rule != null) {
             loadRule(rule);
         }
+        typeField.addValueChangeListener(e -> updateFlow());
+        updateFlow();
     }
 
     private void loadRule(Rule rule) {
@@ -191,9 +198,10 @@ public class RuleDialog extends Dialog {
         enabledField.setValue(rule.getEnabled());
         loadingField.load(rule.getLoadingProperties());
         conditionGrid.setItems(rule.getConditions());
-        actionGrid.setItems(rule.getActions().stream().filter(action -> action.getActionType() != ActionType.ROUTE).toList());
+        actionGrid.setItems(RuleActionEditorDialog.orderedActions(rule));
         destinationField.setValue(channelSettingsService.findByDirection(ChannelDirection.OUTBOUND).stream()
                 .filter(channel -> channel.getName().equals(rule.getDestinationChannelName())).findFirst().orElse(null));
+        updateFlow();
     }
 
     private void saveRule() {
@@ -231,70 +239,9 @@ public class RuleDialog extends Dialog {
     }
     private void addCondition() {
         if (currentRule == null) {
-            Notification.show("Please save the rule first before adding conditions", 3000, Notification.Position.BOTTOM_END)
-                    .addThemeVariants(NotificationVariant.LUMO_WARNING);
-            return;
+            Notification.show("Please save the rule first", 3000, Notification.Position.BOTTOM_END); return;
         }
-
-        var dialog = new Dialog();
-        dialog.setHeaderTitle("Add Condition");
-
-        var fieldField = new TextField("Field");
-        fieldField.setPlaceholder("header.sourceSystem or payload.type");
-        fieldField.setRequired(true);
-        fieldField.setWidthFull();
-        fieldField.setMaxLength(255);
-        fieldField.setHelperText("Max 255 characters");
-
-        var operatorField = new ComboBox<ConditionOperator>("Operator");
-        operatorField.setItems(ConditionOperator.values());
-        operatorField.setRequired(true);
-        operatorField.setWidthFull();
-
-        var valueField = new TextField("Value");
-        valueField.setRequired(true);
-        valueField.setWidthFull();
-        valueField.setMaxLength(500);
-        valueField.setHelperText("Max 500 characters");
-
-        var logicalOpField = new ComboBox<LogicalOperator>("Combine with previous conditions");
-        logicalOpField.setItems(LogicalOperator.values());
-        logicalOpField.setValue(LogicalOperator.AND);
-        logicalOpField.setHelperText("Conditions follow creation order. AND has priority over OR; the first connector is ignored.");
-        logicalOpField.setWidthFull();
-
-        var form = new VerticalLayout(fieldField, operatorField, valueField, logicalOpField);
-        form.setSpacing(true);
-        form.setPadding(false);
-
-        dialog.add(form);
-
-        var saveButton = new Button("Add", event -> {
-            if (fieldField.getValue().isBlank() || operatorField.getValue() == null || valueField.getValue().isBlank()) {
-                Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
-                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
-                return;
-            }
-
-            try {
-                ruleService.addCondition(ruleId, fieldField.getValue(), operatorField.getValue(),
-                        valueField.getValue(), logicalOpField.getValue());
-            } catch (IllegalArgumentException invalid) {
-                Notification.show(invalid.getMessage(),4000,Notification.Position.BOTTOM_END)
-                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
-                return;
-            }
-            refreshRule();
-            dialog.close();
-            Notification.show("Condition added", 3000, Notification.Position.BOTTOM_END)
-                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-        });
-        saveButton.addThemeVariants(ButtonVariant.PRIMARY);
-
-        var cancelButton = new Button("Cancel", event -> dialog.close());
-
-        dialog.getFooter().add(cancelButton, saveButton);
-        dialog.open();
+        new RuleConditionEditorDialog(ruleService, ruleId, null, () -> refreshRule()).open();
     }
 
     private void deleteCondition(RuleCondition condition) {
@@ -322,8 +269,12 @@ public class RuleDialog extends Dialog {
             currentRule = ruleService.findById(ruleId);
             if (currentRule != null) {
                 conditionGrid.setItems(currentRule.getConditions());
-                actionGrid.setItems(currentRule.getActions().stream().filter(action -> action.getActionType() != ActionType.ROUTE).toList());
+                actionGrid.setItems(RuleActionEditorDialog.orderedActions(currentRule));
+                updateFlow();
             }
         }
+    }
+    private void updateFlow() {
+        flow.show(currentRule, typeField.getValue() == RuleType.OUTBOUND ? null : channelField.getValue(), destinationField.getValue());
     }
 }

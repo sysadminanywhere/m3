@@ -262,3 +262,25 @@ The **Vaadin** UI provides a reactive, component-based interface for managing th
 - [Vaadin Documentation](https://vaadin.com/docs/v25)
 - [Spring Integration Reference](https://docs.spring.io/spring-integration/reference/)
 - [Building Apps Guide](https://vaadin.com/docs/v25/building-apps)
+
+
+## Visual rule configuration
+
+Open a rule and use **Add Condition** or **Add Action**. Existing entries have an **Edit** button.
+The message flow cards show the selected source, conditions, first filter, ordered transformations/metadata additions, and destination.
+Conditions compare metadata, a top-level JSON field, or the whole body. AND takes precedence over OR in creation order.
+
+Body transformations are selected from a list: extract a JSON field, trim whitespace, uppercase/lowercase,
+replace literal text, add a prefix/suffix, or serialize as JSON text. Each transformation has a live preview
+for a text or JSON example. This preview evaluates only the selected operation in memory; it does not run
+previous actions, write messages, or contact channels. For a chain, use the previous operation's result as the next example.
+
+Execution order controls transformations and metadata additions (lower numbers first, ties by creation order).
+Filtering runs before transformations; when several filters exist, only the first configured filter is used.
+The metadata action can set `outputCharset` (for example `UTF-8` or `windows-1251`).
+Text operations require a known source charset; JSON extraction requires a JSON object, and text operations
+on JSON require extracting a string field first. Original stored message bytes are retained.
+
+The editor and workers share the same transformation implementation. Existing `$.field` transformations
+remain compatible. New operation configurations use the existing `transformation_script` column;
+no additional database migration is needed. Deploy the updated UI and workers together.

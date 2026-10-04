@@ -137,20 +137,11 @@ public class RuleEngine {
     }
 
     private Object applyTransformation(Object payload, String script) {
-        validateTransformation(script);
-        if (payload instanceof Map && script.startsWith("$.")) {
-            String jsonPath = script.substring(2);
-            Map<?, ?> map = (Map<?, ?>) payload;
-            if (!map.containsKey(jsonPath) || map.get(jsonPath) == null)
-                throw new IllegalArgumentException("Transformation field is missing: " + jsonPath);
-            return map.get(jsonPath);
-        }
-        throw new IllegalArgumentException("Field extraction requires a JSON object");
+        return RuleTransformations.apply(payload, script);
     }
 
     public static void validateTransformation(String script) {
-        if (script == null || !script.matches("\\$\\.[A-Za-z_][A-Za-z0-9_-]*"))
-            throw new IllegalArgumentException("Supported transformation: $.field (one top-level JSON field)");
+        RuleTransformations.parse(script);
     }
 
     public boolean shouldFilter(Message<?> springMessage, List<Rule> applicableRules) {
