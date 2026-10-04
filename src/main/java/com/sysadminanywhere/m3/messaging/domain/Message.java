@@ -12,6 +12,8 @@ import java.util.Set;
 public class Message {
 
     public static final int PAYLOAD_MAX_LENGTH = 1_000_000;
+    public static final int PAYLOAD_MAX_BYTES = 1_000_000;
+    public static final int PAYLOAD_REQUEST_MAX_LENGTH = 4 * ((PAYLOAD_MAX_BYTES + 2) / 3);
     public static final int SOURCE_SYSTEM_MAX_LENGTH = 200;
     public static final int TARGET_SYSTEM_MAX_LENGTH = 200;
     public static final int PAYLOAD_TYPE_MAX_LENGTH = 50;
@@ -29,8 +31,17 @@ public class Message {
     @Column(name = "status", nullable = false)
     private MessageStatus status = MessageStatus.PENDING;
 
-    @Column(name = "payload", nullable = false, columnDefinition = "TEXT")
-    private String payload;
+    @Column(name = "payload_bytes", nullable = false, columnDefinition = "bytea")
+    private byte[] payloadBytes;
+
+    @Column(name = "charset", length = 64)
+    private String charset;
+
+    @Column(name = "charset_source", nullable = false, length = 32)
+    private String charsetSource;
+
+    @Column(name = "payload_format", nullable = false, length = 16)
+    private String payloadFormat;
 
     @Column(name = "payload_type", nullable = false, length = PAYLOAD_TYPE_MAX_LENGTH)
     private String payloadType;
@@ -58,8 +69,8 @@ public class Message {
 
     public Message(MessageDirection direction, String payload, String payloadType) {
         this.direction = direction;
-        this.payload = payload;
         this.payloadType = payloadType;
+        setPayload(payload);
         this.createdAt = Instant.now();
     }
 
@@ -84,14 +95,29 @@ public class Message {
     }
 
     public String getPayload() {
-        return payload;
+        return "BASE64".equals(payloadFormat) ? java.util.Base64.getEncoder().encodeToString(payloadBytes)
+                : PayloadCodec.decode(payloadBytes, charset);
     }
 
     public void setPayload(String payload) {
         if (payload.length() > PAYLOAD_MAX_LENGTH) {
             throw new IllegalArgumentException("Payload length exceeds " + PAYLOAD_MAX_LENGTH);
         }
-        this.payload = payload;
+        setContent(PayloadCodec.encode(payload, "UTF-8"), "UTF-8", "TEXT_UTF8", "TEXT");
+    }
+
+    public byte[] getPayloadBytes() { return payloadBytes.clone(); }
+    public int getPayloadSize() { return payloadBytes.length; }
+    public @Nullable String getCharset() { return charset; }
+    public String getCharsetSource() { return charsetSource; }
+    public String getPayloadFormat() { return payloadFormat; }
+    public String getDecodedText() { return PayloadCodec.decode(payloadBytes, charset); }
+    public void setContent(byte[] bytes, @Nullable String charset, String source, String format) {
+        if (bytes == null || bytes.length > PAYLOAD_MAX_BYTES) throw new IllegalArgumentException("Payload exceeds the supported byte size");
+        if (!java.util.Set.of("TEXT", "BASE64").contains(format)) throw new IllegalArgumentException("Invalid payload format");
+        String canonical = PayloadCodec.charset(charset);
+        if (format.equals("TEXT") && canonical == null) throw new IllegalArgumentException("Text requires a charset");
+        this.payloadBytes = bytes.clone(); this.charset = canonical; this.charsetSource = source; this.payloadFormat = format;
     }
 
     public String getPayloadType() {

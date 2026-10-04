@@ -32,6 +32,8 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
     final TextField nameField;
     final ComboBox<RuleType> typeField;
     final ComboBox<ChannelSettings> channelField;
+    final ComboBox<ChannelSettings> destinationField;
+    final RuleLoadingSettings loadingField = new RuleLoadingSettings();
     final com.vaadin.flow.component.textfield.NumberField priorityField;
     final com.vaadin.flow.component.checkbox.Checkbox enabledField;
     final ComboBox<com.sysadminanywhere.m3.messaging.domain.RuleWorkerPool> workerPoolField;
@@ -56,6 +58,18 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         channelField.setItemLabelGenerator(ChannelSettings::getName);
         channelField.setRequired(true);
 
+        destinationField = new ComboBox<>("Destination Channel");
+        destinationField.setItems(channelSettingsService.findByDirection(ChannelDirection.OUTBOUND));
+        destinationField.setItemLabelGenerator(channel -> channel.getName() + (Boolean.TRUE.equals(channel.getEnabled()) ? "" : " (disabled)"));
+        destinationField.setClearButtonVisible(true);
+        destinationField.setHelperText("Select the outbound channel that receives this message");
+        typeField.addValueChangeListener(event -> {
+            boolean outbound = event.getValue() == RuleType.OUTBOUND;
+            destinationField.setRequired(outbound);
+            channelField.setVisible(!outbound); channelField.setRequired(!outbound);
+            loadingField.setVisible(event.getValue() == RuleType.INBOUND);
+        });
+
         priorityField = new com.vaadin.flow.component.textfield.NumberField("Priority");
         priorityField.setValue(0.0);
 
@@ -68,7 +82,7 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         workerPoolField.setRequired(true);
         workerPoolField.setHelperText("Choose where this rule will execute");
 
-        var form = new HorizontalLayout(nameField, typeField, channelField, workerPoolField, priorityField, enabledField);
+        var form = new HorizontalLayout(nameField, typeField, channelField, destinationField, workerPoolField, priorityField, enabledField);
         form.setWrap(true);
         form.setWidthFull();
 
@@ -100,7 +114,7 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
 
         actionGrid = new Grid<>();
         actionGrid.addColumn(RuleAction::getActionType).setHeader("Type");
-        actionGrid.addColumn(RuleAction::getTargetChannel).setHeader("Target Channel");
+        actionGrid.addColumn(RuleActionEditorDialog::description).setHeader("Parameters");
         actionGrid.addComponentColumn(action -> {
             var deleteButton = new Button(VaadinIcon.TRASH.create());
             deleteButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
@@ -114,7 +128,8 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         var actionSection = new VerticalLayout(actionGrid, addActionButton);
 
         setSizeFull();
-        add(toolbar, form, conditionSection, actionSection);
+        loadingField.setVisible(false);
+        add(toolbar, form, loadingField, conditionSection, actionSection);
     }
 
     @Override
@@ -135,25 +150,44 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
             channelField.setValue(currentRule.getSourceChannel());
             priorityField.setValue((double) currentRule.getPriority());
             enabledField.setValue(currentRule.getEnabled());
+            loadingField.load(currentRule.getLoadingProperties());
             workerPoolField.setItems(workerPoolService.findAll());
             workerPoolField.setValue(currentRule.getWorkerPool());
             conditionGrid.setItems(currentRule.getConditions());
-            actionGrid.setItems(currentRule.getActions());
+            actionGrid.setItems(currentRule.getActions().stream().filter(action -> action.getActionType() != ActionType.ROUTE).toList());
+            destinationField.setValue(channelSettingsService.findByDirection(ChannelDirection.OUTBOUND).stream()
+                    .filter(channel -> channel.getName().equals(currentRule.getDestinationChannelName())).findFirst().orElse(null));
         }
     }
 
     private void saveRule() {
-        if (nameField.getValue().isBlank() || typeField.getValue() == null || channelField.getValue() == null || workerPoolField.getValue() == null) {
+        if (nameField.getValue().isBlank() || typeField.getValue() == null || priorityField.getValue() == null || workerPoolField.getValue() == null) {
             Notification.show("Please fill all required fields", 3000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             return;
         }
 
-        ruleService.updateRule(ruleId, nameField.getValue(), currentRule.getDescription(),
-                typeField.getValue(), channelField.getValue().getId(), (int) (double) priorityField.getValue(), enabledField.getValue());
-        ruleService.assignWorkerPool(ruleId, workerPoolField.getValue().getId());
-        Notification.show("Rule saved", 3000, Notification.Position.BOTTOM_END)
-                .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+        boolean outbound = typeField.getValue() == RuleType.OUTBOUND;
+        if (outbound && destinationField.getValue() == null) {
+            destinationField.setInvalid(true); destinationField.setErrorMessage("Select a destination channel"); destinationField.focus(); return;
+        }
+        if (!outbound && channelField.getValue() == null) {
+            channelField.setInvalid(true); channelField.setErrorMessage("Select a source channel"); channelField.focus(); return;
+        }
+        double priority = priorityField.getValue();
+        if (priority < 0 || priority > 9999 || priority != Math.rint(priority)) {
+            priorityField.setInvalid(true); priorityField.setErrorMessage("Priority must be an integer between 0 and 9999"); return;
+        }
+        try {
+            ruleService.saveConfiguration(ruleId, nameField.getValue(), currentRule.getDescription(), typeField.getValue(),
+                    outbound ? null : channelField.getValue().getId(), (int) priority, enabledField.getValue(),
+                    workerPoolField.getValue().getId(), destinationField.getValue() == null ? null : destinationField.getValue().getId(), loadingField.settings());
+            loadRule();
+            Notification.show("Rule saved", 3000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+        } catch (Exception error) {
+            Notification.show("Error saving rule: " + error.getMessage(), 4000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+        }
     }
 
     private void addCondition() {
@@ -208,97 +242,13 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
     }
 
     private void addAction() {
-        var dialog = new com.vaadin.flow.component.dialog.Dialog();
-        dialog.setHeaderTitle("Add Action");
-
-        var typeField = new ComboBox<ActionType>("Action Type");
-        typeField.setItems(ActionType.values());
-        typeField.setRequired(true);
-        typeField.addValueChangeListener(event -> updateActionDialogFields(event.getValue(), dialog));
-
-        var targetChannelField = new TextField("Target Channel");
-        targetChannelField.setVisible(false);
-
-        var transformationScriptField = new TextField("Transformation Script");
-        transformationScriptField.setVisible(false);
-
-        var filterResultField = new com.vaadin.flow.component.checkbox.Checkbox("Filter Result (pass)");
-        filterResultField.setVisible(false);
-
-        var metadataKeyField = new TextField("Metadata Key");
-        metadataKeyField.setVisible(false);
-
-        var metadataValueField = new TextField("Metadata Value");
-        metadataValueField.setVisible(false);
-
-        var form = new VerticalLayout(typeField, targetChannelField, transformationScriptField,
-                filterResultField, metadataKeyField, metadataValueField);
-        form.setSpacing(true);
-
-        var saveButton = new Button("Add", event -> {
-            if (typeField.getValue() == null) {
-                Notification.show("Please select action type", 3000, Notification.Position.BOTTOM_END)
-                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
-                return;
-            }
-
-            var action = ruleService.addAction(ruleId, typeField.getValue());
-            
-            if (typeField.getValue() == ActionType.ROUTE) {
-                action.setTargetChannel(targetChannelField.getValue());
-            } else if (typeField.getValue() == ActionType.TRANSFORM) {
-                action.setTransformationScript(transformationScriptField.getValue());
-            } else if (typeField.getValue() == ActionType.FILTER) {
-                action.setFilterResult(filterResultField.getValue());
-            } else if (typeField.getValue() == ActionType.ENRICH) {
-                action.setMetadataKey(metadataKeyField.getValue());
-                action.setMetadataValue(metadataValueField.getValue());
-            }
-
-            loadRule();
-            dialog.close();
-            Notification.show("Action added", 3000, Notification.Position.BOTTOM_END)
-                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-        });
-        saveButton.addThemeVariants(ButtonVariant.PRIMARY);
-
-        var cancelButton = new Button("Cancel", event -> dialog.close());
-
-        var footer = new HorizontalLayout(saveButton, cancelButton);
-        dialog.add(form, footer);
-        dialog.open();
-    }
-
-    private void updateActionDialogFields(ActionType actionType, com.vaadin.flow.component.dialog.Dialog dialog) {
-        var form = (VerticalLayout) dialog.getChildren().findFirst().get();
-        
-        for (var component : form.getChildren().toList()) {
-            if (component instanceof TextField tf) {
-                if (!tf.getLabel().equals("Action Type")) {
-                    tf.setVisible(false);
-                }
-            } else if (component instanceof com.vaadin.flow.component.checkbox.Checkbox cb) {
-                cb.setVisible(false);
-            }
+        if (currentRule == null) {
+            Notification.show("Please save the rule first before adding actions", 3000, Notification.Position.BOTTOM_END)
+                    .addThemeVariants(NotificationVariant.LUMO_WARNING);
+            return;
         }
-
-        if (actionType == ActionType.ROUTE) {
-            form.getChildren().filter(c -> c instanceof TextField && ((TextField) c).getLabel().equals("Target Channel"))
-                    .findFirst().ifPresent(c -> c.setVisible(true));
-        } else if (actionType == ActionType.TRANSFORM) {
-            form.getChildren().filter(c -> c instanceof TextField && ((TextField) c).getLabel().equals("Transformation Script"))
-                    .findFirst().ifPresent(c -> c.setVisible(true));
-        } else if (actionType == ActionType.FILTER) {
-            form.getChildren().filter(c -> c instanceof com.vaadin.flow.component.checkbox.Checkbox)
-                    .findFirst().ifPresent(c -> c.setVisible(true));
-        } else if (actionType == ActionType.ENRICH) {
-            form.getChildren().filter(c -> c instanceof TextField && ((TextField) c).getLabel().equals("Metadata Key"))
-                    .findFirst().ifPresent(c -> c.setVisible(true));
-            form.getChildren().filter(c -> c instanceof TextField && ((TextField) c).getLabel().equals("Metadata Value"))
-                    .findFirst().ifPresent(c -> c.setVisible(true));
-        }
+        new RuleActionEditorDialog(ruleService, ruleId, () -> loadRule()).open();
     }
-
     private void deleteAction(RuleAction action) {
         ruleService.deleteAction(action.getId());
         loadRule();

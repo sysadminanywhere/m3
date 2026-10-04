@@ -85,7 +85,7 @@ public class RuleExecutionProcessor {
     }
 
     private void execute(RuleExecutionJob job, Message stored) throws Exception {
-        Object payload = readPayload(stored.getPayload());
+        Object payload = RulePayloads.readForRules(stored, objectMapper, List.of(job.getRule()));
         Map<String, Object> headers = new HashMap<>();
         headers.put("channelName", stored.getSourceSystem());
         headers.put("sourceSystem", stored.getSourceSystem());
@@ -110,7 +110,7 @@ public class RuleExecutionProcessor {
             return;
         }
 
-        var input = createInput(stored);
+        var input = createInput(stored, matchedRules);
         if (ruleEngine.shouldFilter(input, matchedRules)) {
             setFinalStatus(stored, MessageStatus.PROCESSED);
             return;
@@ -119,7 +119,20 @@ public class RuleExecutionProcessor {
         String target = ruleEngine.determineTargetChannel(input, matchedRules);
         if (target != null) {
             var transformed = ruleEngine.applyTransformations(input, matchedRules);
-            var outbound = new Message(MessageDirection.OUTBOUND, serialize(transformed.getPayload()), stored.getPayloadType());
+            var outbound = new Message(MessageDirection.OUTBOUND, "", stored.getPayloadType());
+            String output = PayloadCodec.charset((String) transformed.getHeaders().get("outputCharset"));
+            if (output != null && transformed.getPayload() instanceof byte[])
+                throw new IllegalArgumentException("Output charset requires a decoded text payload");
+            boolean changed = transformed.getPayload() != input.getPayload() || output != null;
+            if (changed && output == null) output = stored.getCharset() == null ? "UTF-8" : stored.getCharset();
+            outbound.setContent(changed ? RulePayloads.encode(transformed.getPayload(), output, objectMapper) : stored.getPayloadBytes(),
+                    changed ? output : stored.getCharset(), changed ? "RULE" : stored.getCharsetSource(), "BASE64");
+            transformed.getHeaders().forEach((key, value) -> {
+                if (!Set.of("id", "timestamp", "encoding", "charset").contains(key)
+                        && (value instanceof String || value instanceof Number || value instanceof Boolean)) outbound.addMetadata(key, value.toString());
+            });
+            outbound.addMetadata("encoding", "base64");
+            if (outbound.getCharset() != null) outbound.addMetadata("charset", outbound.getCharset());
             outbound.setSourceSystem(stored.getSourceSystem());
             outbound.setTargetSystem(target);
             messages.save(outbound);
@@ -133,8 +146,8 @@ public class RuleExecutionProcessor {
         messages.save(message);
     }
 
-    private org.springframework.messaging.Message<Object> createInput(Message stored) {
-        Object payload = readPayload(stored.getPayload());
+    private org.springframework.messaging.Message<Object> createInput(Message stored, List<Rule> rules) throws Exception {
+        Object payload = RulePayloads.readForRules(stored, objectMapper, rules);
         Map<String, Object> headers = new HashMap<>();
         headers.put("channelName", stored.getSourceSystem());
         headers.put("sourceSystem", stored.getSourceSystem());
@@ -142,12 +155,4 @@ public class RuleExecutionProcessor {
         return org.springframework.messaging.support.MessageBuilder.withPayload(payload).copyHeaders(headers).build();
     }
 
-    private Object readPayload(String payload) {
-        try { return objectMapper.readValue(payload, Object.class); }
-        catch (Exception ignored) { return payload; }
-    }
-
-    private String serialize(Object value) throws Exception {
-        return value instanceof String text ? text : objectMapper.writeValueAsString(value);
-    }
 }

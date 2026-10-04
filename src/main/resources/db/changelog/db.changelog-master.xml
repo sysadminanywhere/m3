@@ -36,4 +36,10 @@
     <changeSet id="009-outbound-delivery" author="m3">
         <sqlFile path="changes/009-outbound-delivery.sql" relativeToChangelogFile="true"/>
     </changeSet>
+    <changeSet id="010-message-bytes" author="m3">
+        <sqlFile path="changes/010-message-bytes.sql" relativeToChangelogFile="true" splitStatements="false"/>
+    </changeSet>
+    <changeSet id="011-rule-loading" author="m3">
+        <sqlFile path="changes/011-rule-loading.sql" relativeToChangelogFile="true"/>
+    </changeSet>
 </databaseChangeLog>

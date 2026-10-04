@@ -68,10 +68,8 @@ class ChannelListView extends VerticalLayout {
                 .setHeader("Status").setSortable(true).setWidth("75px").setFlexGrow(0);
         channelGrid.addColumn(settings -> {
             if (settings.getDirection() != ChannelDirection.INBOUND) return "—";
-            if (!Boolean.TRUE.equals(settings.getEnabled())) return "STOPPED";
-            var state = sourceHealth.get(settings.getId());
-            return state.error() == null ? state.status() : state.status() + " (" + state.error() + ")";
-        }).setHeader("Receiver").setWidth("170px").setFlexGrow(0);
+            return "Managed by loading rules";
+        }).setHeader("Loading").setWidth("170px").setFlexGrow(0);
         channelGrid.addColumn(ChannelSettings::getDescription).setHeader("Description")
                 .setWidth("90px").setFlexGrow(1);
         channelGrid.addComponentColumn(this::createActionButtons).setHeader("Actions")

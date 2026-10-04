@@ -184,6 +184,15 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
             case RABBITMQ -> setupRabbitMqFields(properties);
         }
 
+        for (String key : com.sysadminanywhere.m3.messaging.source.InboundSourceSpec.LOADING_KEYS) {
+            com.vaadin.flow.component.Component field = textFields.remove(key);
+            if (field == null) field = numberFields.remove(key);
+            if (field == null) field = checkboxes.remove(key);
+            if (field != null && field.getParent().orElse(null) instanceof com.vaadin.flow.component.HasComponents parent) parent.remove(field);
+        }
+        advancedTabContent.add(
+                createTextField("charset", "Source charset (blank = unknown)", properties.getOrDefault("charset", "")),
+                createTextField("outputCharset", "Transformed output charset (optional)", properties.getOrDefault("outputCharset", "")));
         updateTabContent();
     }
 

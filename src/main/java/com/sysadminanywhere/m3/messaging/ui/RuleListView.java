@@ -61,6 +61,8 @@ class RuleListView extends VerticalLayout {
                 .setHeader("Source Channel").setWidth("130px").setFlexGrow(1);
         ruleGrid.addColumn(rule -> rule.getWorkerPool() != null ? rule.getWorkerPool().getName() : "Unassigned")
                 .setHeader("Worker Pool").setWidth("120px").setFlexGrow(0);
+        ruleGrid.addColumn(rule -> rule.getDestinationChannelName() == null ? "Not selected" : rule.getDestinationChannelName())
+                .setHeader("Destination Channel").setWidth("150px").setFlexGrow(1);
         ruleGrid.addColumn(Rule::getPriority).setHeader("Priority").setWidth("72px").setFlexGrow(0);
         ruleGrid.addComponentColumn(rule -> {
             var enabledIcon = rule.getEnabled() ? VaadinIcon.CHECK.create() : VaadinIcon.CLOSE.create();
@@ -73,10 +75,10 @@ class RuleListView extends VerticalLayout {
             var editButton = new Button(new Icon(VaadinIcon.EDIT));
             editButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
             editButton.addClickListener(event -> openEditDialog(rule));
-            var configureButton = new Button("Assign", event -> getUI().ifPresent(ui -> ui.navigate("rules/" + rule.getId())));
+            var configureButton = new Button("Configure", event -> getUI().ifPresent(ui -> ui.navigate("rules/" + rule.getId())));
             configureButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
             return new HorizontalLayout(editButton, configureButton);
-        }).setHeader("Actions").setWidth("130px").setFlexGrow(0);
+        }).setHeader("Actions").setWidth("160px").setFlexGrow(0);
         ruleGrid.setEmptyStateText("No rules configured");
         ruleGrid.setSizeFull();
 

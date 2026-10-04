@@ -6,7 +6,7 @@ M3 is a lightweight, extensible messaging middleware platform built with Spring 
 
 ### Durable ingestion and receipt notifications
 
-Messages and metadata are saved before receipt notifications are published to RabbitMQ. A transactional outbox retries failures. External services fetch data using `GET /api/v1/messages/{id}`; source adapters submit through `POST /api/v1/channels/{channelId}/messages`. See [the ingestion contract and API](docs/message-ingestion.md).
+Channels describe endpoints; enabled INBOUND rules manage loading in their assigned worker pools. Messages and metadata are saved before receipt notifications are published to RabbitMQ. A transactional outbox retries failures. External services fetch data using `GET /api/v1/messages/{id}`; source adapters submit a loading `ruleId` through `POST /api/v1/channels/{channelId}/messages`. See [the ingestion contract and API](docs/message-ingestion.md).
 
 ### Durable outgoing delivery
 
@@ -27,6 +27,8 @@ Submit a payload and metadata with `ruleId` to `POST /api/v1/messages/outbound`.
 - **Complete Audit Trail**: Track all messages with timestamps, status, and metadata
 - **Status Monitoring**: View messages by direction (inbound/outbound) and status (pending, processed, error, sent)
 - **Detailed Inspection**: Drill down into message payloads and headers
+
+Message details show the payload and metadata together, offer a charset selector for byte-payload previews, and download the complete stored payload. See [message preview and encoding options](docs/message-encodings.md).
 
 ## Project Structure
 
@@ -107,10 +109,10 @@ spring.jpa.hibernate.ddl-auto=validate
 
 ### Run in Development Mode
 
-Start PostgreSQL in the background first:
+Start PostgreSQL and the receipt-notification broker in the background first:
 
 ```bash
-docker compose up -d db
+docker compose up -d db rabbitmq
 ```
 
 Then start the app from the IDE or with the Maven wrapper:
@@ -126,6 +128,8 @@ mvnw.cmd
 ```
 
 The local app defaults to the same database name and credentials as the Compose database. If you change the Compose credentials, also set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the IDE run configuration.
+
+Local runs use RabbitMQ at `localhost:5672`. If you change the broker port or credentials, set `M3_BROKER_RABBIT_PORT`, `M3_BROKER_RABBIT_USERNAME` and `M3_BROKER_RABBIT_PASSWORD` in the IDE as well. When the broker is unavailable, messages remain saved and receipt notifications wait in the outbox until the connection is restored.
 
 ### Build for Production
 

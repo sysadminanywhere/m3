@@ -7,23 +7,29 @@ import com.sysadminanywhere.m3.messaging.repository.MessageMetadataRepository;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.component.tabs.Tab;
-import com.vaadin.flow.component.tabs.Tabs;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
-import com.vaadin.flow.server.StreamResource;
+import com.vaadin.flow.server.streams.DownloadHandler;
+import com.vaadin.flow.server.streams.DownloadResponse;
 
 import java.io.ByteArrayInputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
-import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 
 public class MessageDetailDialog extends Dialog {
@@ -41,16 +47,24 @@ public class MessageDetailDialog extends Dialog {
     private final TextField payloadTypeField;
     private final TextField createdAtField;
     private final TextField processedAtField;
+    private final TextField charsetField;
+    private final TextField sizeField;
     private final TextArea payloadArea;
     private final Grid<MessageMetadata> metadataGrid;
+    private final ComboBox<String> charsetSelector = new ComboBox<>("Preview charset");
+    private final Span previewHint = new Span();
+    private final Anchor downloadLink = new Anchor();
+    private final Map<String, String> metadataValues = new TreeMap<>();
+    private byte[] originalBytes;
 
     public MessageDetailDialog(MessageService messageService, MessageMetadataRepository metadataRepository) {
         this.messageService = messageService;
         this.metadataRepository = metadataRepository;
 
         setHeaderTitle("Message Details");
-        setWidth("800px");
-        setHeight("600px");
+        setWidth("1000px");
+        setMaxWidth("calc(100vw - 32px)");
+        setHeight("85vh");
 
         idField = createReadOnlyField("ID");
         statusField = createReadOnlyField("Status");
@@ -60,60 +74,47 @@ public class MessageDetailDialog extends Dialog {
         payloadTypeField = createReadOnlyField("Payload Type");
         createdAtField = createReadOnlyField("Created At");
         processedAtField = createReadOnlyField("Processed At");
+        charsetField = createReadOnlyField("Stored charset / origin");
+        sizeField = createReadOnlyField("Payload bytes");
 
         payloadArea = new TextArea("Payload");
         payloadArea.setWidthFull();
         payloadArea.setHeight("300px");
         payloadArea.setReadOnly(true);
+        charsetSelector.setItems("UTF-8", "windows-1251", "KOI8-R", "IBM866", "ISO-8859-1", "UTF-16", "UTF-16LE", "UTF-16BE");
+        charsetSelector.addValueChangeListener(event -> refreshPreview());
+        previewHint.getStyle().set("white-space", "normal");
 
         metadataGrid = new Grid<>();
-        metadataGrid.addColumn(MessageMetadata::getKey).setHeader("Key");
-        metadataGrid.addColumn(MessageMetadata::getValue).setHeader("Value");
+        metadataGrid.addColumn(MessageMetadata::getKey).setHeader("Key").setWidth("220px").setFlexGrow(0);
+        metadataGrid.addColumn(MessageMetadata::getValue).setHeader("Value").setFlexGrow(1);
+        metadataGrid.addThemeVariants(GridVariant.LUMO_WRAP_CELL_CONTENT);
         metadataGrid.setEmptyStateText("No metadata");
-        metadataGrid.setSizeFull();
+        metadataGrid.setWidthFull();
+        metadataGrid.setHeight("240px");
 
-        // Tabs
         var detailsTab = new VerticalLayout();
         detailsTab.setSpacing(true);
         detailsTab.add(
                 new HorizontalLayout(idField, directionField, statusField),
                 new HorizontalLayout(sourceSystemField, targetSystemField, payloadTypeField),
-                new HorizontalLayout(createdAtField, processedAtField)
+                new HorizontalLayout(createdAtField, processedAtField),
+                new HorizontalLayout(charsetField, sizeField)
         );
-
-        var payloadTab = new VerticalLayout(payloadArea);
-        payloadTab.setSizeFull();
-
-        var metadataTab = new VerticalLayout(metadataGrid);
-        metadataTab.setSizeFull();
-
-        var detailsTabComponent = new Tab("Details");
-        var payloadTabComponent = new Tab("Payload");
-        var metadataTabComponent = new Tab("Metadata");
-
-        var tabs = new Tabs(detailsTabComponent, payloadTabComponent, metadataTabComponent);
-        var content = new VerticalLayout();
-        content.setSizeFull();
-        content.add(detailsTab);
-
-        tabs.addSelectedChangeListener(event -> {
-            content.removeAll();
-            if (event.getSelectedTab() == detailsTabComponent) {
-                content.add(detailsTab);
-            } else if (event.getSelectedTab() == payloadTabComponent) {
-                content.add(payloadTab);
-            } else if (event.getSelectedTab() == metadataTabComponent) {
-                content.add(metadataTab);
-            }
+        detailsTab.getChildren().forEach(row -> {
+            if (row instanceof HorizontalLayout layout) { layout.setWrap(true); layout.setWidthFull(); }
         });
-
-        var mainLayout = new VerticalLayout(tabs, content);
-        mainLayout.setSizeFull();
+        detailsTab.setPadding(false);
+        var mainLayout = new VerticalLayout(detailsTab, charsetSelector, previewHint, payloadArea,
+                new Span("Metadata"), metadataGrid);
+        mainLayout.setPadding(false);
+        mainLayout.setWidthFull();
+        mainLayout.setFlexShrink(0, payloadArea, metadataGrid);
         add(mainLayout);
 
         // Footer buttons
-        var downloadButton = new Button(VaadinIcon.DOWNLOAD.create(), event -> downloadPayload());
-        downloadButton.setTooltipText("Download payload");
+        downloadLink.setText("Download original payload");
+        downloadLink.getElement().setAttribute("download", true);
 
         var deleteButton = new Button(VaadinIcon.TRASH.create(), event -> deleteMessage());
         deleteButton.addThemeVariants(ButtonVariant.LUMO_ERROR);
@@ -121,7 +122,7 @@ public class MessageDetailDialog extends Dialog {
 
         var closeButton = new Button("Close", event -> close());
 
-        getFooter().add(downloadButton, deleteButton, closeButton);
+        getFooter().add(downloadLink, deleteButton, closeButton);
     }
 
     private TextField createReadOnlyField(String label) {
@@ -138,6 +139,7 @@ public class MessageDetailDialog extends Dialog {
     public void openMessage(Long messageId) {
         currentMessage = messageService.findById(messageId);
         if (currentMessage != null) {
+            setHeaderTitle("Message #" + messageId);
             var dateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
                     .withZone(ZoneId.systemDefault());
 
@@ -151,58 +153,63 @@ public class MessageDetailDialog extends Dialog {
             processedAtField.setValue(currentMessage.getProcessedAt() != null
                     ? dateTimeFormatter.format(currentMessage.getProcessedAt())
                     : "");
+            charsetField.setValue((currentMessage.getCharset() == null ? "Unknown" : currentMessage.getCharset())
+                    + " / " + currentMessage.getCharsetSource());
+            sizeField.setValue(Integer.toString(currentMessage.getPayloadSize()));
 
-            // Show preview of payload (first 5000 chars)
-            var payload = currentMessage.getPayload();
-            if (payload != null && payload.length() > 5000) {
-                payloadArea.setValue(payload.substring(0, 5000) + "\n\n... [truncated, use download for full content]");
-            } else {
-                payloadArea.setValue(payload != null ? payload : "");
-            }
-
-            // Load metadata
             List<MessageMetadata> metadata = metadataRepository.findByMessageId(messageId);
-            metadataGrid.setItems(metadata);
+            metadataGrid.setItems(metadata.stream().sorted(java.util.Comparator.comparing(MessageMetadata::getKey)).toList());
+            metadataValues.clear();
+            metadata.forEach(value -> metadataValues.put(value.getKey(), value.getValue()));
+            originalBytes = currentMessage.getPayloadBytes();
+            boolean binary = "BASE64".equals(currentMessage.getPayloadFormat());
+            charsetSelector.setEnabled(true);
+            String charset = currentMessage.getCharset() == null ? "UTF-8" : currentMessage.getCharset();
+            try { charset = Charset.forName(charset).name(); }
+            catch (IllegalArgumentException invalid) { charset = "UTF-8"; }
+            var choices = new java.util.LinkedHashSet<>(List.of("UTF-8", "windows-1251", "KOI8-R", "IBM866", "ISO-8859-1", "UTF-16", "UTF-16LE", "UTF-16BE"));
+            choices.add(charset);
+            charsetSelector.setItems(choices);
+            charsetSelector.setValue(charset);
+            try {
+                byte[] content = originalBytes;
+                String name = metadataValues.getOrDefault("fileName", "payload" + (binary ? ".bin" : ".txt"));
+                name = name.replaceAll("[\\\\/:\\p{Cntrl}]", "_");
+                String downloadName = "message-" + messageId + "-" + name;
+                downloadLink.setHref(DownloadHandler.fromInputStream(event -> new DownloadResponse(
+                        new ByteArrayInputStream(content), downloadName, "application/octet-stream", content.length)));
+                downloadLink.setVisible(true);
+            } catch (IllegalArgumentException invalid) {
+                downloadLink.setVisible(false);
+            }
+            refreshPreview();
 
             open();
         }
     }
 
-    private void downloadPayload() {
-        if (currentMessage == null || currentMessage.getPayload() == null) {
-            return;
-        }
-
-        var payload = currentMessage.getPayload();
-        var payloadType = currentMessage.getPayloadType();
-        var baseFileName = "message-" + currentMessage.getId();
-
-        final byte[] content;
-        final String fileName;
-        if ("file".equals(payloadType) || payload.startsWith("JVBERi") || payload.startsWith("/9j/") || payload.startsWith("iVBORw")) {
-            // Base64 encoded file
-            byte[] decodedContent;
-            String finalFileName;
-            try {
-                decodedContent = Base64.getDecoder().decode(payload);
-                finalFileName = baseFileName + ".bin";
-            } catch (IllegalArgumentException e) {
-                decodedContent = payload.getBytes();
-                finalFileName = baseFileName + ".txt";
+    private void refreshPreview() {
+        if (currentMessage == null) return;
+        String text;
+        {
+            if (originalBytes == null || charsetSelector.getValue() == null) {
+                payloadArea.clear();
+                previewHint.setText("Choose a charset for text preview.");
+                return;
             }
-            content = decodedContent;
-            fileName = finalFileName;
-        } else {
-            content = payload.getBytes();
-            fileName = baseFileName + ".txt";
+            try {
+                text = Charset.forName(charsetSelector.getValue()).newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(originalBytes)).toString();
+                previewHint.setText((currentMessage.getCharset() == null ? "Stored charset is unknown; this is a manual preview. " : "")
+                        + "Changing preview charset does not change stored bytes. Download preserves the original bytes.");
+            } catch (java.nio.charset.CharacterCodingException invalid) {
+                payloadArea.clear();
+                previewHint.setText("Cannot decode with the selected charset. Select another charset or download the original bytes.");
+                return;
+            }
         }
-
-        var resource = new StreamResource(fileName, () -> new ByteArrayInputStream(content));
-        var anchor = new Anchor(resource, "");
-        anchor.getElement().setAttribute("download", true);
-        add(anchor);
-        anchor.getElement().callJsFunction("click");
-        remove(anchor);
+        payloadArea.setValue(text.length() > 5000 ? text.substring(0, 5000) + "\n\n… [Preview limited to 5000 characters; download for full content]" : text);
     }
 
     private void deleteMessage() {

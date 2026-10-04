@@ -46,7 +46,7 @@ class LiquibaseMigrationsTest {
     void createsFreshSchemaCompatibleWithAllEntitiesAndDoesNotReapplyChanges() throws Exception {
         migrate();
         validateMappingsAndPersistPool();
-        assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(9);
+        assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(11);
         assertThat(number("SELECT count(*) FROM rule_worker_pool WHERE name = 'default'")).isEqualTo(1);
         assertThat(number("SELECT increment_by FROM pg_sequences WHERE schemaname = current_schema() AND sequencename = 'task_seq'")).isEqualTo(50);
         assertThat(number("SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname LIKE 'idx_%'")).isEqualTo(11);
@@ -55,7 +55,7 @@ class LiquibaseMigrationsTest {
 
         migrate();
 
-        assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(9);
+        assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(11);
         assertThat(number("SELECT desired_replicas FROM rule_worker_pool WHERE name = 'default'")).isEqualTo(3);
         assertThat(number("SELECT count(*) FROM message WHERE payload = 'preserve me'")).isEqualTo(1);
         assertThatThrownBy(() -> execute("INSERT INTO message(direction,status,payload,payload_type,created_at) VALUES('INBOUND','INVALID','x','text/plain',now())"))
@@ -78,7 +78,8 @@ class LiquibaseMigrationsTest {
         assertThat(number("SELECT desired_replicas FROM rule_worker_pool WHERE name='default'")).isEqualTo(3);
         assertThat(number("SELECT count(*) FROM task WHERE task_id=1 AND description='legacy task'")).isEqualTo(1);
         assertThat(number("SELECT count(*) FROM pg_constraint WHERE contype='f' AND conrelid='rule'::regclass")).isEqualTo(foreignKeys);
-        execute("INSERT INTO message(direction,status,payload,payload_type,created_at) VALUES('OUTBOUND','PENDING','next','text/plain',now())");
+        execute("INSERT INTO message(direction,status,payload,payload_bytes,charset,charset_source,payload_format,payload_type,created_at) "
+                + "VALUES('OUTBOUND','PENDING','next',convert_to('next','UTF8'),'UTF-8','TEXT_UTF8','TEXT','text/plain',now())");
         assertThat(number("SELECT message_id FROM message WHERE payload='next'")).isEqualTo(2);
     }
 
@@ -138,6 +139,9 @@ class LiquibaseMigrationsTest {
 
     private void createHibernateSchema() throws SQLException {
         try (SessionFactory ignored = hibernate("create")) { }
+        // Model the text-only Hibernate schema that existed before the bytea migration.
+        execute("ALTER TABLE message DROP COLUMN payload_bytes, DROP COLUMN charset, DROP COLUMN charset_source, DROP COLUMN payload_format; "
+                + "ALTER TABLE message ADD COLUMN payload TEXT NOT NULL");
         // Reproduce the removed starter feature to check that upgrades preserve legacy data.
         execute("CREATE SEQUENCE task_seq START WITH 1 INCREMENT BY 50; "
                 + "CREATE TABLE task(task_id BIGINT PRIMARY KEY, description VARCHAR(300) NOT NULL, "
@@ -156,9 +160,12 @@ class LiquibaseMigrationsTest {
     }
 
     private void insertExistingRuleAndMessage() throws SQLException {
+        boolean bytesSchema = number("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='message' AND column_name='payload_bytes'") > 0;
         execute("INSERT INTO channel_settings(name,channel_type,direction,enabled,created_at) VALUES('legacy-channel','DIRECTORY','INBOUND',true,now()); "
                 + "INSERT INTO rule(name,rule_type,source_channel_id,enabled,priority,created_at) VALUES('legacy-rule','INBOUND',1,true,0,now()); "
-                + "INSERT INTO message(direction,status,payload,payload_type,created_at) VALUES('INBOUND','PENDING','preserve me','text/plain',now())");
+                + (bytesSchema ? "INSERT INTO message(direction,status,payload,payload_bytes,charset,charset_source,payload_format,payload_type,created_at) "
+                    + "VALUES('INBOUND','PENDING','preserve me',convert_to('preserve me','UTF8'),'UTF-8','TEXT_UTF8','TEXT','text/plain',now())"
+                    : "INSERT INTO message(direction,status,payload,payload_type,created_at) VALUES('INBOUND','PENDING','preserve me','text/plain',now())"));
     }
 
     private void execute(String sql) throws SQLException {

@@ -89,7 +89,7 @@ public class ChannelSettingsService {
         channel.setEnabled(enabled);
         channel.setDescription(description);
         if (properties != null) {
-            channel.setProperties(properties);
+            channel.setProperties(endpointProperties(properties));
         }
 
         sourceRegistry.validate(channel);
@@ -114,7 +114,7 @@ public class ChannelSettingsService {
             channel.setEnabled(enabled);
         }
         if (properties != null) {
-            channel.setProperties(properties);
+            channel.setProperties(endpointProperties(properties));
         }
 
         sourceRegistry.validate(channel);
@@ -145,7 +145,7 @@ public class ChannelSettingsService {
     }
 
     public Map<String, String> getDefaultPropertiesForType(ChannelType type) {
-        return switch (type) {
+        Map<String,String> defaults = switch (type) {
             case FTP -> Map.of(
                     "host", "",
                     "port", "21",
@@ -192,5 +192,11 @@ public class ChannelSettingsService {
                     "routingKey", ""
             );
         };
+        return endpointProperties(defaults);
+    }
+    private Map<String,String> endpointProperties(Map<String,String> properties) {
+        var result = new java.util.HashMap<>(properties);
+        com.sysadminanywhere.m3.messaging.source.InboundSourceSpec.LOADING_KEYS.forEach(result::remove);
+        return result;
     }
 }

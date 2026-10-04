@@ -56,6 +56,14 @@ public class Rule {
     @OneToMany(mappedBy = "rule", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private Set<RuleAction> actions = new HashSet<>();
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "rule_loading_properties", joinColumns = @JoinColumn(name = "rule_id"))
+    @MapKeyColumn(name = "property_key")
+    @Column(name = "property_value", columnDefinition = "TEXT")
+    private java.util.Map<String, String> loadingProperties = new java.util.HashMap<>();
+
+    public java.util.Map<String, String> getLoadingProperties() { return loadingProperties; }
+
     protected Rule() {
     }
 
@@ -125,6 +133,13 @@ public class Rule {
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
         this.updatedAt = Instant.now();
+    }
+
+    public @Nullable String getDestinationChannelName() {
+        return actions.stream().filter(action -> action.getActionType() == ActionType.ROUTE && action.getTargetChannel() != null)
+                .sorted(java.util.Comparator.comparing(RuleAction::getPriority)
+                        .thenComparing(RuleAction::getId, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+                .map(RuleAction::getTargetChannel).findFirst().orElse(null);
     }
 
     public RuleWorkerPool getWorkerPool() { return workerPool; }

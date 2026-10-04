@@ -59,6 +59,12 @@ public class MessageService {
     }
 
     @Transactional(readOnly = true)
+    public Page<Message> findByDirection(MessageDirection direction, @Nullable MessageStatus status, Pageable pageable) {
+        return status == null ? messageRepository.findByDirection(direction, pageable)
+                : messageRepository.findByDirectionAndStatus(direction, status, pageable);
+    }
+
+    @Transactional(readOnly = true)
     public Page<Message> findByStatus(MessageStatus status, Pageable pageable) {
         return messageRepository.findByStatus(status, pageable);
     }

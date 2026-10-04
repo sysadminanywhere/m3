@@ -34,15 +34,30 @@ public class InboundMessageEnqueueService {
         String source = stringHeader(headers, "sourceSystem", stringHeader(headers, "channelName", "unknown"));
         String target = stringHeader(headers, "targetSystem", null);
         String payloadType = stringHeader(headers, "payloadType", "json");
-        String json = serialize(payload);
-        var stored = new com.sysadminanywhere.m3.messaging.domain.Message(MessageDirection.INBOUND, json, payloadType);
-        stored.setPayload(json);
+        String json = payload instanceof byte[] ? "" : serialize(payload);
+        var stored = new com.sysadminanywhere.m3.messaging.domain.Message(MessageDirection.INBOUND, "", payloadType);
+        String charset = PayloadCodec.charset(stringHeader(headers, "payloadCharset", stringHeader(headers, "charset", null)));
+        if (charset == null && headers.get("metadata") instanceof Map<?, ?> values && values.get("charset") instanceof String declared)
+            charset = PayloadCodec.charset(declared);
+        String charsetSource = stringHeader(headers, "payloadCharsetSource", "REQUEST");
+        if (payload instanceof byte[] bytes) {
+            String bom = PayloadCodec.bom(bytes);
+            stored.setContent(bytes, charset == null ? bom : charset,
+                    charset == null ? (bom == null ? "UNKNOWN" : "BOM")
+                            : PayloadCodec.bomConflicts(bytes, charset) ? "BOM_CONFLICT" : charsetSource, "BASE64");
+        } else {
+            @SuppressWarnings("unchecked")
+            var metadata = headers.get("metadata") instanceof Map<?, ?> values ? (Map<String, String>) values : Map.<String, String>of();
+            PayloadCodec.applyRequest(stored, json, charset, metadata);
+            if (charset != null) stored.setContent(stored.getPayloadBytes(), stored.getCharset(),
+                    charsetSource, stored.getPayloadFormat());
+        }
         stored.setPayloadType(payloadType);
         stored.setSourceSystem(source);
         stored.setTargetSystem(target);
         headers.forEach((key, value) -> {
             if (!(payload instanceof byte[] && key.equals("encoding"))
-                    && !java.util.Set.of("id", "timestamp", "metadata").contains(key)
+                    && !java.util.Set.of("id", "timestamp", "metadata", "payloadCharset", "payloadCharsetSource").contains(key)
                     && (value instanceof String || value instanceof Number || value instanceof Boolean)) {
                 addMetadata(stored, key, value.toString());
             }
@@ -65,6 +80,7 @@ public class InboundMessageEnqueueService {
         var rules = ruleRepository.findBySourceChannelNameAndEnabled(source, true);
         int jobs = 0;
         for (Rule rule : rules) {
+            if (headers.get("loadingRuleId") instanceof Number selected && rule.getId().longValue() != selected.longValue()) continue;
             if (!Boolean.TRUE.equals(rule.getEnabled()) || rule.getRuleType() != RuleType.INBOUND || rule.getWorkerPool() == null) continue;
             jobRepository.save(new RuleExecutionJob(stored, rule, rule.getWorkerPool()));
             jobs++;

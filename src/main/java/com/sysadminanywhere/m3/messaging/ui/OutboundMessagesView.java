@@ -47,7 +47,8 @@ class OutboundMessagesView extends VerticalLayout {
         statusFilter.addValueChangeListener(event -> refreshGrid());
 
         var toolbar = new HorizontalLayout();
-        toolbar.add(statusFilter);
+        toolbar.add(statusFilter, new Button("Refresh", VaadinIcon.REFRESH.create(), event -> refreshGrid()));
+        toolbar.setAlignItems(Alignment.END);
         toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();
@@ -58,8 +59,10 @@ class OutboundMessagesView extends VerticalLayout {
         messageGrid = new Grid<>();
         messageGrid.setItems(query -> messageService.findByDirection(
                 MessageDirection.OUTBOUND,
-                toSpringPageRequest(query)
-        ).stream().filter(m -> statusFilter.getValue() == null || m.getStatus() == statusFilter.getValue()));
+                statusFilter.getValue(),
+                toSpringPageRequest(query).withSort(org.springframework.data.domain.Sort.by("createdAt", "id").descending())
+        ).stream());
+        messageGrid.addItemDoubleClickListener(event -> detailDialog.openMessage(event.getItem().getId()));
         messageGrid.addColumn(Message::getId).setHeader("ID").setWidth("52px").setFlexGrow(0);
         messageGrid.addColumn(Message::getStatus).setHeader("Status").setWidth("80px").setFlexGrow(0);
         messageGrid.addColumn(Message::getSourceSystem).setHeader("Source").setWidth("88px").setFlexGrow(1);
@@ -68,12 +71,12 @@ class OutboundMessagesView extends VerticalLayout {
         messageGrid.addColumn(msg -> dateTimeFormatter.format(msg.getCreatedAt())).setHeader("Created")
                 .setWidth("130px").setFlexGrow(0);
         messageGrid.addComponentColumn(msg -> {
-            var viewButton = new Button(VaadinIcon.EYE.create());
+            var viewButton = new Button("View", VaadinIcon.EYE.create());
             viewButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
             viewButton.setTooltipText("View details");
             viewButton.addClickListener(e -> detailDialog.openMessage(msg.getId()));
             return viewButton;
-        }).setHeader("Actions").setWidth("76px").setFlexGrow(0);
+        }).setHeader("Actions").setWidth("100px").setFlexGrow(0);
         messageGrid.setEmptyStateText("No outbound messages found");
         messageGrid.setSizeFull();
 
