@@ -36,7 +36,7 @@ public class RuleWorkerPool {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
-    @OneToMany(mappedBy = "workerPool", fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "workerPool", fetch = FetchType.LAZY)
     private List<Rule> rules = new ArrayList<>();
 
     protected RuleWorkerPool() {}

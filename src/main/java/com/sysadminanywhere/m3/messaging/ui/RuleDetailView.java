@@ -205,9 +205,10 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
         var valueField = new TextField("Value");
         valueField.setRequired(true);
 
-        var logicalOpField = new ComboBox<LogicalOperator>("Logical Operator");
+        var logicalOpField = new ComboBox<LogicalOperator>("Combine with previous conditions");
         logicalOpField.setItems(LogicalOperator.values());
         logicalOpField.setValue(LogicalOperator.AND);
+        logicalOpField.setHelperText("Conditions follow creation order. AND has priority over OR; the first connector is ignored.");
 
         var form = new VerticalLayout(fieldField, operatorField, valueField, logicalOpField);
         form.setSpacing(true);
@@ -219,8 +220,14 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver {
                 return;
             }
 
-            ruleService.addCondition(ruleId, fieldField.getValue(), operatorField.getValue(),
-                    valueField.getValue(), logicalOpField.getValue());
+            try {
+                ruleService.addCondition(ruleId, fieldField.getValue(), operatorField.getValue(),
+                        valueField.getValue(), logicalOpField.getValue());
+            } catch (IllegalArgumentException invalid) {
+                Notification.show(invalid.getMessage(),4000,Notification.Position.BOTTOM_END)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
             loadRule();
             dialog.close();
             Notification.show("Condition added", 3000, Notification.Position.BOTTOM_END)

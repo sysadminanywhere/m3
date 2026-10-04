@@ -15,20 +15,20 @@ Submit a payload and metadata with `ruleId` to `POST /api/v1/messages/outbound`.
 ### Channel Management
 - **Multi-Protocol Support**: Configure channels for FTP, SFTP, Kafka, RabbitMQ, and local directories
 - **Inbound/Outbound Channels**: Support for both incoming and outgoing message flows
-- **Dynamic Configuration**: Runtime channel activation/deactivation without restart
+- **Dynamic Configuration**: Endpoint changes without restart; loading is enabled and disabled through rules
 
 ### Message Routing & Processing
 - **Visual Rule Engine**: Define message processing rules through an intuitive UI
 - **Conditions**: Match messages based on header values, payload content, or metadata
 - **Actions**: Route, transform, filter, or enrich messages as they flow through the system
-- **Priority-Based Processing**: Rules are evaluated in priority order
+- **Explicit Rule Selection**: Each submission or source receiver uses its selected rule; condition groups use AND before OR
 
 ### Message Tracking
 - **Complete Audit Trail**: Track all messages with timestamps, status, and metadata
 - **Status Monitoring**: View messages by direction (inbound/outbound) and status (pending, processed, error, sent)
 - **Detailed Inspection**: Drill down into message payloads and headers
 
-Message details show the payload and metadata together, offer a charset selector for byte-payload previews, and download the complete stored payload. See [message preview and encoding options](docs/message-encodings.md).
+Message details show execution jobs, retry controls, the payload and metadata together, offer a charset selector for byte-payload previews, and download the complete stored payload. See [message preview and encoding options](docs/message-encodings.md).
 
 ## Project Structure
 
@@ -64,10 +64,10 @@ src/main/java/com/sysadminanywhere/m3/
     │   ├── RuleDetailView.java
     │   ├── InboundMessagesView.java      # Message monitoring
     │   └── OutboundMessagesView.java
-    └── integration/                    # Spring Integration adapters
-        ├── config/                       # Integration configuration
-        ├── handler/                      # Message handlers
-        └── gateway/                      # Message gateways
+    ├── source/                         # Rule-owned source receivers
+    ├── outbound/                       # Durable delivery workers and transports
+    ├── broker/                         # Transactional receipt publication
+    └── integration/                    # Shared JSON configuration and rule gateway
 ```
 
 ## Technology Stack
@@ -91,7 +91,7 @@ The Vaadin application stores incoming messages and creates durable per-rule job
 
 Open **Administration → Workers** to create pools, set target/minimum/maximum container counts, and optionally auto-scale from pending plus processing jobs with a per-worker threshold. The UI samples CPU and memory utilization for each pool every 30 seconds and shows current, peak, and 30-day average values. Open a rule and choose its worker pool to move it; unfinished jobs follow the new assignment after any active claim transaction completes.
 
-`docker compose up --build -d` starts PostgreSQL, RabbitMQ, the Docker socket proxy, and the Vaadin app. The proxy needs access to the local Docker socket and is kept on the internal Compose network. Worker containers are created by the app and are not exposed on a host port. Each pool consumes its own jobs using PostgreSQL row locks, so replicas in that pool can process concurrently. When the control plane shuts down cleanly, it removes its managed worker containers so `docker compose down` can remove the project network as well.
+`docker compose up --build -d` starts PostgreSQL, RabbitMQ, the Docker socket proxy, and the Vaadin app. The proxy needs access to the local Docker socket and is kept on the internal Compose network. Worker containers are created by the app and are not exposed on a host port. Each pool consumes its own jobs using PostgreSQL row locks, so replicas in that pool can process concurrently. Workers continue running when the UI stops, including receipt publication. Pool reconciliation replaces containers when the image or worker configuration changes. Managed workers must be stopped before removing their Docker network.
 
 ### Configuration
 

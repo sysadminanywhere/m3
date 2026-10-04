@@ -20,13 +20,15 @@ public class WorkerPoolMetricsService {
     private final RuleWorkerPoolRepository pools;
     private final WorkerPoolMetricSampleRepository samples;
     private final DockerWorkerScaler docker;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public WorkerPoolMetricsService(RuleWorkerPoolRepository pools,
                                     WorkerPoolMetricSampleRepository samples,
-                                    DockerWorkerScaler docker) {
+                                    DockerWorkerScaler docker, org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.pools = pools;
         this.samples = samples;
         this.docker = docker;
+        this.jdbc = jdbc;
     }
 
     @Scheduled(fixedDelayString = "${m3.worker.metrics-sample-delay-ms:30000}",
@@ -36,8 +38,13 @@ public class WorkerPoolMetricsService {
         if (!docker.isConfigured()) return;
         for (RuleWorkerPool pool : pools.findAll()) {
             try {
-                var load = docker.load(pool.getName());
-                samples.save(new WorkerPoolMetricSample(pool, load.cpuPercent(), load.memoryPercent()));
+                var containers = docker.containerLoads(pool.getName());
+                for (var container : containers) jdbc.update("""
+                    INSERT INTO worker_container_metric_sample(worker_pool_id,container_id,container_name,cpu_percent,memory_percent)
+                    VALUES(?,?,?,?,?)
+                    """, pool.getId(),container.id(),container.name(),container.cpuPercent(),container.memoryPercent());
+                samples.save(new WorkerPoolMetricSample(pool,containers.stream().mapToDouble(DockerWorkerScaler.ContainerLoad::cpuPercent).sum(),
+                        containers.stream().mapToDouble(DockerWorkerScaler.ContainerLoad::memoryPercent).average().orElse(0)));
             } catch (Exception e) {
                 log.warn("Could not sample worker pool '{}' metrics", pool.getName(), e);
             }
@@ -47,6 +54,7 @@ public class WorkerPoolMetricsService {
     @Scheduled(cron = "0 15 3 * * *")
     @Transactional
     public void deleteOldSamples() {
+        jdbc.update("DELETE FROM worker_container_metric_sample WHERE sampled_at < now()-interval '30 days'");
         samples.deleteOlderThan(Instant.now().minus(java.time.Duration.ofDays(30)));
     }
 
@@ -60,6 +68,20 @@ public class WorkerPoolMetricsService {
                 number(samples.maximumMemory(poolId)), number(samples.averageMemory(poolId)),
                 latest.map(WorkerPoolMetricSample::getSampledAt).orElse(null));
     }
+
+    @Transactional(readOnly = true)
+    public java.util.List<ContainerSummary> containers(Long poolId) {
+        return jdbc.query("""
+            SELECT container_id,container_name,max(sampled_at),
+            (array_agg(cpu_percent ORDER BY sampled_at DESC))[1],max(cpu_percent),avg(cpu_percent),
+            (array_agg(memory_percent ORDER BY sampled_at DESC))[1],max(memory_percent),avg(memory_percent)
+            FROM worker_container_metric_sample WHERE worker_pool_id=?
+            GROUP BY container_id,container_name ORDER BY container_name,max(sampled_at) DESC
+            """, (rs,row) -> new ContainerSummary(rs.getString(1),rs.getString(2),
+                    new LoadSummary(rs.getDouble(4),rs.getDouble(5),rs.getDouble(6),
+                            rs.getDouble(7),rs.getDouble(8),rs.getDouble(9),rs.getTimestamp(3).toInstant())),poolId);
+    }
+    public record ContainerSummary(String id,String name,LoadSummary load) { }
 
     private double number(Object value) { return value instanceof Number n ? n.doubleValue() : 0d; }
 

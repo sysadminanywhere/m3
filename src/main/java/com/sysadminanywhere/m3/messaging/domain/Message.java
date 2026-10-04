@@ -16,7 +16,7 @@ public class Message {
     public static final int PAYLOAD_REQUEST_MAX_LENGTH = 4 * ((PAYLOAD_MAX_BYTES + 2) / 3);
     public static final int SOURCE_SYSTEM_MAX_LENGTH = 200;
     public static final int TARGET_SYSTEM_MAX_LENGTH = 200;
-    public static final int PAYLOAD_TYPE_MAX_LENGTH = 50;
+    public static final int PAYLOAD_TYPE_MAX_LENGTH = 255;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -68,8 +68,8 @@ public class Message {
     }
 
     public Message(MessageDirection direction, String payload, String payloadType) {
-        this.direction = direction;
-        this.payloadType = payloadType;
+        setDirection(direction);
+        setPayloadType(payloadType);
         setPayload(payload);
         this.createdAt = Instant.now();
     }
@@ -125,7 +125,7 @@ public class Message {
     }
 
     public void setPayloadType(String payloadType) {
-        if (payloadType.length() > PAYLOAD_TYPE_MAX_LENGTH) {
+        if (payloadType == null || payloadType.isBlank() || payloadType.length() > PAYLOAD_TYPE_MAX_LENGTH) {
             throw new IllegalArgumentException("Payload type length exceeds " + PAYLOAD_TYPE_MAX_LENGTH);
         }
         this.payloadType = payloadType;
@@ -170,6 +170,8 @@ public class Message {
     }
 
     public void addMetadata(String key, String value) {
+        var existing = metadata.stream().filter(item -> item.getKey().equals(key)).findFirst();
+        if (existing.isPresent()) { existing.get().setValue(value); return; }
         metadata.add(new MessageMetadata(this, key, value));
     }
 

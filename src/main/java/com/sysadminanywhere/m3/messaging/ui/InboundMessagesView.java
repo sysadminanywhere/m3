@@ -35,11 +35,12 @@ class InboundMessagesView extends VerticalLayout {
     final ComboBox<MessageStatus> statusFilter;
     final Grid<Message> messageGrid;
 
-    InboundMessagesView(MessageService messageService, MessageMetadataRepository metadataRepository) {
+    InboundMessagesView(MessageService messageService, MessageMetadataRepository metadataRepository,
+            com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService submissions) {
         this.messageService = messageService;
         this.metadataRepository = metadataRepository;
-        this.detailDialog = new MessageDetailDialog(messageService, metadataRepository);
-        this.detailDialog.setOnDeleteCallback(id -> refreshGrid());
+        this.detailDialog = new MessageDetailDialog(messageService, metadataRepository, submissions);
+        this.detailDialog.setOnMessageChanged(id -> refreshGrid());
 
         statusFilter = new ComboBox<>("Status");
         statusFilter.setItems(MessageStatus.values());

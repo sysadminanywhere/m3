@@ -17,6 +17,7 @@ import java.util.*;
 public class RuleExecutionProcessor {
     private final RuleExecutionJobRepository jobs;
     private final MessageRepository messages;
+    private final com.sysadminanywhere.m3.messaging.repository.ChannelSettingsRepository channels;
     private final RuleEngine ruleEngine;
     private final ObjectMapper objectMapper;
     private final String poolName;
@@ -28,11 +29,13 @@ public class RuleExecutionProcessor {
 
     public RuleExecutionProcessor(RuleExecutionJobRepository jobs, MessageRepository messages,
                                   RuleEngine ruleEngine, ObjectMapper objectMapper,
+                                  com.sysadminanywhere.m3.messaging.repository.ChannelSettingsRepository channels,
                                   @Value("${m3.worker.pool:default}") String poolName,
                                   @Value("${HOSTNAME:local-worker}") String workerId,
                                   @Value("${m3.worker.claim-lease-seconds:300}") int claimLeaseSeconds) {
         this.jobs = jobs;
         this.messages = messages;
+        this.channels = channels;
         this.ruleEngine = ruleEngine;
         this.objectMapper = objectMapper;
         this.poolName = poolName;
@@ -45,7 +48,8 @@ public class RuleExecutionProcessor {
         @SuppressWarnings("unchecked")
         List<Number> rows = entityManager.createNativeQuery("""
                 select j.job_id from rule_execution_job j
-                join rule_worker_pool p on p.worker_pool_id = j.worker_pool_id
+                join rule r on r.rule_id=j.rule_id
+                join rule_worker_pool p on p.worker_pool_id = r.worker_pool_id
                 join message m on m.message_id = j.message_id
                 where p.name = :pool and j.status = 'PENDING' and m.direction = 'INBOUND'
                 order by j.created_at, j.job_id
@@ -57,6 +61,7 @@ public class RuleExecutionProcessor {
 
         long id = rows.getFirst().longValue();
         var job = jobs.findById(id).orElseThrow();
+        job.reassignPool(job.getRule().getWorkerPool());
         job.claim(workerId);
         var message = job.getMessage();
         try {
@@ -73,7 +78,10 @@ public class RuleExecutionProcessor {
             long failed = jobs.countByMessage_IdAndStatus(message.getId(), RuleJobStatus.FAILED);
             if (failed == 0) {
                 try { finishMessage(message); }
-                catch (Exception e) { throw new IllegalStateException("Could not finalize inbound message " + message.getId(), e); }
+                catch (Exception e) {
+                    job.fail(e);
+                    setFinalStatus(message, MessageStatus.FAILED);
+                }
             } else setFinalStatus(message, MessageStatus.FAILED);
         }
         return true;
@@ -92,6 +100,8 @@ public class RuleExecutionProcessor {
         stored.getMetadata().forEach(metadata -> headers.put(metadata.getKey(), metadata.getValue()));
         var input = org.springframework.messaging.support.MessageBuilder.withPayload(payload).copyHeaders(headers).build();
         Rule rule = job.getRule();
+        if (rule.getRuleType()!=RuleType.INBOUND)
+            throw new IllegalArgumentException("Loading rule changed type before the message was processed");
         if (!Boolean.TRUE.equals(rule.getEnabled()) || !ruleEngine.evaluateConditions(rule, input)) {
             job.setResult("NO_MATCH");
             return;
@@ -118,12 +128,17 @@ public class RuleExecutionProcessor {
 
         String target = ruleEngine.determineTargetChannel(input, matchedRules);
         if (target != null) {
+            Rule routingRule = matchedRules.stream().filter(rule -> rule.getActions().stream()
+                    .anyMatch(action -> action.getActionType() == ActionType.ROUTE)).findFirst().orElseThrow();
+            var destination = com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService.target(routingRule,
+                    channels);
             var transformed = ruleEngine.applyTransformations(input, matchedRules);
             var outbound = new Message(MessageDirection.OUTBOUND, "", stored.getPayloadType());
             String output = PayloadCodec.charset((String) transformed.getHeaders().get("outputCharset"));
             if (output != null && transformed.getPayload() instanceof byte[])
                 throw new IllegalArgumentException("Output charset requires a decoded text payload");
             boolean changed = transformed.getPayload() != input.getPayload() || output != null;
+            if (changed && output == null) output = PayloadCodec.charset(destination.getProperties().get("outputCharset"));
             if (changed && output == null) output = stored.getCharset() == null ? "UTF-8" : stored.getCharset();
             outbound.setContent(changed ? RulePayloads.encode(transformed.getPayload(), output, objectMapper) : stored.getPayloadBytes(),
                     changed ? output : stored.getCharset(), changed ? "RULE" : stored.getCharsetSource(), "BASE64");
@@ -133,12 +148,26 @@ public class RuleExecutionProcessor {
             });
             outbound.addMetadata("encoding", "base64");
             if (outbound.getCharset() != null) outbound.addMetadata("charset", outbound.getCharset());
+            outbound.addMetadata("sourceMessageId",stored.getId().toString());
+            outbound.setPayloadType(changed ? PayloadCodec.outputType(stored.getPayloadType(),output) : stored.getPayloadType());
+            outbound.addMetadata("payloadType",outbound.getPayloadType());
             outbound.setSourceSystem(stored.getSourceSystem());
             outbound.setTargetSystem(target);
+            var metadata = new TreeMap<String, String>();
+            outbound.getMetadata().forEach(value -> metadata.put(value.getKey(), value.getValue()));
+            metadata.remove("encoding");
+            metadata.put("m3RuleId", routingRule.getId().toString());
+            var plan = new com.sysadminanywhere.m3.messaging.outbound.PreparedOutboundDelivery(destination.getId(),
+                    outbound.getPayloadBytes(), outbound.getPayloadType(), metadata);
+            String serializedPlan = objectMapper.writeValueAsString(plan);
             messages.save(outbound);
+            var deliveryJob = new RuleExecutionJob(outbound, routingRule, routingRule.getWorkerPool());
+            deliveryJob.setResult(serializedPlan);
+            jobs.save(deliveryJob);
         }
         setFinalStatus(stored, MessageStatus.PROCESSED);
     }
+
 
     private void setFinalStatus(Message message, MessageStatus status) {
         message.setStatus(status);

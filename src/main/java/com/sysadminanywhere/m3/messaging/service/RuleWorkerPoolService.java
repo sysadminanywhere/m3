@@ -12,11 +12,19 @@ import java.util.List;
 public class RuleWorkerPoolService {
     private final RuleWorkerPoolRepository repository;
     private final RuleRepository ruleRepository;
+    private final com.sysadminanywhere.m3.messaging.repository.RuleExecutionJobRepository jobs;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
-    public RuleWorkerPoolService(RuleWorkerPoolRepository repository, RuleRepository ruleRepository) {
+    public RuleWorkerPoolService(RuleWorkerPoolRepository repository, RuleRepository ruleRepository,
+            com.sysadminanywhere.m3.messaging.repository.RuleExecutionJobRepository jobs, org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.repository = repository;
         this.ruleRepository = ruleRepository;
+        this.jobs = jobs;
+        this.jdbc = jdbc;
     }
+
+    @Transactional(readOnly = true)
+    public long ruleCount(Long poolId) { return ruleRepository.countByWorkerPool_Id(poolId); }
 
     @Transactional(readOnly = true)
     public List<RuleWorkerPool> findAll() {
@@ -48,15 +56,22 @@ public class RuleWorkerPoolService {
         if (repository.existsByIdAndRulesIsNotEmpty(id)) {
             throw new IllegalStateException("Move rules to another pool before deleting this pool");
         }
+        if (jobs.countByWorkerPool_IdAndStatusIn(id,java.util.List.of(com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.values())) > 0)
+            throw new IllegalStateException("This pool still has job history or active deliveries and cannot be deleted");
+        jdbc.update("DELETE FROM worker_pool_metric_sample WHERE worker_pool_id=?",id);
         repository.delete(pool);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canDelete(Long id) {
+        return !repository.existsByIdAndRulesIsNotEmpty(id)
+                && jobs.countByWorkerPool_IdAndStatusIn(id,java.util.List.of(com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.values())) == 0;
     }
 
     @Transactional
     public void ensureDefaultPool() {
         var pool = repository.findByName("default")
                 .orElseGet(() -> repository.save(new RuleWorkerPool("default", 1, 1, 4)));
-        for (var rule : ruleRepository.findAll()) {
-            if (rule.getWorkerPool() == null) rule.setWorkerPool(pool);
-        }
+        ruleRepository.assignUnassigned(pool.getId());
     }
 }

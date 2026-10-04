@@ -39,6 +39,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
     final Checkbox enabledField;
     final Tabs propertyTabs;
 
+    private final ChannelExtraSettings extraSettings=new ChannelExtraSettings();
     private final Map<String, TextField> textFields = new HashMap<>();
     private final Map<String, PasswordField> passwordFields = new HashMap<>();
     private final Map<String, NumberField> numberFields = new HashMap<>();
@@ -67,8 +68,10 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
         descriptionField = new TextArea("Description");
         descriptionField.setWidthFull();
 
-        enabledField = new Checkbox("Enabled");
+        enabledField = new Checkbox("Outbound channel available");
         enabledField.setValue(true);
+        enabledField.setVisible(directionField.getValue()==ChannelDirection.OUTBOUND);
+        directionField.addValueChangeListener(event -> enabledField.setVisible(event.getValue()==ChannelDirection.OUTBOUND));
 
         var basicForm = new FormLayout();
         basicForm.add(nameField, typeField, directionField, enabledField);
@@ -184,7 +187,8 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
             case RABBITMQ -> setupRabbitMqFields(properties);
         }
 
-        for (String key : com.sysadminanywhere.m3.messaging.source.InboundSourceSpec.LOADING_KEYS) {
+        for (String key : java.util.stream.Stream.concat(com.sysadminanywhere.m3.messaging.source.InboundSourceSpec.LOADING_KEYS.stream(),
+                java.util.stream.Stream.of("keyDeserializer","valueDeserializer")).toList()) {
             com.vaadin.flow.component.Component field = textFields.remove(key);
             if (field == null) field = numberFields.remove(key);
             if (field == null) field = checkboxes.remove(key);
@@ -193,6 +197,9 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
         advancedTabContent.add(
                 createTextField("charset", "Source charset (blank = unknown)", properties.getOrDefault("charset", "")),
                 createTextField("outputCharset", "Transformed output charset (optional)", properties.getOrDefault("outputCharset", "")));
+        var visible=new java.util.HashSet<>(textFields.keySet());
+        visible.addAll(passwordFields.keySet()); visible.addAll(numberFields.keySet()); visible.addAll(checkboxes.keySet());
+        extraSettings.load(properties,visible); advancedTabContent.add(extraSettings);
         updateTabContent();
     }
 
@@ -337,11 +344,16 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
     }
 
     private Map<String, String> collectProperties() {
-        Map<String, String> properties = new HashMap<>(currentChannel == null ? Map.of() : currentChannel.getProperties());
+        Map<String, String> properties = new HashMap<>(extraSettings.settings());
 
         textFields.forEach((key, field) -> properties.put(key, field.getValue()));
         passwordFields.forEach((key, field) -> properties.put(key, field.getValue()));
-        numberFields.forEach((key, field) -> properties.put(key, String.valueOf(field.getValue().intValue())));
+        numberFields.forEach((key,field) -> {
+            Double value=field.getValue();
+            if (value==null || value<1 || value>65535 || value!=Math.rint(value))
+                throw new IllegalArgumentException(key+" must be an integer between 1 and 65535");
+            properties.put(key,Integer.toString(value.intValue()));
+        });
         checkboxes.forEach((key, field) -> properties.put(key, String.valueOf(field.getValue())));
 
         return properties;
@@ -354,7 +366,12 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver {
             return;
         }
 
-        var properties = collectProperties();
+        Map<String,String> properties;
+        try { properties=collectProperties(); }
+        catch (IllegalArgumentException invalid) {
+            Notification.show(invalid.getMessage(),4000,Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            return;
+        }
 
         try {
             if (currentChannel == null) {

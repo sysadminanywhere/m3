@@ -96,6 +96,10 @@ public class RuleExecutionJob {
     }
 
     public void setResult(String result) { this.result = result; }
+    public void reassignPool(RuleWorkerPool pool) {
+        if (status == RuleJobStatus.PROCESSING) throw new IllegalStateException("Cannot reassign a running claim");
+        this.workerPool = pool;
+    }
 
     public void fail(Throwable error) {
         this.status = RuleJobStatus.FAILED;

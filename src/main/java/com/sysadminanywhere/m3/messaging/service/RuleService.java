@@ -33,7 +33,7 @@ public class RuleService {
 
     @Transactional
     public Rule createRule(String name, RuleType ruleType, Long sourceChannelId, Integer priority) {
-        var sourceChannel = channelSettingsRepository.findById(sourceChannelId)
+        var sourceChannel = channelSettingsRepository.findForUpdate(sourceChannelId)
                 .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + sourceChannelId));
         var rule = new Rule(name, ruleType, sourceChannel);
         workerPoolRepository.findByName("default").ifPresent(rule::setWorkerPool);
@@ -45,7 +45,7 @@ public class RuleService {
     public Rule updateRule(Long ruleId, String name, @jakarta.annotation.Nullable String description,
                            RuleType ruleType, Long sourceChannelId, Integer priority, Boolean enabled) {
         var rule = ruleRepository.findById(ruleId).orElseThrow();
-        var sourceChannel = channelSettingsRepository.findById(sourceChannelId)
+        var sourceChannel = channelSettingsRepository.findForUpdate(sourceChannelId)
                 .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + sourceChannelId));
         rule.setName(name);
         rule.setDescription(description);
@@ -58,12 +58,19 @@ public class RuleService {
 
     @Transactional
     public void deleteRule(Long ruleId) {
+        if (executionJobRepository.existsByRule_Id(ruleId))
+            throw new IllegalArgumentException("Rule has message history; disable it or remove its completed messages before deleting");
         ruleRepository.deleteById(ruleId);
     }
 
     @Transactional(readOnly = true)
     public Rule findById(Long id) {
         return ruleRepository.findById(id).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<Rule> page(org.springframework.data.domain.Pageable pageable) {
+        return ruleRepository.findAll(pageable);
     }
 
     @Transactional(readOnly = true)
@@ -106,6 +113,20 @@ public class RuleService {
     @Transactional
     public RuleCondition addCondition(Long ruleId, String field, ConditionOperator operator, String value, LogicalOperator logicalOperator) {
         var rule = ruleRepository.findById(ruleId).orElseThrow();
+        if (field == null || field.isBlank() || field.length() > RuleCondition.FIELD_MAX_LENGTH
+                || !(field.equals("payload") || field.startsWith("header.") && field.length() > 7
+                     || field.startsWith("payload.") && field.length() > 8))
+            throw new IllegalArgumentException("Condition field must be payload, payload.field or header.name");
+        if (value == null || value.length() > RuleCondition.VALUE_MAX_LENGTH || operator == null || logicalOperator == null)
+            throw new IllegalArgumentException("Condition value, operator and connector are required");
+        if (operator == ConditionOperator.REGEX) {
+            try { java.util.regex.Pattern.compile(value); }
+            catch (java.util.regex.PatternSyntaxException invalid) { throw new IllegalArgumentException("Invalid regular expression"); }
+        }
+        if (operator == ConditionOperator.GREATER || operator == ConditionOperator.LESS) {
+            try { new java.math.BigDecimal(value); }
+            catch (NumberFormatException invalid) { throw new IllegalArgumentException("Numeric conditions require a numeric value"); }
+        }
         var condition = new RuleCondition(rule, field, operator, value);
         condition.setLogicalOperator(logicalOperator);
         return ruleConditionRepository.save(condition);
@@ -131,7 +152,9 @@ public class RuleService {
     @Transactional
     public void toggleEnabled(Long ruleId) {
         var rule = ruleRepository.findById(ruleId).orElseThrow();
+        channelSettingsRepository.findForUpdate(rule.getSourceChannel().getId()).orElseThrow();
         rule.setEnabled(!rule.getEnabled());
+        com.sysadminanywhere.m3.messaging.source.LoadingPolicy.validate(rule, ruleRepository.findAll());
         ruleRepository.save(rule);
     }
 
@@ -184,8 +207,9 @@ public class RuleService {
         for (var item : routes) if (destination == null || item != route) saved.getActions().remove(item);
         if (destination != null) {
             if (route == null) { route = new RuleAction(saved, ActionType.ROUTE); saved.getActions().add(route); }
-            route.setTargetChannel(destination.getName());
+            route.setDestinationChannel(destination);
         }
+        com.sysadminanywhere.m3.messaging.source.LoadingPolicy.validate(saved, ruleRepository.findAll());
         ruleRepository.flush();
         return saved;
     }
@@ -197,6 +221,7 @@ public class RuleService {
         var action = new RuleAction(rule, type);
         if (type == ActionType.TRANSFORM) {
             if (script == null || script.isBlank()) throw new IllegalArgumentException("Transformation script is required");
+            RuleEngine.validateTransformation(script);
             action.setTransformationScript(script);
         } else if (type == ActionType.FILTER) {
             if (filter == null) throw new IllegalArgumentException("Filter result is required");

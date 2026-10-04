@@ -164,35 +164,24 @@ class RuleEngineTest {
 
     @Test
     void evaluateConditions_WithOrCondition_SecondMatches_ShouldReturnTrue() {
-        // Given - RuleEngine sorts AND conditions first, so we need to test OR logic correctly
-        // First condition (AND) fails, second condition (OR) would pass
         Rule rule = new Rule("rule", RuleType.INBOUND, sourceChannel);
 
-        // This condition will be evaluated first (AND has priority in sorting) and will fail
         RuleCondition condition1 = new RuleCondition(rule, "header.fileName", ConditionOperator.EQUALS, "nonexistent.xml");
         condition1.setLogicalOperator(LogicalOperator.AND); // Default, but explicit for clarity
 
-        // This condition would pass if evaluated
         RuleCondition condition2 = new RuleCondition(rule, "header.contentType", ConditionOperator.EQUALS, "application/json");
         condition2.setLogicalOperator(LogicalOperator.OR);
 
         rule.getConditions().add(condition1);
         rule.getConditions().add(condition2);
 
-        // When
         boolean result = ruleEngine.evaluateConditions(rule, springMessage);
 
-        // Then - The RuleEngine sorts AND first, so:
-        // 1. condition1 (AND) fails: result = true && false = false
-        // 2. currentOp becomes AND (from condition1)
-        // 3. condition2 (OR) passes: result = false && true = false
-        // This is actually the expected behavior - the test shows that AND takes precedence
-        assertThat(result).isFalse();
+        assertThat(result).isTrue();
     }
 
     @Test
     void evaluateConditions_WithOrCondition_AfterAndSucceeds_ShouldReturnTrue() {
-        // Given - AND condition succeeds, so result is true regardless of OR
         Rule rule = new Rule("rule", RuleType.INBOUND, sourceChannel);
 
         RuleCondition condition1 = new RuleCondition(rule, "header.contentType", ConditionOperator.EQUALS, "application/json");
@@ -204,16 +193,9 @@ class RuleEngineTest {
         rule.getConditions().add(condition1);
         rule.getConditions().add(condition2);
 
-        // When
         boolean result = ruleEngine.evaluateConditions(rule, springMessage);
 
-        // Then
-        // After sorting: condition1 (AND) first, then condition2 (OR)
-        // 1. condition1 passes: result = true && true = true
-        // 2. currentOp becomes AND
-        // 3. condition2 fails: result = true && false = false
-        // This shows the sorting behavior
-        assertThat(result).isFalse();
+        assertThat(result).isTrue();
     }
 
     @Test

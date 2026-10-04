@@ -42,4 +42,22 @@
     <changeSet id="011-rule-loading" author="m3">
         <sqlFile path="changes/011-rule-loading.sql" relativeToChangelogFile="true"/>
     </changeSet>
+    <changeSet id="012-runtime-consistency" author="m3">
+        <sqlFile path="changes/012-runtime-consistency.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="013-recover-orphan-deliveries" author="m3">
+        <sqlFile path="changes/013-recover-orphan-deliveries.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="014-ingestion-request-digest" author="m3">
+        <sqlFile path="changes/014-ingestion-request-digest.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="015-metadata-consistency" author="m3">
+        <sqlFile path="changes/015-metadata-consistency.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="016-content-type-length" author="m3">
+        <sqlFile path="changes/016-content-type-length.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+    <changeSet id="017-endpoint-only-settings" author="m3">
+        <sqlFile path="changes/017-endpoint-only-settings.sql" relativeToChangelogFile="true"/>
+    </changeSet>
 </databaseChangeLog>

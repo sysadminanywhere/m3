@@ -18,11 +18,21 @@ public class ChannelSettingsService {
 
     private final ChannelSettingsRepository channelSettingsRepository;
     private final InboundSourceRegistry sourceRegistry;
+    private final com.sysadminanywhere.m3.messaging.repository.RuleRepository rules;
+    private final com.sysadminanywhere.m3.messaging.repository.RuleActionRepository actions;
 
     public ChannelSettingsService(ChannelSettingsRepository channelSettingsRepository,
-                                  @Lazy InboundSourceRegistry sourceRegistry) {
+                                  @Lazy InboundSourceRegistry sourceRegistry,
+                                  com.sysadminanywhere.m3.messaging.repository.RuleActionRepository actions, com.sysadminanywhere.m3.messaging.repository.RuleRepository rules) {
         this.channelSettingsRepository = channelSettingsRepository;
         this.sourceRegistry = sourceRegistry;
+        this.actions = actions;
+        this.rules = rules;
+    }
+
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<ChannelSettings> page(ChannelType type, org.springframework.data.domain.Pageable pageable) {
+        return type == null ? channelSettingsRepository.findAll(pageable) : channelSettingsRepository.findByChannelType(type, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -86,7 +96,7 @@ public class ChannelSettingsService {
         }
 
         var channel = new ChannelSettings(name, channelType, direction);
-        channel.setEnabled(enabled);
+        channel.setEnabled(direction==ChannelDirection.INBOUND || enabled);
         channel.setDescription(description);
         if (properties != null) {
             channel.setProperties(endpointProperties(properties));
@@ -108,11 +118,14 @@ public class ChannelSettingsService {
             throw new IllegalArgumentException("Channel with name '" + name + "' already exists");
         }
 
+        // Resolve legacy callers that still supplied a destination name before renaming it.
+        actions.findByTargetChannel(channel.getName()).stream()
+                .filter(action -> action.getDestinationChannel() == null)
+                .forEach(action -> action.setDestinationChannel(channel));
         channel.setName(name);
         channel.setDescription(description);
-        if (enabled != null) {
-            channel.setEnabled(enabled);
-        }
+        if (enabled != null || channel.getDirection()==ChannelDirection.INBOUND)
+            channel.setEnabled(channel.getDirection()==ChannelDirection.INBOUND || enabled);
         if (properties != null) {
             channel.setProperties(endpointProperties(properties));
         }
@@ -125,6 +138,10 @@ public class ChannelSettingsService {
 
     @Transactional
     public void deleteChannel(Long channelId) {
+        var channel=channelSettingsRepository.findById(channelId).orElseThrow(() -> new IllegalArgumentException("Channel not found"));
+        if (rules.existsBySourceChannel_Id(channelId) || actions.existsByDestinationChannel_Id(channelId)
+                || !actions.findByTargetChannel(channel.getName()).isEmpty())
+            throw new IllegalArgumentException("Channel is referenced by rules; change their source or destination before deleting");
         sourceRegistry.stopChannel(channelId);
         channelSettingsRepository.deleteById(channelId);
     }
@@ -133,6 +150,8 @@ public class ChannelSettingsService {
     public void toggleEnabled(Long channelId) {
         var channel = channelSettingsRepository.findById(channelId)
                 .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + channelId));
+        if (channel.getDirection()==ChannelDirection.INBOUND)
+            throw new IllegalArgumentException("Enable or disable the loading rule to control inbound reception");
         channel.setEnabled(!channel.getEnabled());
         sourceRegistry.validate(channel);
         var savedChannel = channelSettingsRepository.save(channel);
@@ -195,7 +214,11 @@ public class ChannelSettingsService {
         return endpointProperties(defaults);
     }
     private Map<String,String> endpointProperties(Map<String,String> properties) {
+        if (properties.entrySet().stream().anyMatch(entry -> entry.getKey()==null || entry.getKey().isBlank()
+                || entry.getKey().length()>255 || entry.getValue()==null))
+            throw new IllegalArgumentException("Channel properties require nonblank keys and nonnull values");
         var result = new java.util.HashMap<>(properties);
+        result.remove("keyDeserializer"); result.remove("valueDeserializer");
         com.sysadminanywhere.m3.messaging.source.InboundSourceSpec.LOADING_KEYS.forEach(result::remove);
         return result;
     }

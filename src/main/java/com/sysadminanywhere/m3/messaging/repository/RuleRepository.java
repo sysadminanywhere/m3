@@ -12,6 +12,11 @@ import java.util.List;
 
 @Repository
 public interface RuleRepository extends JpaRepository<Rule, Long> {
+    boolean existsBySourceChannel_Id(Long id);
+    long countByWorkerPool_Id(Long id);
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(value="update rule set worker_pool_id=:id where worker_pool_id is null",nativeQuery=true)
+    int assignUnassigned(@Param("id") Long id);
 
     List<Rule> findByRuleType(RuleType ruleType);
 

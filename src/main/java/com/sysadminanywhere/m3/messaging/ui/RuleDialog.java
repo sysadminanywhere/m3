@@ -255,9 +255,10 @@ public class RuleDialog extends Dialog {
         valueField.setMaxLength(500);
         valueField.setHelperText("Max 500 characters");
 
-        var logicalOpField = new ComboBox<LogicalOperator>("Logical Operator");
+        var logicalOpField = new ComboBox<LogicalOperator>("Combine with previous conditions");
         logicalOpField.setItems(LogicalOperator.values());
         logicalOpField.setValue(LogicalOperator.AND);
+        logicalOpField.setHelperText("Conditions follow creation order. AND has priority over OR; the first connector is ignored.");
         logicalOpField.setWidthFull();
 
         var form = new VerticalLayout(fieldField, operatorField, valueField, logicalOpField);
@@ -273,8 +274,14 @@ public class RuleDialog extends Dialog {
                 return;
             }
 
-            ruleService.addCondition(ruleId, fieldField.getValue(), operatorField.getValue(),
-                    valueField.getValue(), logicalOpField.getValue());
+            try {
+                ruleService.addCondition(ruleId, fieldField.getValue(), operatorField.getValue(),
+                        valueField.getValue(), logicalOpField.getValue());
+            } catch (IllegalArgumentException invalid) {
+                Notification.show(invalid.getMessage(),4000,Notification.Position.BOTTOM_END)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
             refreshRule();
             dialog.close();
             Notification.show("Condition added", 3000, Notification.Position.BOTTOM_END)

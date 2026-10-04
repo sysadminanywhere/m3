@@ -6,7 +6,7 @@ PostgreSQL schema changes are managed by Liquibase 5, using the version supplied
 
 Run the application normally with `./mvnw spring-boot:run`, or start the stack with `docker compose up --build -d`. Liquibase uses the same datasource credentials as the application. There is no separate migration container or manually ordered SQL import.
 
-The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml`. It records eleven changesets:
+The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml`. It records seventeen changesets:
 
 1. Channels, channel properties, messages, message metadata and the legacy task table.
 2. Rules, rule conditions and rule actions.
@@ -19,6 +19,12 @@ The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml
 9. Outgoing submission deduplication, retry scheduling, claim tokens and larger channel-name columns.
 10. Original message bytes (`bytea`), charset and origin, compatible payload representation and legacy data backfill. See [message encoding and deployment](message-encodings.md).
 11. Per-rule loading settings; moves existing polling, file-selection, deletion and Kafka consumer settings from source channels to their inbound rules. Channels without inbound rules remain idle.
+12. Destination channel references, persisted receiver health and individual container metrics.
+13. Recovery of orphan outgoing copies when their routing rule can be identified unambiguously.
+14. HTTP ingestion request digests for idempotency conflict detection.
+15. Metadata values stored as TEXT; duplicate keys retain the most recent value, then a unique message/key index prevents duplicates.
+16. Payload media types extended to 255 characters.
+17. Removal of configurable Kafka deserializers and activation of inbound endpoint records; rules control receivers.
 
 Liquibase creates `databasechangelog` and `databasechangeloglock` in the current PostgreSQL schema. Its lock serializes concurrent control-plane startup. Existing changesets are checked by checksum and are not rerun.
 

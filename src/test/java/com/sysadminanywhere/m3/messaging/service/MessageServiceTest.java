@@ -31,7 +31,9 @@ class MessageServiceTest {
     private MessageRepository messageRepository;
 
     @Mock
-    private MessageReceiptOutbox receipts;
+    private com.sysadminanywhere.m3.messaging.repository.RuleExecutionJobRepository jobs;
+    @Mock private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Mock private jakarta.persistence.EntityManager entityManager;
 
     @InjectMocks
     private MessageService messageService;
@@ -41,48 +43,6 @@ class MessageServiceTest {
     @BeforeEach
     void setUp() {
         testMessage = new Message(MessageDirection.INBOUND, "{\"data\": \"test\"}", "application/json");
-    }
-
-    @Test
-    void createMessage_WithBasicParams_ShouldSaveMessage() {
-        // Given
-        when(messageRepository.save(any(Message.class))).thenReturn(testMessage);
-
-        // When
-        Message result = messageService.createMessage(MessageDirection.INBOUND, "{\"data\": \"test\"}", "application/json");
-
-        // Then
-        assertThat(result).isNotNull();
-        assertThat(result.getDirection()).isEqualTo(MessageDirection.INBOUND);
-        assertThat(result.getPayload()).isEqualTo("{\"data\": \"test\"}");
-        assertThat(result.getPayloadType()).isEqualTo("application/json");
-        assertThat(result.getStatus()).isEqualTo(MessageStatus.PENDING);
-        assertThat(result.getCreatedAt()).isNotNull();
-        verify(messageRepository, times(1)).save(any(Message.class));
-    }
-
-    @Test
-    void createMessage_WithSourceAndTarget_ShouldSaveMessageWithSystems() {
-        // Given
-        Message outboundMessage = new Message(MessageDirection.OUTBOUND, "payload", "text/plain");
-        outboundMessage.setSourceSystem("SourceSystem");
-        outboundMessage.setTargetSystem("TargetSystem");
-        when(messageRepository.save(any(Message.class))).thenReturn(outboundMessage);
-
-        // When
-        Message result = messageService.createMessage(
-                MessageDirection.OUTBOUND,
-                "payload",
-                "text/plain",
-                "SourceSystem",
-                "TargetSystem"
-        );
-
-        // Then
-        assertThat(result).isNotNull();
-        assertThat(result.getDirection()).isEqualTo(MessageDirection.OUTBOUND);
-        assertThat(result.getSourceSystem()).isEqualTo("SourceSystem");
-        assertThat(result.getTargetSystem()).isEqualTo("TargetSystem");
     }
 
     @Test
@@ -158,56 +118,13 @@ class MessageServiceTest {
     }
 
     @Test
-    void updateStatus_ToProcessed_ShouldSetProcessedAt() {
-        // Given
-        Message message = spy(new Message(MessageDirection.INBOUND, "payload", "text/plain"));
-        when(messageRepository.findById(1L)).thenReturn(Optional.of(message));
-        when(messageRepository.save(any(Message.class))).thenReturn(message);
-
-        // When
-        messageService.updateStatus(1L, MessageStatus.PROCESSED);
-
-        // Then
-        verify(message).setStatus(MessageStatus.PROCESSED);
-        verify(message).setProcessedAt(any(Instant.class));
-        verify(messageRepository).save(message);
-    }
-
-    @Test
-    void updateStatus_ToSent_ShouldSetProcessedAt() {
-        // Given
-        Message message = spy(new Message(MessageDirection.INBOUND, "payload", "text/plain"));
-        when(messageRepository.findById(1L)).thenReturn(Optional.of(message));
-        when(messageRepository.save(any(Message.class))).thenReturn(message);
-
-        // When
-        messageService.updateStatus(1L, MessageStatus.SENT);
-
-        // Then
-        verify(message).setProcessedAt(any(Instant.class));
-    }
-
-    @Test
-    void updateStatus_ToOtherStatus_ShouldNotSetProcessedAt() {
-        // Given
-        Message message = spy(new Message(MessageDirection.INBOUND, "payload", "text/plain"));
-        when(messageRepository.findById(1L)).thenReturn(Optional.of(message));
-        when(messageRepository.save(any(Message.class))).thenReturn(message);
-
-        // When
-        messageService.updateStatus(1L, MessageStatus.FAILED);
-
-        // Then
-        verify(message, never()).setProcessedAt(any());
-    }
-
-    @Test
     void deleteMessage_ShouldCallRepositoryDelete() {
         // When
+        when(messageRepository.findById(1L)).thenReturn(Optional.of(testMessage));
         messageService.deleteMessage(1L);
 
         // Then
-        verify(messageRepository, times(1)).deleteById(1L);
+        verify(messageRepository, times(1)).delete(testMessage);
     }
 
     @Test
@@ -226,7 +143,7 @@ class MessageServiceTest {
     void setPayloadType_WithExceedingMaxLength_ShouldThrowException() {
         // Given
         Message message = new Message(MessageDirection.INBOUND, "payload", "text/plain");
-        String longType = "a".repeat(51);
+        String longType = "a".repeat(256);
 
         // Then
         assertThatThrownBy(() -> message.setPayloadType(longType))

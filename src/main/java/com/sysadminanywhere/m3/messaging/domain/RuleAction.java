@@ -28,6 +28,16 @@ public class RuleAction {
     @Nullable
     private String targetChannel;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "target_channel_id")
+    private ChannelSettings destinationChannel;
+
+    public ChannelSettings getDestinationChannel() { return destinationChannel; }
+    public void setDestinationChannel(ChannelSettings channel) {
+        destinationChannel = channel;
+        targetChannel = channel == null ? null : channel.getName();
+    }
+
     @Column(name = "transformation_script", columnDefinition = "TEXT")
     @Nullable
     private String transformationScript;
@@ -72,7 +82,7 @@ public class RuleAction {
     }
 
     public @Nullable String getTargetChannel() {
-        return targetChannel;
+        return destinationChannel == null ? targetChannel : destinationChannel.getName();
     }
 
     public void setTargetChannel(@Nullable String targetChannel) {
@@ -80,6 +90,7 @@ public class RuleAction {
             throw new IllegalArgumentException("Target channel length exceeds " + TARGET_CHANNEL_MAX_LENGTH);
         }
         this.targetChannel = targetChannel;
+        this.destinationChannel = null;
     }
 
     public @Nullable String getTransformationScript() {

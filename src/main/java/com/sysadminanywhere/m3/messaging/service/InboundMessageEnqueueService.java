@@ -31,6 +31,8 @@ public class InboundMessageEnqueueService {
 
     @Transactional
     public com.sysadminanywhere.m3.messaging.domain.Message enqueue(Object payload, MessageHeaders headers) {
+        if (!(headers.get("loadingRuleId") instanceof Number))
+            throw new IllegalArgumentException("Ingestion requires a loading ruleId");
         String source = stringHeader(headers, "sourceSystem", stringHeader(headers, "channelName", "unknown"));
         String target = stringHeader(headers, "targetSystem", null);
         String payloadType = stringHeader(headers, "payloadType", "json");
@@ -43,7 +45,7 @@ public class InboundMessageEnqueueService {
         if (payload instanceof byte[] bytes) {
             String bom = PayloadCodec.bom(bytes);
             stored.setContent(bytes, charset == null ? bom : charset,
-                    charset == null ? (bom == null ? "UNKNOWN" : "BOM")
+                    charset == null ? (bom == null ? charsetSource : "BOM")
                             : PayloadCodec.bomConflicts(bytes, charset) ? "BOM_CONFLICT" : charsetSource, "BASE64");
         } else {
             @SuppressWarnings("unchecked")
@@ -77,18 +79,13 @@ public class InboundMessageEnqueueService {
         messageRepository.save(stored);
         receipts.record(stored.getId());
 
-        var rules = ruleRepository.findBySourceChannelNameAndEnabled(source, true);
-        int jobs = 0;
-        for (Rule rule : rules) {
-            if (headers.get("loadingRuleId") instanceof Number selected && rule.getId().longValue() != selected.longValue()) continue;
-            if (!Boolean.TRUE.equals(rule.getEnabled()) || rule.getRuleType() != RuleType.INBOUND || rule.getWorkerPool() == null) continue;
-            jobRepository.save(new RuleExecutionJob(stored, rule, rule.getWorkerPool()));
-            jobs++;
-        }
-        if (jobs == 0) {
-            stored.setStatus(MessageStatus.PROCESSED);
-            stored.setProcessedAt(java.time.Instant.now());
-        }
+        long selected=((Number)headers.get("loadingRuleId")).longValue();
+        var rule=ruleRepository.findById(selected).orElseThrow(() -> new IllegalArgumentException("Loading rule was deleted"));
+        if (!Boolean.TRUE.equals(rule.getEnabled()) || rule.getRuleType()!=RuleType.INBOUND || rule.getWorkerPool()==null
+                || !(headers.get("sourceChannelId") instanceof Number channelId)
+                || rule.getSourceChannel().getId().longValue()!=channelId.longValue())
+            throw new IllegalArgumentException("Use an active loading rule for the selected source channel");
+        jobRepository.save(new RuleExecutionJob(stored,rule,rule.getWorkerPool()));
         return stored;
     }
 

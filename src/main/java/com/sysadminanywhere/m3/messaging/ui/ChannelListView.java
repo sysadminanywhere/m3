@@ -51,21 +51,18 @@ class ChannelListView extends VerticalLayout {
         channelGrid = new Grid<>();
         channelGrid.setItems(query -> {
             var pageRequest = toSpringPageRequest(query);
-            var page = typeFilter.getValue() != null
-                    ? channelSettingsService.findByType(typeFilter.getValue())
-                    : channelSettingsService.findAll();
-            return page.stream()
-                    .skip(pageRequest.getOffset())
-                    .limit(pageRequest.getPageSize());
+            var sort = pageRequest.getSort().and(org.springframework.data.domain.Sort.by("id"));
+            return channelSettingsService.page(typeFilter.getValue(), org.springframework.data.domain.PageRequest.of(
+                    pageRequest.getPageNumber(), pageRequest.getPageSize(), sort)).stream();
         });
-        channelGrid.addColumn(ChannelSettings::getName).setHeader("Name").setSortable(true)
+        channelGrid.addColumn(ChannelSettings::getName).setHeader("Name").setSortProperty("name")
                 .setWidth("100px").setFlexGrow(1);
-        channelGrid.addColumn(ChannelSettings::getChannelType).setHeader("Type").setSortable(true)
+        channelGrid.addColumn(ChannelSettings::getChannelType).setHeader("Type").setSortProperty("channelType")
                 .setWidth("70px").setFlexGrow(0);
-        channelGrid.addColumn(ChannelSettings::getDirection).setHeader("Direction").setSortable(true)
+        channelGrid.addColumn(ChannelSettings::getDirection).setHeader("Direction").setSortProperty("direction")
                 .setWidth("100px").setFlexGrow(0);
-        channelGrid.addColumn(settings -> settings.getEnabled() ? "Enabled" : "Disabled")
-                .setHeader("Status").setSortable(true).setWidth("75px").setFlexGrow(0);
+        channelGrid.addColumn(settings -> settings.getDirection() == ChannelDirection.INBOUND ? "Rule managed" : settings.getEnabled() ? "Enabled" : "Disabled")
+                .setHeader("Status").setWidth("75px").setFlexGrow(0);
         channelGrid.addColumn(settings -> {
             if (settings.getDirection() != ChannelDirection.INBOUND) return "—";
             return "Managed by loading rules";
@@ -94,6 +91,8 @@ class ChannelListView extends VerticalLayout {
         deleteButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
         deleteButton.addClickListener(event -> deleteChannel(channel));
 
+        toggleButton.setVisible(channel.getDirection()==ChannelDirection.OUTBOUND);
+        toggleButton.setTooltipText("Change outbound availability");
         return new HorizontalLayout(editButton, toggleButton, deleteButton);
     }
 

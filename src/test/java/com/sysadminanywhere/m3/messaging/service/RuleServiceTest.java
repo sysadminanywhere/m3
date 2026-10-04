@@ -52,7 +52,7 @@ class RuleServiceTest {
     @Test
     void createRule_WhenSourceChannelExists_ShouldCreateRule() {
         // Given
-        when(channelSettingsRepository.findById(1L)).thenReturn(Optional.of(sourceChannel));
+        when(channelSettingsRepository.findForUpdate(1L)).thenReturn(Optional.of(sourceChannel));
         RuleWorkerPool defaultPool = new RuleWorkerPool("default", 1, 1, 4);
         when(workerPoolRepository.findByName("default")).thenReturn(Optional.of(defaultPool));
         when(ruleRepository.save(any(Rule.class))).thenAnswer(inv -> {
@@ -77,7 +77,7 @@ class RuleServiceTest {
     @Test
     void createRule_WhenSourceChannelNotExists_ShouldThrowException() {
         // Given
-        when(channelSettingsRepository.findById(1L)).thenReturn(Optional.empty());
+        when(channelSettingsRepository.findForUpdate(1L)).thenReturn(Optional.empty());
 
         // When / Then
         assertThatThrownBy(() -> ruleService.createRule("rule", RuleType.INBOUND, 1L, 0))
@@ -90,7 +90,7 @@ class RuleServiceTest {
         // Given
         ChannelSettings newChannel = new ChannelSettings("new-channel", ChannelType.FTP, ChannelDirection.INBOUND);
         when(ruleRepository.findById(1L)).thenReturn(Optional.of(testRule));
-        when(channelSettingsRepository.findById(2L)).thenReturn(Optional.of(newChannel));
+        when(channelSettingsRepository.findForUpdate(2L)).thenReturn(Optional.of(newChannel));
         when(ruleRepository.save(any(Rule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // When
@@ -303,6 +303,7 @@ class RuleServiceTest {
     void toggleEnabled_ShouldToggleRuleState() {
         // Given
         Rule rule = spy(new Rule("rule", RuleType.INBOUND, sourceChannel));
+        when(channelSettingsRepository.findForUpdate(sourceChannel.getId())).thenReturn(Optional.of(sourceChannel));
         when(ruleRepository.findById(1L)).thenReturn(Optional.of(rule));
         when(ruleRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 

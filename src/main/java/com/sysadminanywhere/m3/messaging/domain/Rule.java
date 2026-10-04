@@ -51,7 +51,8 @@ public class Rule {
     private Instant updatedAt;
 
     @OneToMany(mappedBy = "rule", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
-    private Set<RuleCondition> conditions = new HashSet<>();
+    @OrderBy("id ASC")
+    private Set<RuleCondition> conditions = new java.util.LinkedHashSet<>();
 
     @OneToMany(mappedBy = "rule", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private Set<RuleAction> actions = new HashSet<>();

@@ -41,24 +41,18 @@ public class RuleEngine {
             return true;
         }
 
-        conditions.sort(Comparator.comparing(c -> c.getLogicalOperator() == LogicalOperator.AND ? 0 : 1));
-
-        boolean result = true;
-        LogicalOperator currentOp = LogicalOperator.AND;
-
-        for (RuleCondition condition : conditions) {
-            boolean conditionResult = evaluateCondition(condition, springMessage);
-            
-            if (currentOp == LogicalOperator.AND) {
-                result = result && conditionResult;
-            } else {
-                result = result || conditionResult;
-            }
-
-            currentOp = condition.getLogicalOperator();
+        conditions.sort(Comparator.comparing(RuleCondition::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+        boolean group = evaluateCondition(conditions.getFirst(), springMessage);
+        boolean result = false;
+        for (int index = 1; index < conditions.size(); index++) {
+            var condition = conditions.get(index);
+            boolean matches = evaluateCondition(condition, springMessage);
+            if (condition.getLogicalOperator() == LogicalOperator.OR) {
+                result |= group;
+                group = matches;
+            } else group &= matches;
         }
-
-        return result;
+        return result || group;
     }
 
     private boolean evaluateCondition(RuleCondition condition, Message<?> springMessage) {
@@ -66,7 +60,7 @@ public class RuleEngine {
         String conditionValue = condition.getValue();
 
         if (fieldValue == null) {
-            return conditionValue == null || conditionValue.isEmpty();
+            return false;
         }
 
         String fieldValueStr = fieldValue.toString();
@@ -75,8 +69,8 @@ public class RuleEngine {
             case EQUALS -> fieldValueStr.equals(conditionValue);
             case NOT_EQUALS -> !fieldValueStr.equals(conditionValue);
             case CONTAINS -> fieldValueStr.contains(conditionValue);
-            case GREATER -> compareNumbers(fieldValueStr, conditionValue) > 0;
-            case LESS -> compareNumbers(fieldValueStr, conditionValue) < 0;
+            case GREATER -> numericMatches(fieldValueStr, conditionValue, true);
+            case LESS -> numericMatches(fieldValueStr, conditionValue, false);
             case REGEX -> {
                 try {
                     yield Pattern.compile(conditionValue).matcher(fieldValueStr).find();
@@ -105,14 +99,11 @@ public class RuleEngine {
         return null;
     }
 
-    private int compareNumbers(String a, String b) {
+    private boolean numericMatches(String a, String b, boolean greater) {
         try {
-            double numA = Double.parseDouble(a);
-            double numB = Double.parseDouble(b);
-            return Double.compare(numA, numB);
-        } catch (NumberFormatException e) {
-            return a.compareTo(b);
-        }
+            int comparison = new java.math.BigDecimal(a).compareTo(new java.math.BigDecimal(b));
+            return greater ? comparison > 0 : comparison < 0;
+        } catch (NumberFormatException invalid) { return false; }
     }
 
     public String determineTargetChannel(Message<?> springMessage, List<Rule> applicableRules) {
@@ -146,12 +137,20 @@ public class RuleEngine {
     }
 
     private Object applyTransformation(Object payload, String script) {
+        validateTransformation(script);
         if (payload instanceof Map && script.startsWith("$.")) {
             String jsonPath = script.substring(2);
             Map<?, ?> map = (Map<?, ?>) payload;
+            if (!map.containsKey(jsonPath) || map.get(jsonPath) == null)
+                throw new IllegalArgumentException("Transformation field is missing: " + jsonPath);
             return map.get(jsonPath);
         }
-        return payload;
+        throw new IllegalArgumentException("Field extraction requires a JSON object");
+    }
+
+    public static void validateTransformation(String script) {
+        if (script == null || !script.matches("\\$\\.[A-Za-z_][A-Za-z0-9_-]*"))
+            throw new IllegalArgumentException("Supported transformation: $.field (one top-level JSON field)");
     }
 
     public boolean shouldFilter(Message<?> springMessage, List<Rule> applicableRules) {

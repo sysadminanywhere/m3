@@ -8,7 +8,7 @@ import jakarta.annotation.Nullable;
 public class MessageMetadata {
 
     public static final int KEY_MAX_LENGTH = 100;
-    public static final int VALUE_MAX_LENGTH = 5000;
+    public static final int VALUE_MAX_LENGTH = 1_000_000;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,7 +22,7 @@ public class MessageMetadata {
     @Column(name = "key", nullable = false, length = KEY_MAX_LENGTH)
     private String key;
 
-    @Column(name = "value", nullable = false, length = VALUE_MAX_LENGTH)
+    @Column(name = "value", nullable = false, columnDefinition = "TEXT")
     private String value;
 
     protected MessageMetadata() {
@@ -30,8 +30,8 @@ public class MessageMetadata {
 
     public MessageMetadata(Message message, String key, String value) {
         this.message = message;
-        this.key = key;
-        this.value = value;
+        setKey(key);
+        setValue(value);
     }
 
     public @Nullable Long getId() {
@@ -47,7 +47,7 @@ public class MessageMetadata {
     }
 
     public void setKey(String key) {
-        if (key.length() > KEY_MAX_LENGTH) {
+        if (key == null || key.isBlank() || key.length() > KEY_MAX_LENGTH) {
             throw new IllegalArgumentException("Key length exceeds " + KEY_MAX_LENGTH);
         }
         this.key = key;
@@ -58,7 +58,7 @@ public class MessageMetadata {
     }
 
     public void setValue(String value) {
-        if (value.length() > VALUE_MAX_LENGTH) {
+        if (value == null || value.length() > VALUE_MAX_LENGTH) {
             throw new IllegalArgumentException("Value length exceeds " + VALUE_MAX_LENGTH);
         }
         this.value = value;

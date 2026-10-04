@@ -69,17 +69,20 @@ class WorkerPoolsView extends VerticalLayout {
             var edit = new Button(VaadinIcon.COG.create(), event -> openCapacityDialog(pool));
             edit.setAriaLabel("Change capacity for " + pool.getName());
             edit.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
-            var actions = new HorizontalLayout(edit);
+            var metrics = new Button(VaadinIcon.CHART.create(), event -> openContainerMetrics(pool));
+            metrics.setAriaLabel("Container metrics for " + pool.getName());
+            metrics.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            var actions = new HorizontalLayout(edit, metrics);
             actions.setPadding(false);
             actions.setSpacing(false);
             if ("default".equals(pool.getName())) return actions;
             var delete = new Button(VaadinIcon.TRASH.create(), event -> deletePool(pool));
             delete.setAriaLabel("Delete " + pool.getName());
             delete.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ERROR);
-            delete.setEnabled(pool.getRules().isEmpty() && !"default".equals(pool.getName()));
+            delete.setEnabled(service.canDelete(pool.getId()));
             actions.add(delete);
             return actions;
-        }).setHeader("Actions").setWidth("64px").setFlexGrow(0);
+        }).setHeader("Actions").setWidth("105px").setFlexGrow(0);
         grid.setEmptyStateText("No worker pools configured");
         grid.setSizeFull();
         setSizeFull();
@@ -104,7 +107,7 @@ class WorkerPoolsView extends VerticalLayout {
         var name = new Span(pool.getName());
         name.getStyle().set("overflow", "hidden").set("text-overflow", "ellipsis");
         name.getElement().setAttribute("title", pool.getName());
-        var ruleCount = new Span(pool.getRules().size() + " rules");
+        var ruleCount = new Span(service.ruleCount(pool.getId()) + " rules");
         ruleCount.getStyle().set("color", "var(--m3-muted)").set("font-size", "var(--lumo-font-size-xs)");
         var cell = new VerticalLayout(name, ruleCount);
         cell.setPadding(false);
@@ -113,6 +116,24 @@ class WorkerPoolsView extends VerticalLayout {
     }
 
     private String percent(double value) { return String.format(java.util.Locale.ROOT, "%.0f%%", value); }
+
+    private void openContainerMetrics(RuleWorkerPool pool) {
+        var dialog = new Dialog(); dialog.setHeaderTitle("Containers  ·  " + pool.getName());
+        dialog.setWidth("900px"); dialog.setMaxWidth("calc(100vw - 32px)");
+        var table = new Grid<WorkerPoolMetricsService.ContainerSummary>();
+        table.addColumn(value -> value.name() + "  ·  " + value.id().substring(0,12)).setHeader("Container");
+        table.addColumn(value -> value.load().sampledAt().isBefore(java.time.Instant.now().minusSeconds(90))
+                ? "Stale / stopped" : "Recent sample").setHeader("State");
+        table.addColumn(value -> percent(value.load().currentCpu()) + " / " + percent(value.load().currentMemory())).setHeader("Now CPU / RAM");
+        table.addColumn(value -> percent(value.load().maximumCpu()) + " / " + percent(value.load().maximumMemory())).setHeader("Peak CPU / RAM");
+        table.addColumn(value -> percent(value.load().averageCpu()) + " / " + percent(value.load().averageMemory())).setHeader("Avg CPU / RAM");
+        table.addColumn(value -> value.load().sampledAt()).setHeader("Last sample");
+        table.setEmptyStateText("Waiting for Docker samples");
+        Runnable update = () -> table.setItems(metricsService.containers(pool.getId()));
+        update.run(); dialog.add(table);
+        dialog.getFooter().add(new Button("Refresh",event -> update.run()),new Button("Close",event -> dialog.close()));
+        dialog.open();
+    }
 
     private void openCreateDialog() {
         var dialog = new Dialog();
@@ -183,8 +204,8 @@ class WorkerPoolsView extends VerticalLayout {
 
     private void deletePool(RuleWorkerPool pool) {
         try {
-            capacityService.removePool(pool.getName());
             service.delete(pool.getId());
+            capacityService.removePool(pool.getName());
             refresh();
         } catch (RuntimeException e) { showError(e); }
     }

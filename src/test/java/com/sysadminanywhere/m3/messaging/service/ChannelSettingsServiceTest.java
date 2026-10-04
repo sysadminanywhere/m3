@@ -28,6 +28,10 @@ class ChannelSettingsServiceTest {
 
     @Mock
     private InboundSourceRegistry sourceRegistry;
+    @Mock private com.sysadminanywhere.m3.messaging.repository.RuleRepository rules;
+
+    @Mock
+    private com.sysadminanywhere.m3.messaging.repository.RuleActionRepository actions;
 
     @InjectMocks
     private ChannelSettingsService channelSettingsService;
@@ -183,7 +187,7 @@ class ChannelSettingsServiceTest {
         // Then
         assertThat(result.getName()).isEqualTo("new-name");
         assertThat(result.getDescription()).isEqualTo("Updated description");
-        assertThat(result.getEnabled()).isFalse();
+        assertThat(result.getEnabled()).isTrue();
         assertThat(result.getUpdatedAt()).isNotNull();
         verify(sourceRegistry).restartChannel(result);
     }
@@ -207,6 +211,7 @@ class ChannelSettingsServiceTest {
 
     @Test
     void deleteChannel_ShouldStopChannelAndDelete() {
+        when(channelSettingsRepository.findById(1L)).thenReturn(Optional.of(new ChannelSettings("channel", ChannelType.DIRECTORY, ChannelDirection.OUTBOUND)));
         // When
         channelSettingsService.deleteChannel(1L);
 
@@ -218,7 +223,7 @@ class ChannelSettingsServiceTest {
     @Test
     void toggleEnabled_ShouldToggleAndRestartChannel() {
         // Given
-        ChannelSettings channel = spy(new ChannelSettings("channel", ChannelType.DIRECTORY, ChannelDirection.INBOUND));
+        ChannelSettings channel = spy(new ChannelSettings("channel", ChannelType.DIRECTORY, ChannelDirection.OUTBOUND));
         when(channelSettingsRepository.findById(1L)).thenReturn(Optional.of(channel));
         when(channelSettingsRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -250,7 +255,7 @@ class ChannelSettingsServiceTest {
         // Then
         assertThat(defaults).containsEntry("port", "21");
         assertThat(defaults).containsEntry("passiveMode", "true");
-        assertThat(defaults).containsEntry("deleteRemoteFiles", "false");
+        assertThat(defaults).doesNotContainKey("deleteRemoteFiles");
     }
 
     @Test
@@ -260,7 +265,7 @@ class ChannelSettingsServiceTest {
 
         // Then
         assertThat(defaults).containsEntry("port", "22");
-        assertThat(defaults).containsEntry("deleteRemoteFiles", "false");
+        assertThat(defaults).doesNotContainKey("deleteRemoteFiles");
     }
 
     @Test
@@ -270,7 +275,7 @@ class ChannelSettingsServiceTest {
 
         // Then
         assertThat(defaults).containsEntry("bootstrapServers", "localhost:9092");
-        assertThat(defaults).containsEntry("groupId", "m3-consumer");
+        assertThat(defaults).doesNotContainKey("groupId");
     }
 
     @Test
@@ -279,8 +284,8 @@ class ChannelSettingsServiceTest {
         Map<String, String> defaults = channelSettingsService.getDefaultPropertiesForType(ChannelType.DIRECTORY);
 
         // Then
-        assertThat(defaults).containsEntry("pollingInterval", "5000");
-        assertThat(defaults).containsEntry("deleteAfterProcessing", "true");
+        assertThat(defaults).doesNotContainKey("pollingInterval");
+        assertThat(defaults).doesNotContainKey("deleteAfterProcessing");
     }
 
     @Test

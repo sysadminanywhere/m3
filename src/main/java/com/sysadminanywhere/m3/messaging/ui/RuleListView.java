@@ -34,7 +34,7 @@ class RuleListView extends VerticalLayout {
     final Button createBtn;
     final Grid<Rule> ruleGrid;
 
-    RuleListView(RuleService ruleService, ChannelSettingsService channelSettingsService) {
+    RuleListView(RuleService ruleService, ChannelSettingsService channelSettingsService, com.sysadminanywhere.m3.messaging.source.SourceHealth sourceHealth) {
         this.ruleService = ruleService;
         this.channelSettingsService = channelSettingsService;
 
@@ -50,10 +50,8 @@ class RuleListView extends VerticalLayout {
         ruleGrid = new Grid<>();
         ruleGrid.setItems(query -> {
             var pageRequest = toSpringPageRequest(query);
-            var rules = ruleService.findAll();
-            return rules.stream()
-                    .skip(pageRequest.getOffset())
-                    .limit(pageRequest.getPageSize());
+            return ruleService.page(org.springframework.data.domain.PageRequest.of(pageRequest.getPageNumber(),
+                    pageRequest.getPageSize(), org.springframework.data.domain.Sort.by("id"))).stream();
         });
         ruleGrid.addColumn(Rule::getName).setHeader("Name").setWidth("100px").setFlexGrow(1);
         ruleGrid.addColumn(Rule::getRuleType).setHeader("Type").setWidth("82px").setFlexGrow(0);
@@ -63,6 +61,15 @@ class RuleListView extends VerticalLayout {
                 .setHeader("Worker Pool").setWidth("120px").setFlexGrow(0);
         ruleGrid.addColumn(rule -> rule.getDestinationChannelName() == null ? "Not selected" : rule.getDestinationChannelName())
                 .setHeader("Destination Channel").setWidth("150px").setFlexGrow(1);
+        ruleGrid.addComponentColumn(rule -> {
+            var state = rule.getRuleType() == RuleType.INBOUND ? sourceHealth.get(rule.getId()) : null;
+            var label = new com.vaadin.flow.component.html.Span(state == null ? "—"
+                    : Boolean.TRUE.equals(rule.getEnabled()) ? state.status() : "DISABLED");
+            if (state != null) label.getElement().setAttribute("title", state.error() == null
+                    ? "Last heartbeat: " + state.checkedAt() : state.error());
+            return label;
+        })
+                .setHeader("Receiver").setWidth("110px").setFlexGrow(0);
         ruleGrid.addColumn(Rule::getPriority).setHeader("Priority").setWidth("72px").setFlexGrow(0);
         ruleGrid.addComponentColumn(rule -> {
             var enabledIcon = rule.getEnabled() ? VaadinIcon.CHECK.create() : VaadinIcon.CLOSE.create();
@@ -83,6 +90,12 @@ class RuleListView extends VerticalLayout {
         ruleGrid.setSizeFull();
 
         setSizeFull();
+        addAttachListener(event -> {
+            var ui = event.getUI();
+            ui.setPollInterval(10000);
+            var registration = ui.addPollListener(poll -> ruleGrid.getDataProvider().refreshAll());
+            addDetachListener(detach -> { registration.remove(); ui.setPollInterval(-1); });
+        });
         add(toolbar, ruleGrid);
     }
 
@@ -101,8 +114,13 @@ class RuleListView extends VerticalLayout {
     }
 
     private void toggleRuleEnabled(Rule rule) {
-        ruleService.toggleEnabled(rule.getId());
-        ruleGrid.getDataProvider().refreshAll();
-        Notification.show("Rule " + (rule.getEnabled() ? "enabled" : "disabled"), 3000, Notification.Position.BOTTOM_END);
+        try {
+            ruleService.toggleEnabled(rule.getId());
+            var updated = ruleService.findById(rule.getId());
+            ruleGrid.getDataProvider().refreshAll();
+            Notification.show("Rule " + (updated.getEnabled() ? "enabled" : "disabled"), 3000, Notification.Position.BOTTOM_END);
+        } catch (IllegalArgumentException error) {
+            Notification.show(error.getMessage(), 5000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
+        }
     }
 }
