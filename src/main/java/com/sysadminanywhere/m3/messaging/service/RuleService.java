@@ -247,6 +247,21 @@ public class RuleService {
         return ruleActionRepository.save(action);
     }
 
+    @Transactional
+    public void reorderActions(Long ruleId, List<Long> orderedIds) {
+        var rule = ruleRepository.findById(ruleId).orElseThrow();
+        var actions = rule.getActions().stream().filter(action -> action.getActionType() == ActionType.TRANSFORM
+                || action.getActionType() == ActionType.ENRICH).toList();
+        var expected = actions.stream().map(RuleAction::getId).collect(java.util.stream.Collectors.toSet());
+        if (orderedIds == null || orderedIds.size() != expected.size()
+                || !expected.equals(new java.util.HashSet<>(orderedIds)))
+            throw new IllegalArgumentException("Actions changed; refresh the rule and try again");
+        if (orderedIds.size() > 10000) throw new IllegalArgumentException("Too many actions to reorder");
+        var byId = actions.stream().collect(java.util.stream.Collectors.toMap(RuleAction::getId, action -> action));
+        for (int index = 0; index < orderedIds.size(); index++) byId.get(orderedIds.get(index)).setPriority(index);
+        ruleActionRepository.saveAll(actions);
+    }
+
     private static void configureAction(RuleAction action, ActionType type, String script, Boolean filter, String key, String value) {
         if (type == null || type == ActionType.ROUTE) throw new IllegalArgumentException("Select the destination in the rule form");
         action.setActionType(type);

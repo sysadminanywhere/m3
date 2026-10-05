@@ -1,5 +1,8 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
+import static com.sysadminanywhere.m3.base.i18n.Translations.t;
+import com.sysadminanywhere.m3.base.i18n.Translations;
+
 import com.sysadminanywhere.m3.messaging.domain.Message;
 import com.sysadminanywhere.m3.messaging.domain.MessageMetadata;
 import com.sysadminanywhere.m3.messaging.service.MessageService;
@@ -39,8 +42,8 @@ public class MessageDetailDialog extends Dialog {
     private final com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService submissions;
     private Message currentMessage;
     private final Grid<MessageService.JobInfo> jobsGrid = new Grid<>();
-    private final Button retryButton = new Button("Retry processing");
-    private final Button sourceMessageButton = new Button("View original message");
+    private final Button retryButton = new Button(t("Retry processing"));
+    private final Button sourceMessageButton = new Button(t("View original message"));
     private Consumer<Long> onChangeCallback;
 
     private final TextField idField;
@@ -55,7 +58,7 @@ public class MessageDetailDialog extends Dialog {
     private final TextField sizeField;
     private final TextArea payloadArea;
     private final Grid<MessageMetadata> metadataGrid;
-    private final ComboBox<String> charsetSelector = new ComboBox<>("Preview charset");
+    private final ComboBox<String> charsetSelector = new ComboBox<>(t("Preview charset"));
     private final Span previewHint = new Span();
     private final Anchor downloadLink = new Anchor();
     private final Map<String, String> metadataValues = new TreeMap<>();
@@ -67,23 +70,23 @@ public class MessageDetailDialog extends Dialog {
         this.metadataRepository = metadataRepository;
         this.submissions = submissions;
 
-        setHeaderTitle("Message Details");
+        setHeaderTitle(t("Message Details"));
         setWidth("1000px");
         setMaxWidth("calc(100vw - 32px)");
         setHeight("85vh");
 
         idField = createReadOnlyField("ID");
-        statusField = createReadOnlyField("Status");
-        directionField = createReadOnlyField("Direction");
-        sourceSystemField = createReadOnlyField("Source System");
-        targetSystemField = createReadOnlyField("Target System");
-        payloadTypeField = createReadOnlyField("Payload Type");
-        createdAtField = createReadOnlyField("Created At");
-        processedAtField = createReadOnlyField("Processed At");
-        charsetField = createReadOnlyField("Stored charset / origin");
-        sizeField = createReadOnlyField("Payload bytes");
+        statusField = createReadOnlyField(t("Status"));
+        directionField = createReadOnlyField(t("Direction"));
+        sourceSystemField = createReadOnlyField(t("Source System"));
+        targetSystemField = createReadOnlyField(t("Target System"));
+        payloadTypeField = createReadOnlyField(t("Payload Type"));
+        createdAtField = createReadOnlyField(t("Created At"));
+        processedAtField = createReadOnlyField(t("Processed At"));
+        charsetField = createReadOnlyField(t("Stored charset / origin"));
+        sizeField = createReadOnlyField(t("Payload bytes"));
 
-        payloadArea = new TextArea("Payload");
+        payloadArea = new TextArea(t("Payload"));
         payloadArea.setWidthFull();
         payloadArea.setHeight("300px");
         payloadArea.setReadOnly(true);
@@ -92,18 +95,18 @@ public class MessageDetailDialog extends Dialog {
         previewHint.getStyle().set("white-space", "normal");
 
         metadataGrid = new Grid<>();
-        metadataGrid.addColumn(MessageMetadata::getKey).setHeader("Key").setWidth("220px").setFlexGrow(0);
-        metadataGrid.addColumn(MessageMetadata::getValue).setHeader("Value").setFlexGrow(1);
+        metadataGrid.addColumn(MessageMetadata::getKey).setHeader(t("Key")).setWidth("220px").setFlexGrow(0);
+        metadataGrid.addColumn(MessageMetadata::getValue).setHeader(t("Value")).setFlexGrow(1);
         metadataGrid.addThemeVariants(GridVariant.LUMO_WRAP_CELL_CONTENT);
-        metadataGrid.setEmptyStateText("No metadata");
+        metadataGrid.setEmptyStateText(t("No metadata"));
         metadataGrid.setWidthFull();
         metadataGrid.setHeight("240px");
 
-        jobsGrid.addColumn(MessageService.JobInfo::ruleId).setHeader("Rule");
-        jobsGrid.addColumn(MessageService.JobInfo::pool).setHeader("Worker pool");
-        jobsGrid.addColumn(MessageService.JobInfo::status).setHeader("Status");
-        jobsGrid.addColumn(MessageService.JobInfo::attempts).setHeader("Attempts");
-        jobsGrid.addColumn(MessageService.JobInfo::error).setHeader("Error").setFlexGrow(2);
+        jobsGrid.addColumn(MessageService.JobInfo::ruleId).setHeader(t("Rule"));
+        jobsGrid.addColumn(MessageService.JobInfo::pool).setHeader(t("Worker pool"));
+        jobsGrid.addColumn(job -> Translations.enumLabel(job.status())).setHeader(t("Status"));
+        jobsGrid.addColumn(MessageService.JobInfo::attempts).setHeader(t("Attempts"));
+        jobsGrid.addColumn(MessageService.JobInfo::error).setHeader(t("Error")).setFlexGrow(2);
         jobsGrid.addThemeVariants(GridVariant.LUMO_WRAP_CELL_CONTENT);
         jobsGrid.setHeight("180px"); jobsGrid.setWidthFull();
         retryButton.addClickListener(event -> {
@@ -112,7 +115,7 @@ public class MessageDetailDialog extends Dialog {
                 openMessage(id);
                 if (onChangeCallback != null) onChangeCallback.accept(id);
             } catch (IllegalArgumentException invalid) {
-                com.vaadin.flow.component.notification.Notification.show(invalid.getMessage(),5000,
+                com.vaadin.flow.component.notification.Notification.show(t(invalid.getMessage()),5000,
                         com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
             }
         });
@@ -129,25 +132,25 @@ public class MessageDetailDialog extends Dialog {
         });
         detailsTab.setPadding(false);
         var mainLayout = new VerticalLayout(detailsTab, charsetSelector, previewHint, payloadArea,
-                new Span("Metadata"), metadataGrid, new Span("Rule execution / delivery"), jobsGrid);
+                new Span(t("Metadata")), metadataGrid, new Span(t("Rule execution / delivery")), jobsGrid);
         mainLayout.setPadding(false);
         mainLayout.setWidthFull();
         mainLayout.setFlexShrink(0, payloadArea, metadataGrid);
         add(mainLayout);
 
         // Footer buttons
-        downloadLink.setText("Download original payload");
+        downloadLink.setText(t("Download original payload"));
         downloadLink.getElement().setAttribute("download", true);
 
         var deleteButton = new Button(VaadinIcon.TRASH.create(), event -> deleteMessage());
         deleteButton.addThemeVariants(ButtonVariant.LUMO_ERROR);
-        deleteButton.setTooltipText("Delete message");
+        deleteButton.setTooltipText(t("Delete message"));
 
-        var closeButton = new Button("Close", event -> close());
+        var closeButton = new Button(t("Close"), event -> close());
 
         sourceMessageButton.setVisible(false);
         sourceMessageButton.addClickListener(event -> openMessage(Long.parseLong(metadataValues.get("sourceMessageId"))));
-        getFooter().add(downloadLink, sourceMessageButton, new Button("Forward to channel", event -> openForwardDialog()), retryButton, new Button("Refresh", event -> {
+        getFooter().add(downloadLink, sourceMessageButton, new Button(t("Forward to channel"), event -> openForwardDialog()), retryButton, new Button(t("Refresh"), event -> {
             if (currentMessage != null) openMessage(currentMessage.getId());
         }), deleteButton, closeButton);
     }
@@ -159,15 +162,15 @@ public class MessageDetailDialog extends Dialog {
         var channels = new java.util.LinkedHashMap<Long, String>();
         choices.forEach(choice -> channels.put(choice.channelId(), choice.channelName()));
         var dialog = new Dialog();
-        dialog.setHeaderTitle("Forward message #" + sourceId);
+        dialog.setHeaderTitle(t("Forward message #") + sourceId);
         dialog.setWidth("520px"); dialog.setMaxWidth("calc(100vw - 32px)");
-        var channel = new ComboBox<Long>("Destination channel");
+        var channel = new ComboBox<Long>(t("Destination channel"));
         channel.setItems(channels.keySet()); channel.setItemLabelGenerator(channels::get);
         channel.setWidthFull(); channel.setRequiredIndicatorVisible(true);
-        var rule = new ComboBox<com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService.ForwardingRule>("Outbound rule");
+        var rule = new ComboBox<com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService.ForwardingRule>(t("Outbound rule"));
         rule.setItemLabelGenerator(choice -> choice.ruleName() + " (#" + choice.ruleId() + ")");
         rule.setWidthFull(); rule.setRequiredIndicatorVisible(true); rule.setEnabled(false);
-        var send = new Button("Create copy and send");
+        var send = new Button(t("Create copy and send"));
         send.addThemeVariants(ButtonVariant.PRIMARY); send.setEnabled(false);
         channel.addValueChangeListener(event -> {
             rule.clear();
@@ -185,29 +188,29 @@ public class MessageDetailDialog extends Dialog {
                 dialog.close();
                 if (onChangeCallback != null) onChangeCallback.accept(copy.getId());
                 openMessage(copy.getId());
-                com.vaadin.flow.component.notification.Notification.show("Copy #" + copy.getId()
-                        + " queued for delivery. Original #" + sourceId + " retained.", 5000,
+                com.vaadin.flow.component.notification.Notification.show(t("Copy #") + copy.getId()
+                        + t(" queued for delivery. Original #") + sourceId + t(" retained."), 5000,
                         com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
             } catch (org.springframework.web.server.ResponseStatusException error) {
                 send.setEnabled(true);
-                com.vaadin.flow.component.notification.Notification.show(error.getReason(), 5000,
+                com.vaadin.flow.component.notification.Notification.show(t(error.getReason()), 5000,
                         com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
             } catch (IllegalArgumentException error) {
                 send.setEnabled(true);
-                com.vaadin.flow.component.notification.Notification.show(error.getMessage(), 5000,
+                com.vaadin.flow.component.notification.Notification.show(t(error.getMessage()), 5000,
                         com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
             }
         });
         var hint = new Span(choices.isEmpty()
-                ? "Create an enabled outbound rule with a destination channel and worker pool first."
-                : "Original bytes and metadata remain in the database. The selected rule processes and delivers a separate copy.");
+                ? t("Create an enabled outbound rule with a destination channel and worker pool first.")
+                : t("Original bytes and metadata remain in the database. The selected rule processes and delivers a separate copy."));
         dialog.add(new VerticalLayout(hint, channel, rule));
-        dialog.getFooter().add(new Button("Cancel", event -> dialog.close()), send);
+        dialog.getFooter().add(new Button(t("Cancel"), event -> dialog.close()), send);
         dialog.open();
     }
 
     private TextField createReadOnlyField(String label) {
-        var field = new TextField(label);
+        var field = new TextField(t(label));
         field.setReadOnly(true);
         field.setWidth("200px");
         return field;
@@ -220,17 +223,17 @@ public class MessageDetailDialog extends Dialog {
     public void openMessage(Long messageId) {
         currentMessage = messageService.findById(messageId);
         if (currentMessage != null) {
-            setHeaderTitle("Message #" + messageId);
+            setHeaderTitle(t("Message #") + messageId);
             var jobs = messageService.executionJobs(messageId);
             jobsGrid.setItems(jobs);
             retryButton.setVisible(currentMessage.getStatus() == com.sysadminanywhere.m3.messaging.domain.MessageStatus.FAILED);
             retryButton.setEnabled(jobs.stream().anyMatch(job -> job.status() == com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.FAILED));
-            var dateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+            var dateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(Translations.locale())
                     .withZone(ZoneId.systemDefault());
 
             idField.setValue(String.valueOf(currentMessage.getId()));
-            statusField.setValue(currentMessage.getStatus().name());
-            directionField.setValue(currentMessage.getDirection().name());
+            statusField.setValue(Translations.enumLabel(currentMessage.getStatus()));
+            directionField.setValue(Translations.enumLabel(currentMessage.getDirection()));
             sourceSystemField.setValue(currentMessage.getSourceSystem() != null ? currentMessage.getSourceSystem() : "");
             targetSystemField.setValue(currentMessage.getTargetSystem() != null ? currentMessage.getTargetSystem() : "");
             payloadTypeField.setValue(currentMessage.getPayloadType());
@@ -238,8 +241,8 @@ public class MessageDetailDialog extends Dialog {
             processedAtField.setValue(currentMessage.getProcessedAt() != null
                     ? dateTimeFormatter.format(currentMessage.getProcessedAt())
                     : "");
-            charsetField.setValue((currentMessage.getCharset() == null ? "Unknown" : currentMessage.getCharset())
-                    + " / " + currentMessage.getCharsetSource());
+            charsetField.setValue((currentMessage.getCharset() == null ? t("Unknown") : currentMessage.getCharset())
+                    + " / " + t(currentMessage.getCharsetSource()));
             sizeField.setValue(Integer.toString(currentMessage.getPayloadSize()));
 
             List<MessageMetadata> metadata = metadataRepository.findByMessageId(messageId);
@@ -251,7 +254,7 @@ public class MessageDetailDialog extends Dialog {
             try { hasSource = sourceId != null && Long.parseLong(sourceId) > 0 && Long.parseLong(sourceId) != messageId; }
             catch (NumberFormatException ignored) { }
             sourceMessageButton.setVisible(hasSource);
-            sourceMessageButton.setText("View original #" + sourceId);
+            sourceMessageButton.setText(t("View original #") + sourceId);
             originalBytes = currentMessage.getPayloadBytes();
             boolean binary = "BASE64".equals(currentMessage.getPayloadFormat());
             charsetSelector.setEnabled(true);
@@ -277,7 +280,7 @@ public class MessageDetailDialog extends Dialog {
 
             open();
         } else {
-            com.vaadin.flow.component.notification.Notification.show("Message #" + messageId + " no longer exists", 5000,
+            com.vaadin.flow.component.notification.Notification.show(t("Message #") + messageId + t(" no longer exists"), 5000,
                     com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
             close();
         }
@@ -289,22 +292,22 @@ public class MessageDetailDialog extends Dialog {
         {
             if (originalBytes == null || charsetSelector.getValue() == null) {
                 payloadArea.clear();
-                previewHint.setText("Choose a charset for text preview.");
+                previewHint.setText(t("Choose a charset for text preview."));
                 return;
             }
             try {
                 text = Charset.forName(charsetSelector.getValue()).newDecoder()
                         .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
                         .decode(ByteBuffer.wrap(originalBytes)).toString();
-                previewHint.setText((currentMessage.getCharset() == null ? "Stored charset is unknown; this is a manual preview. " : "")
-                        + "Changing preview charset does not change stored bytes. Download preserves the original bytes.");
+                previewHint.setText((currentMessage.getCharset() == null ? t("Stored charset is unknown; this is a manual preview. ") : "")
+                        + t("Changing preview charset does not change stored bytes. Download preserves the original bytes."));
             } catch (java.nio.charset.CharacterCodingException invalid) {
                 payloadArea.clear();
-                previewHint.setText("Cannot decode with the selected charset. Select another charset or download the original bytes.");
+                previewHint.setText(t("Cannot decode with the selected charset. Select another charset or download the original bytes."));
                 return;
             }
         }
-        payloadArea.setValue(text.length() > 5000 ? text.substring(0, 5000) + "\n\n… [Preview limited to 5000 characters; download for full content]" : text);
+        payloadArea.setValue(text.length() > 5000 ? text.substring(0, 5000) + "\n\n… [" + t("Preview limited to 5000 characters; download for full content") + "]" : text);
     }
 
     private void deleteMessage() {
@@ -313,14 +316,14 @@ public class MessageDetailDialog extends Dialog {
         }
 
         var confirmDialog = new Dialog();
-        confirmDialog.setHeaderTitle("Delete Message");
-        confirmDialog.add(new com.vaadin.flow.component.html.Span("Are you sure you want to delete this message?"));
+        confirmDialog.setHeaderTitle(t("Delete Message"));
+        confirmDialog.add(new com.vaadin.flow.component.html.Span(t("Are you sure you want to delete this message?")));
 
-        var confirmButton = new Button("Delete", e -> {
+        var confirmButton = new Button(t("Delete"), e -> {
             Long deletedId = currentMessage.getId();
             try { messageService.deleteMessage(deletedId); }
             catch (IllegalArgumentException invalid) {
-                com.vaadin.flow.component.notification.Notification.show(invalid.getMessage(),5000,
+                com.vaadin.flow.component.notification.Notification.show(t(invalid.getMessage()),5000,
                         com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
                 return;
             }
@@ -332,7 +335,7 @@ public class MessageDetailDialog extends Dialog {
         });
         confirmButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_ERROR);
 
-        var cancelButton = new Button("Cancel", e -> confirmDialog.close());
+        var cancelButton = new Button(t("Cancel"), e -> confirmDialog.close());
 
         confirmDialog.getFooter().add(cancelButton, confirmButton);
         confirmDialog.open();

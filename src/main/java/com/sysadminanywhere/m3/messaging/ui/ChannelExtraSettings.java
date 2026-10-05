@@ -1,5 +1,8 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
+import static com.sysadminanywhere.m3.base.i18n.Translations.t;
+import com.sysadminanywhere.m3.base.i18n.Translations;
+
 import com.sysadminanywhere.m3.messaging.source.InboundSourceSpec;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -20,19 +23,19 @@ final class ChannelExtraSettings extends VerticalLayout {
     ChannelExtraSettings() {
         setWidthFull(); setPadding(false); setSpacing(true);
         propertyRows.setWidthFull(); propertyRows.setPadding(false);
-        var addProperty = new Button("Add property", VaadinIcon.PLUS.create(), event -> addRow("", ""));
+        var addProperty = new Button(t("Add property"), VaadinIcon.PLUS.create(), event -> addRow("", ""));
         addProperty.addThemeVariants(ButtonVariant.LUMO_SMALL);
-        var hint = new Span("Additional protocol settings, for example kafka.security.protocol. Loading policy belongs to the rule.");
+        var hint = new Span(t("Additional protocol settings, for example kafka.security.protocol. Loading policy belongs to the rule."));
         hint.getStyle().set("white-space", "normal");
-        add(new Span("Additional connection properties"), hint, propertyRows, addProperty);
+        add(new Span(t("Additional connection properties")), hint, propertyRows, addProperty);
     }
     private void addRow(String name, String content) {
-        var key = new TextField("Key"); key.setMaxLength(255); key.setValue(name); key.setWidth("240px");
-        var value = new TextArea("Value"); value.setValue(content); value.setMinHeight("80px");
+        var key = new TextField(t("Key")); key.setMaxLength(255); key.setValue(name); key.setWidth("240px");
+        var value = new TextArea(t("Value")); value.setValue(content); value.setMinHeight("80px");
         value.setWidthFull();
         var remove = new Button(VaadinIcon.TRASH.create());
         remove.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
-        remove.setAriaLabel("Remove connection property");
+        remove.setAriaLabel(t("Remove connection property"));
         var layout = new HorizontalLayout(key, value, remove);
         layout.setWidthFull(); layout.setWrap(true); layout.setAlignItems(Alignment.END);
         layout.setFlexGrow(1, value);
@@ -55,11 +58,11 @@ final class ChannelExtraSettings extends VerticalLayout {
             String value = row.value().getValue();
             row.key().setInvalid(false);
             if (key.isEmpty() && value.isEmpty()) continue;
-            if (key.isEmpty() || key.length() > 255) fail(row, "Enter a property key (1–255 characters)");
+            if (key.isEmpty() || key.length() > 255) fail(row, t("Enter a property key (1–255 characters)"));
             if (visible.contains(key) || InboundSourceSpec.LOADING_KEYS.contains(key)
                     || Set.of("keyDeserializer", "valueDeserializer").contains(key))
-                fail(row, "Use the dedicated field or rule settings for: " + key);
-            if (result.containsKey(key)) fail(row, "Duplicate connection property: " + key);
+                fail(row, t("Use the dedicated field or rule settings for: ") + key);
+            if (result.containsKey(key)) fail(row, t("Duplicate connection property: ") + key);
             result.put(key, value);
         }
         return result;

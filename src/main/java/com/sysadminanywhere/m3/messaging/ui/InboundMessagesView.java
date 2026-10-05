@@ -1,5 +1,8 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
+import static com.sysadminanywhere.m3.base.i18n.Translations.t;
+import com.sysadminanywhere.m3.base.i18n.Translations;
+
 import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.sysadminanywhere.m3.messaging.domain.Message;
@@ -14,7 +17,7 @@ import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 
 import java.time.ZoneId;
@@ -24,9 +27,8 @@ import java.time.format.FormatStyle;
 import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
 
 @Route(value = "messages/inbound")
-@PageTitle("Inbound Messages")
 @MenuItem(order = 1, icon = "icons/message.svg", title = "Inbound", section = MenuSection.MESSAGING, parent = "Messages")
-class InboundMessagesView extends VerticalLayout {
+class InboundMessagesView extends VerticalLayout implements HasDynamicTitle {
 
     private final MessageService messageService;
     private final MessageMetadataRepository metadataRepository;
@@ -42,19 +44,19 @@ class InboundMessagesView extends VerticalLayout {
         this.detailDialog = new MessageDetailDialog(messageService, metadataRepository, submissions);
         this.detailDialog.setOnMessageChanged(id -> refreshGrid());
 
-        statusFilter = new ComboBox<>("Status");
-        statusFilter.setItems(MessageStatus.values());
+        statusFilter = new ComboBox<>(t("Status"));
+        statusFilter.setItems(MessageStatus.values()); statusFilter.setItemLabelGenerator(Translations::enumLabel);
         statusFilter.setClearButtonVisible(true);
         statusFilter.addValueChangeListener(event -> refreshGrid());
 
         var toolbar = new HorizontalLayout();
-        toolbar.add(statusFilter, new Button("Refresh", VaadinIcon.REFRESH.create(), event -> refreshGrid()));
+        toolbar.add(statusFilter, new Button(t("Refresh"), VaadinIcon.REFRESH.create(), event -> refreshGrid()));
         toolbar.setAlignItems(Alignment.END);
         toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();
 
-        var dateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(getLocale())
+        var dateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(Translations.locale())
                 .withZone(ZoneId.systemDefault());
 
         messageGrid = new Grid<>();
@@ -65,20 +67,20 @@ class InboundMessagesView extends VerticalLayout {
         ).stream());
         messageGrid.addItemDoubleClickListener(event -> detailDialog.openMessage(event.getItem().getId()));
         messageGrid.addColumn(Message::getId).setHeader("ID").setWidth("52px").setFlexGrow(0);
-        messageGrid.addColumn(Message::getStatus).setHeader("Status").setWidth("80px").setFlexGrow(0);
-        messageGrid.addColumn(Message::getSourceSystem).setHeader("Source").setWidth("88px").setFlexGrow(1);
-        messageGrid.addColumn(Message::getTargetSystem).setHeader("Target").setWidth("84px").setFlexGrow(1);
-        messageGrid.addColumn(Message::getPayloadType).setHeader("Type").setWidth("70px").setFlexGrow(0);
-        messageGrid.addColumn(msg -> dateTimeFormatter.format(msg.getCreatedAt())).setHeader("Created")
+        messageGrid.addColumn(item -> Translations.enumLabel(item.getStatus())).setHeader(t("Status")).setWidth("80px").setFlexGrow(0);
+        messageGrid.addColumn(Message::getSourceSystem).setHeader(t("Source")).setWidth("88px").setFlexGrow(1);
+        messageGrid.addColumn(Message::getTargetSystem).setHeader(t("Target")).setWidth("84px").setFlexGrow(1);
+        messageGrid.addColumn(Message::getPayloadType).setHeader(t("Type")).setWidth("70px").setFlexGrow(0);
+        messageGrid.addColumn(msg -> dateTimeFormatter.format(msg.getCreatedAt())).setHeader(t("Created"))
                 .setWidth("130px").setFlexGrow(0);
         messageGrid.addComponentColumn(msg -> {
-            var viewButton = new Button("View", VaadinIcon.EYE.create());
+            var viewButton = new Button(t("View"), VaadinIcon.EYE.create());
             viewButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
-            viewButton.setTooltipText("View details");
+            viewButton.setTooltipText(t("View details"));
             viewButton.addClickListener(e -> detailDialog.openMessage(msg.getId()));
             return viewButton;
-        }).setHeader("Actions").setWidth("100px").setFlexGrow(0);
-        messageGrid.setEmptyStateText("No inbound messages found");
+        }).setHeader(t("Actions")).setWidth("100px").setFlexGrow(0);
+        messageGrid.setEmptyStateText(t("No inbound messages found"));
         messageGrid.setSizeFull();
 
         setSizeFull();
@@ -88,4 +90,5 @@ class InboundMessagesView extends VerticalLayout {
     private void refreshGrid() {
         messageGrid.getDataProvider().refreshAll();
     }
+    @Override public String getPageTitle() { return t("Inbound Messages"); }
 }

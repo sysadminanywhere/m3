@@ -1,5 +1,8 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
+import static com.sysadminanywhere.m3.base.i18n.Translations.t;
+import com.sysadminanywhere.m3.base.i18n.Translations;
+
 import com.sysadminanywhere.m3.messaging.domain.ChannelSettings;
 import com.sysadminanywhere.m3.messaging.domain.ChannelType;
 import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
@@ -16,15 +19,14 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
-import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 
 import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
 
 @Route(value = "channels")
-@PageTitle("Channels")
 @MenuItem(order = 2, icon = "icons/channel.svg", title = "Channels", section = MenuSection.SETTINGS)
-class ChannelListView extends VerticalLayout {
+class ChannelListView extends VerticalLayout implements HasDynamicTitle {
 
     private final ChannelSettingsService channelSettingsService;
 
@@ -34,16 +36,16 @@ class ChannelListView extends VerticalLayout {
     ChannelListView(ChannelSettingsService channelSettingsService, SourceHealth sourceHealth) {
         this.channelSettingsService = channelSettingsService;
 
-        typeFilter = new ComboBox<>("Type");
-        typeFilter.setItems(ChannelType.values());
+        typeFilter = new ComboBox<>(t("Type"));
+        typeFilter.setItems(ChannelType.values()); typeFilter.setItemLabelGenerator(Translations::enumLabel);
         typeFilter.setClearButtonVisible(true);
         typeFilter.addValueChangeListener(event -> refreshGrid());
 
-        var addButton = new Button("Add Channel", VaadinIcon.PLUS.create(), event -> addChannel());
+        var addButton = new Button(t("Add Channel"), VaadinIcon.PLUS.create(), event -> addChannel());
         addButton.addThemeVariants(ButtonVariant.PRIMARY);
 
         var toolbar = new HorizontalLayout();
-        toolbar.add(typeFilter, new Button("Refresh", event -> refreshGrid()), addButton);
+        toolbar.add(typeFilter, new Button(t("Refresh"), event -> refreshGrid()), addButton);
         toolbar.addClassName("page-toolbar");
         toolbar.setWrap(true);
         toolbar.setWidthFull();
@@ -55,23 +57,23 @@ class ChannelListView extends VerticalLayout {
             return channelSettingsService.page(typeFilter.getValue(), org.springframework.data.domain.PageRequest.of(
                     pageRequest.getPageNumber(), pageRequest.getPageSize(), sort)).stream();
         });
-        channelGrid.addColumn(ChannelSettings::getName).setHeader("Name").setSortProperty("name")
+        channelGrid.addColumn(ChannelSettings::getName).setHeader(t("Name")).setSortProperty("name")
                 .setWidth("100px").setFlexGrow(1);
-        channelGrid.addColumn(ChannelSettings::getChannelType).setHeader("Type").setSortProperty("channelType")
+        channelGrid.addColumn(item -> Translations.enumLabel(item.getChannelType())).setHeader(t("Type")).setSortProperty("channelType")
                 .setWidth("70px").setFlexGrow(0);
-        channelGrid.addColumn(ChannelSettings::getDirection).setHeader("Direction").setSortProperty("direction")
+        channelGrid.addColumn(item -> Translations.enumLabel(item.getDirection())).setHeader(t("Direction")).setSortProperty("direction")
                 .setWidth("100px").setFlexGrow(0);
-        channelGrid.addColumn(settings -> settings.getDirection() == ChannelDirection.INBOUND ? "Rule managed" : settings.getEnabled() ? "Enabled" : "Disabled")
-                .setHeader("Status").setWidth("75px").setFlexGrow(0);
+        channelGrid.addColumn(settings -> settings.getDirection() == ChannelDirection.INBOUND ? t("Rule managed") : settings.getEnabled() ? t("Enabled") : t("Disabled"))
+                .setHeader(t("Status")).setWidth("75px").setFlexGrow(0);
         channelGrid.addColumn(settings -> {
             if (settings.getDirection() != ChannelDirection.INBOUND) return "—";
-            return "Managed by loading rules";
-        }).setHeader("Loading").setWidth("170px").setFlexGrow(0);
-        channelGrid.addColumn(ChannelSettings::getDescription).setHeader("Description")
+            return t("Managed by loading rules");
+        }).setHeader(t("Loading")).setWidth("170px").setFlexGrow(0);
+        channelGrid.addColumn(ChannelSettings::getDescription).setHeader(t("Description"))
                 .setWidth("90px").setFlexGrow(1);
-        channelGrid.addComponentColumn(this::createActionButtons).setHeader("Actions")
+        channelGrid.addComponentColumn(this::createActionButtons).setHeader(t("Actions"))
                 .setWidth("120px").setFlexGrow(0);
-        channelGrid.setEmptyStateText("No channels found");
+        channelGrid.setEmptyStateText(t("No channels found"));
         channelGrid.setSizeFull();
 
         setSizeFull();
@@ -92,7 +94,7 @@ class ChannelListView extends VerticalLayout {
         deleteButton.addClickListener(event -> deleteChannel(channel));
 
         toggleButton.setVisible(channel.getDirection()==ChannelDirection.OUTBOUND);
-        toggleButton.setTooltipText("Change outbound availability");
+        toggleButton.setTooltipText(t("Change outbound availability"));
         return new HorizontalLayout(editButton, toggleButton, deleteButton);
     }
 
@@ -112,32 +114,33 @@ class ChannelListView extends VerticalLayout {
     private void toggleChannel(ChannelSettings channel) {
         channelSettingsService.toggleEnabled(channel.getId());
         refreshGrid();
-        Notification.show("Channel " + (channel.getEnabled() ? "disabled" : "enabled"), 3000, Notification.Position.BOTTOM_END)
+        Notification.show(t("Channel ") + (channel.getEnabled() ? t("disabled") : t("enabled")), 3000, Notification.Position.BOTTOM_END)
                 .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
     }
 
     private void deleteChannel(ChannelSettings channel) {
         var dialog = new com.vaadin.flow.component.dialog.Dialog();
-        dialog.setHeaderTitle("Confirm Delete");
-        dialog.add("Are you sure you want to delete channel '" + channel.getName() + "'?");
+        dialog.setHeaderTitle(t("Confirm Delete"));
+        dialog.add(t("Are you sure you want to delete channel '") + channel.getName() + "'?");
 
-        var deleteButton = new Button("Delete", event -> {
+        var deleteButton = new Button(t("Delete"), event -> {
             try {
                 channelSettingsService.deleteChannel(channel.getId());
                 refreshGrid();
                 dialog.close();
-                Notification.show("Channel deleted", 3000, Notification.Position.BOTTOM_END)
+                Notification.show(t("Channel deleted"), 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             } catch (Exception e) {
-                Notification.show("Error deleting channel: " + e.getMessage(), 3000, Notification.Position.BOTTOM_END)
+                Notification.show(t("Error deleting channel: ") + t(e.getMessage()), 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         });
         deleteButton.addThemeVariants(ButtonVariant.PRIMARY, ButtonVariant.LUMO_ERROR);
 
-        var cancelButton = new Button("Cancel", event -> dialog.close());
+        var cancelButton = new Button(t("Cancel"), event -> dialog.close());
 
         dialog.getFooter().add(cancelButton, deleteButton);
         dialog.open();
     }
+    @Override public String getPageTitle() { return t("Channels"); }
 }

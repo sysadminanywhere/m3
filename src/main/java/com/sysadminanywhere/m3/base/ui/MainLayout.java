@@ -1,5 +1,8 @@
 package com.sysadminanywhere.m3.base.ui;
 
+import static com.sysadminanywhere.m3.base.i18n.Translations.t;
+import com.sysadminanywhere.m3.base.i18n.Translations;
+
 import com.sysadminanywhere.m3.base.ui.menu.MenuItemInfo;
 import com.sysadminanywhere.m3.base.ui.menu.MenuItemRegistry;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
@@ -43,7 +46,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         Div rail = new Div();
         rail.addClassName("primary-navigation");
         rail.getElement().setAttribute("role", "navigation");
-        rail.getElement().setAttribute("aria-label", "Sections");
+        rail.getElement().setAttribute("aria-label", t("Sections"));
         Image logo = new Image("icons/m3-cube.svg", "M3");
         logo.addClassName("navigation-logo");
         rail.add(logo);
@@ -52,21 +55,40 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         for (MenuSection section : menuItemRegistry.getSections()) {
             NativeButton button = new NativeButton();
             button.addClassName("primary-nav-button");
-            button.getElement().setAttribute("aria-label", section.getTitle());
+            button.getElement().setAttribute("aria-label", t(section.getTitle()));
             String iconName = switch (section) {
                 case MESSAGING -> "globe";
                 case SETTINGS -> "messages";
                 case ADMINISTRATION -> "settings";
             };
-            button.add(icon(iconName), new Span(section == MenuSection.ADMINISTRATION ? "Admin" : section.getTitle()));
+            button.add(icon(iconName), new Span(section == MenuSection.ADMINISTRATION ? t("Admin") : t(section.getTitle())));
             button.addClickListener(event -> navigateToSection(section));
             sectionButtons.put(section, button);
             sections.add(button);
         }
         rail.add(sections);
+        var language = new com.vaadin.flow.component.combobox.ComboBox<java.util.Locale>();
+        language.setItems(Translations.LANGUAGES);
+        language.setItemLabelGenerator(locale -> locale.getLanguage().toUpperCase(java.util.Locale.ROOT));
+        language.setRenderer(new com.vaadin.flow.data.renderer.TextRenderer<>(locale -> locale.getDisplayLanguage(locale)));
+        language.getElement().setProperty("overlayWidth", "180px");
+        language.setAriaLabel(t("Language"));
+        language.setValue(Translations.locale());
+        language.setWidth("68px");
+        language.addClassName("language-selector");
+        language.getElement().setAttribute("title", "English · Русский · Deutsch · Français · Italiano · Português");
+        language.addValueChangeListener(event -> {
+            if (event.getValue() == null || !event.isFromClient()) return;
+            getUI().ifPresent(ui -> {
+                var locale = event.getValue();
+                ui.setLocale(locale); ui.getSession().setLocale(locale);
+                ui.getPage().executeJs("document.cookie = 'm3-language=' + $0 + '; Path=/; Max-Age=31536000; SameSite=Lax'; window.location.reload()", locale.getLanguage());
+            });
+        });
+        rail.add(language);
         secondaryNavigation.addClassName("secondary-navigation");
         secondaryNavigation.getElement().setAttribute("role", "navigation");
-        secondaryNavigation.getElement().setAttribute("aria-label", "Pages");
+        secondaryNavigation.getElement().setAttribute("aria-label", t("Pages"));
         pageTitle.addClassName("app-page-title");
         viewContainer.addClassName("view-container");
         Div main = new Div(pageTitle, viewContainer);
@@ -93,7 +115,9 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
                 .filter(item -> item.path().equals(currentPath) || currentPath.startsWith(item.path() + "/"))
                 .findFirst().orElse(null);
         PageTitle title = currentView == null ? null : currentView.getClass().getAnnotation(PageTitle.class);
-        pageTitle.setText(title != null ? title.value() : currentItem != null ? currentItem.title() : "M3");
+        String text = currentView instanceof com.vaadin.flow.router.HasDynamicTitle dynamic ? dynamic.getPageTitle() : title != null ? title.value() : currentItem != null ? currentItem.title() : "M3";
+        pageTitle.setText(t(text));
+        getUI().ifPresent(ui -> ui.getPage().setTitle(t(text)));
         if (currentItem != null && currentItem.section() != activeSection) showSection(currentItem.section());
         else if (currentPath.startsWith("channel/")) showSection(MenuSection.SETTINGS);
         updateCurrentLink();
@@ -115,11 +139,11 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         });
         secondaryNavigation.removeAll();
         pageLinks.clear();
-        H3 title = new H3(section.getTitle());
+        H3 title = new H3(t(section.getTitle()));
         title.addClassName("secondary-navigation-title");
         NativeButton create = new NativeButton();
         create.addClassName("secondary-navigation-create");
-        create.getElement().setAttribute("aria-label", "Create new item");
+        create.getElement().setAttribute("aria-label", t("Create new item"));
         create.add(icon("plus"));
         create.addClickListener(event -> triggerPageCreateAction());
         Div header = new Div(title, create);
@@ -137,7 +161,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
                         case "Channels" -> "link";
                         case "Workers" -> "cube";
                         default -> "file";
-                    }), new Span(item.title()));
+                    }), new Span(t(item.title())));
                     link.addClassName("section-nav-link");
                     pageLinks.put(item.path(), link);
                     nav.add(link);
@@ -164,7 +188,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
 
     private void triggerPageCreateAction() {
         Button action = findPrimaryAction(currentView);
-        if (action == null) Notification.show("No create action is available on this page");
+        if (action == null) Notification.show(t("No create action is available on this page"));
         else action.getElement().callJsFunction("click");
     }
 

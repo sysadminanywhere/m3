@@ -1,5 +1,8 @@
 package com.sysadminanywhere.m3.messaging.ui;
 
+import static com.sysadminanywhere.m3.base.i18n.Translations.t;
+import com.sysadminanywhere.m3.base.i18n.Translations;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sysadminanywhere.m3.messaging.domain.*;
 import com.sysadminanywhere.m3.messaging.service.RuleService;
@@ -21,17 +24,17 @@ import java.util.List;
 
 final class RuleActionEditorDialog extends Dialog {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private final ComboBox<ActionType> type = new ComboBox<>("Action");
-    private final ComboBox<Operation> operation = new ComboBox<>("Transformation");
-    private final TextField field = new TextField("JSON field");
-    private final TextField parameter = new TextField("Text");
-    private final TextField replacement = new TextField("Replace with");
-    private final ComboBox<Boolean> filter = new ComboBox<>("Message outcome");
-    private final ComboBox<String> key = new ComboBox<>("Metadata key");
-    private final TextField value = new TextField("Metadata value");
-    private final ComboBox<String> format = new ComboBox<>("Example format");
-    private final TextArea sample = new TextArea("Input example");
-    private final TextArea result = new TextArea("Result");
+    private final ComboBox<ActionType> type = new ComboBox<>(t("Action"));
+    private final ComboBox<Operation> operation = new ComboBox<>(t("Transformation"));
+    private final TextField field = new TextField(t("JSON field"));
+    private final TextField parameter = new TextField(t("Text"));
+    private final TextField replacement = new TextField(t("Replace with"));
+    private final ComboBox<Boolean> filter = new ComboBox<>(t("Message outcome"));
+    private final ComboBox<String> key = new ComboBox<>(t("Metadata key"));
+    private final TextField value = new TextField(t("Metadata value"));
+    private final ComboBox<String> format = new ComboBox<>(t("Example format"));
+    private final TextArea sample = new TextArea(t("Input example"));
+    private final TextArea result = new TextArea(t("Result"));
     private final Span error = new Span();
     private final VerticalLayout preview = new VerticalLayout(format, sample, result, error);
 
@@ -42,40 +45,52 @@ final class RuleActionEditorDialog extends Dialog {
     }
     static String description(RuleAction action) {
         return switch (action.getActionType()) {
-            case TRANSFORM -> RuleTransformations.describe(action.getTransformationScript());
+            case TRANSFORM -> transformationDescription(action.getTransformationScript());
             case ENRICH -> action.getMetadataKey() + " = " + action.getMetadataValue();
-            case FILTER -> Boolean.TRUE.equals(action.getFilterResult()) ? "Pass message" : "Discard message";
-            case ROUTE -> action.getTargetChannel() == null ? "Not configured" : action.getTargetChannel();
+            case FILTER -> Boolean.TRUE.equals(action.getFilterResult()) ? t("Pass message") : t("Discard message");
+            case ROUTE -> action.getTargetChannel() == null ? t("Not configured") : action.getTargetChannel();
         };
     }
+    static String transformationDescription(String stored) {
+        try {
+            var spec = RuleTransformations.parse(stored);
+            return switch (spec.operation()) {
+                case EXTRACT_FIELD -> t("Extract JSON field") + ": " + spec.field();
+                case REPLACE -> t("Replace {0} with {1}", spec.value(), spec.replacement());
+                case ADD_PREFIX, ADD_SUFFIX -> t(spec.operation().label()) + ": " + spec.value();
+                default -> t(spec.operation().label());
+            };
+        } catch (IllegalArgumentException invalid) { return t("Not configured"); }
+    }
     RuleActionEditorDialog(RuleService rules, long ruleId, Runnable onSave) { this(rules, ruleId, null, onSave); }
-    RuleActionEditorDialog(RuleService rules, long ruleId, RuleAction existing, Runnable onSave) {
-        setHeaderTitle(existing == null ? "Add action" : "Edit action");
+    RuleActionEditorDialog(RuleService rules, long ruleId, RuleAction existing, Runnable onSave) { this(rules, ruleId, existing, null, onSave); }
+    RuleActionEditorDialog(RuleService rules, long ruleId, RuleAction existing, ActionType initialType, Runnable onSave) {
+        setHeaderTitle(existing == null ? t("Add action") : t("Edit action"));
         setWidth("640px"); setMaxWidth("calc(100vw - 32px)");
         type.setItems(ActionType.TRANSFORM, ActionType.ENRICH, ActionType.FILTER);
         type.setItemLabelGenerator(t -> switch(t) {
-            case TRANSFORM -> "Transform body"; case ENRICH -> "Add metadata";
-            case FILTER -> "Filter message"; default -> "Route";
+            case TRANSFORM -> t("Transform body"); case ENRICH -> t("Add metadata");
+            case FILTER -> t("Filter message"); default -> t("Route");
         });
-        operation.setItems(Operation.values()); operation.setItemLabelGenerator(Operation::label);
-        field.setMaxLength(100); field.setHelperText("Top-level field name, for example body");
+        operation.setItems(Operation.values()); operation.setItemLabelGenerator(op -> t(op.label()));
+        field.setMaxLength(100); field.setHelperText(t("Top-level field name, for example body"));
         parameter.setMaxLength(1000); replacement.setMaxLength(1000);
         filter.setItems(true, false); filter.setItemLabelGenerator(pass -> pass ? "Pass message" : "Discard message");
-        filter.setHelperText("Applied when rule conditions match, before transformations. The first filter in execution order is used.");
+        filter.setHelperText(t("Applied when rule conditions match, before transformations. The first filter in execution order is used."));
         key.setItems("outputCharset", "traceId", "approved", "category"); key.setAllowCustomValue(true);
         key.addCustomValueSetListener(e -> key.setValue(e.getDetail()));
-        key.setHelperText("Select or enter a key. outputCharset controls encoding of the transformed body.");
+        key.setHelperText(t("Select or enter a key. outputCharset controls encoding of the transformed body."));
         value.setMaxLength(RuleAction.METADATA_VALUE_MAX_LENGTH);
-        var order = new IntegerField("Execution order"); order.setMin(0); order.setMax(9999);
-        order.setHelperText("Lower numbers execute first; ties follow creation order.");
+        var order = new IntegerField(t("Execution order")); order.setMin(0); order.setMax(9999);
+        order.setHelperText(t("Lower numbers execute first; ties follow creation order."));
         order.setValue(existing == null ? Math.min(9999, orderedActions(rules.findById(ruleId)).stream()
                 .mapToInt(RuleAction::getPriority).max().orElse(-1) + 1) : existing.getPriority());
-        format.setItems("Text", "JSON"); format.setValue("JSON");
+        format.setItems("Text", "JSON"); format.setItemLabelGenerator(Translations::t); format.setValue("JSON");
         sample.setMaxLength(10000); sample.setValue("{\"body\":\"  Hello M3  \"}");
         sample.setMinHeight("100px"); result.setMinHeight("100px"); result.setReadOnly(true);
         error.getStyle().set("color", "var(--lumo-error-text-color)");
         preview.setPadding(false); preview.addClassName("rule-preview");
-        preview.addComponentAsFirst(new Span("Try this operation on an example. Nothing is saved or sent."));
+        preview.addComponentAsFirst(new Span(t("Try this operation on an example. Nothing is saved or sent.")));
         var form = new VerticalLayout(type, operation, field, parameter, replacement, filter, key, value, order, preview);
         form.setPadding(false);
         for (var component : List.<com.vaadin.flow.component.HasSize>of(type, operation, field, parameter, replacement, filter, key, value, order, format, sample, result))
@@ -102,19 +117,19 @@ final class RuleActionEditorDialog extends Dialog {
             if (existing.getMetadataValue() != null) value.setValue(existing.getMetadataValue());
             if (existing.getFilterResult() != null) filter.setValue(existing.getFilterResult());
         }
-        type.setValue(existing == null ? ActionType.TRANSFORM : existing.getActionType());
-        var save = new Button("Save", e -> {
+        type.setValue(existing == null ? (initialType == null ? ActionType.TRANSFORM : initialType) : existing.getActionType());
+        var save = new Button(t("Save"), e -> {
             try {
                 rules.saveVisualAction(ruleId, existing == null ? null : existing.getId(), type.getValue(),
                         type.getValue() == ActionType.TRANSFORM ? RuleTransformations.encode(spec()) : null,
                         filter.getValue(), key.getValue(), value.getValue(), order.getValue());
                 onSave.run(); close();
             } catch (IllegalArgumentException invalid) {
-                Notification.show(invalid.getMessage(), 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                Notification.show(t(invalid.getMessage()), 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         });
         save.addThemeVariants(ButtonVariant.PRIMARY);
-        getFooter().add(new Button("Cancel", e -> close()), save);
+        getFooter().add(new Button(t("Cancel"), e -> close()), save);
         updatePreview();
     }
     private Spec spec() { return new Spec(operation.getValue(), field.getValue(), parameter.getValue(), replacement.getValue()); }
@@ -124,7 +139,7 @@ final class RuleActionEditorDialog extends Dialog {
         operation.setVisible(transform); preview.setVisible(transform);
         field.setVisible(transform && op == Operation.EXTRACT_FIELD);
         parameter.setVisible(transform && (op == Operation.REPLACE || op == Operation.ADD_PREFIX || op == Operation.ADD_SUFFIX));
-        parameter.setLabel(op == Operation.REPLACE ? "Find text" : "Text to add");
+        parameter.setLabel(op == Operation.REPLACE ? t("Find text") : t("Text to add"));
         replacement.setVisible(transform && op == Operation.REPLACE);
         filter.setVisible(type.getValue() == ActionType.FILTER);
         key.setVisible(type.getValue() == ActionType.ENRICH); value.setVisible(key.isVisible());
@@ -134,6 +149,6 @@ final class RuleActionEditorDialog extends Dialog {
             Object output = RuleTransformations.apply(input, RuleTransformations.encode(spec()));
             result.setValue(output instanceof String text ? text : JSON.writerWithDefaultPrettyPrinter().writeValueAsString(output));
             error.setText("");
-        } catch (Exception invalid) { result.clear(); error.setText(invalid.getMessage() == null ? "Invalid example" : invalid.getMessage()); }
+        } catch (Exception invalid) { result.clear(); error.setText(invalid.getMessage() == null ? t("Invalid example") : t(invalid.getMessage())); }
     }
 }

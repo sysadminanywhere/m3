@@ -284,3 +284,36 @@ on JSON require extracting a string field first. Original stored message bytes a
 The editor and workers share the same transformation implementation. Existing `$.field` transformations
 remain compatible. New operation configurations use the existing `transformation_script` column;
 no additional database migration is needed. Deploy the updated UI and workers together.
+
+
+## Interface languages
+
+The UI supports English, Russian, German, French, Italian and Portuguese. Use the language selector
+at the bottom of the left navigation rail. The initial language follows the browser language when
+supported, otherwise English. Selection reloads the current page (save open forms first) and is stored
+in the `m3-language` browser cookie for one year. Other browsers/users have independent preferences.
+
+UTF-8 catalogs are in `src/main/resources/i18n/ui_<language>.json`; English text is the translation key.
+Add the same key to all six catalogs when adding interface text, and call `Translations.t(key)`.
+Parameterized text uses `{0}`, `{1}`, etc. The Vaadin `I18NProvider` is registered as a Spring bean;
+page titles, labels, enum display names and dates use the selected locale. Protocol identifiers,
+channel/rule names, metadata keys, message bodies and stored database values remain unchanged.
+Diagnostic details without a translation retain their original text.
+
+
+## Rule diagrams and interactive pipeline editor
+
+**Rules** opens a paged diagram of source channels → rules → destination channels with worker assignments.
+Select a rule block to open its pipeline; the **Table** display mode keeps the tabular overview available.
+
+The rule editor uses a connected canvas as its main workspace. Source/destination selectors, loading settings,
+and the worker pool (in the rule details view) are inside the relevant blocks. Conditions and filters can be added,
+edited and removed directly on the canvas. Transformation/metadata blocks have edit/delete and up/down controls.
+Changing their order persists the same order used by workers. Filters always run before transformations;
+additional filters are marked inactive. A discard filter marks subsequent stages as skipped.
+
+**Preview entire rule** accepts a text/JSON example and manually entered metadata. It evaluates the saved
+conditions, filter, and all transformations/metadata additions with the worker's `RuleEngine`, showing the
+result body and metadata. The preview does not perform channel I/O or store messages. It starts from decoded
+example text; it does not simulate transport, charset detection or final byte encoding.
+Canvas actions/conditions are saved immediately. Channel/loading/worker settings require **Save** on the rule.
