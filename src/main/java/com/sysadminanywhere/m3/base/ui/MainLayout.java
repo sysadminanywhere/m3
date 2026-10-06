@@ -57,7 +57,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
             String iconName = switch (section) {
                 case MESSAGING -> "globe";
                 case SETTINGS -> "settings";
-                case ADMINISTRATION -> "settings";
+                case ADMINISTRATION -> "admin";
             };
             button.add(icon(iconName), new Span(section == MenuSection.ADMINISTRATION ? t("Admin") : t(section.getTitle())));
             button.addClickListener(event -> navigateToSection(section));
