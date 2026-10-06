@@ -79,7 +79,7 @@ class InboundMessagesView extends VerticalLayout implements HasDynamicTitle {
             viewButton.setTooltipText(t("View details"));
             viewButton.addClickListener(e -> detailDialog.openMessage(msg.getId()));
             return viewButton;
-        }).setHeader(t("Actions")).setWidth("130px").setFlexGrow(0);
+        }).setHeader(t("Actions")).setWidth("130px").setFlexGrow(0).setFrozenToEnd(true);
         messageGrid.setEmptyStateText(t("No inbound messages found"));
         messageGrid.setSizeFull();
 

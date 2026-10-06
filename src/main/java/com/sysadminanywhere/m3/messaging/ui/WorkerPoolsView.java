@@ -94,7 +94,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
             delete.setEnabled(service.canDelete(pool.getId()));
             actions.add(delete);
             return actions;
-        }).setHeader(t("Actions")).setWidth("125px").setFlexGrow(0);
+        }).setHeader(t("Actions")).setWidth("125px").setFlexGrow(0).setFrozenToEnd(true);
         grid.setEmptyStateText(t("No worker pools configured"));
         grid.setSizeFull();
         setSizeFull();

@@ -73,7 +73,7 @@ class ChannelListView extends VerticalLayout implements HasDynamicTitle {
         channelGrid.addColumn(ChannelSettings::getDescription).setHeader(t("Description"))
                 .setWidth("200px").setFlexGrow(1);
         channelGrid.addComponentColumn(this::createActionButtons).setHeader(t("Actions"))
-                .setWidth("160px").setFlexGrow(0);
+                .setWidth("160px").setFlexGrow(0).setFrozenToEnd(true);
         channelGrid.setEmptyStateText(t("No channels found"));
         channelGrid.setSizeFull();
 

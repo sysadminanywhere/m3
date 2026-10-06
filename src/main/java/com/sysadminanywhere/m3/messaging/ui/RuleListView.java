@@ -102,7 +102,7 @@ class RuleListView extends VerticalLayout implements HasDynamicTitle {
             var configureButton = new Button(t("Configure"), event -> getUI().ifPresent(ui -> ui.navigate("rules/" + rule.getId())));
             configureButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
             return new HorizontalLayout(editButton, configureButton);
-        }).setHeader(t("Actions")).setWidth("140px").setFlexGrow(0);
+        }).setHeader(t("Actions")).setWidth("140px").setFlexGrow(0).setFrozenToEnd(true);
         ruleGrid.setEmptyStateText(t("No rules configured"));
         ruleGrid.setSizeFull();
 
