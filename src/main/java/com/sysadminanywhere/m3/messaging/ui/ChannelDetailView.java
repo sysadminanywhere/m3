@@ -43,6 +43,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
 
     private final ChannelExtraSettings extraSettings=new ChannelExtraSettings();
     private final Map<String, TextField> textFields = new HashMap<>();
+    private final Map<String, ComboBox<String>> charsetFields = new HashMap<>();
     private final Map<String, PasswordField> passwordFields = new HashMap<>();
     private final Map<String, NumberField> numberFields = new HashMap<>();
     private final Map<String, Checkbox> checkboxes = new HashMap<>();
@@ -73,20 +74,26 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
         enabledField = new Checkbox(t("Outbound channel available"));
         enabledField.setValue(true);
         enabledField.setVisible(directionField.getValue()==ChannelDirection.OUTBOUND);
-        directionField.addValueChangeListener(event -> enabledField.setVisible(event.getValue()==ChannelDirection.OUTBOUND));
+        directionField.addValueChangeListener(event -> {
+            enabledField.setVisible(event.getValue()==ChannelDirection.OUTBOUND);
+            updateRequiredMarkers();
+        });
 
         var basicForm = new FormLayout();
         basicForm.add(nameField, typeField, directionField, enabledField);
-        basicForm.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 2));
+        basicForm.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("760px", 2));
         basicForm.setWidthFull();
 
         connectionTabContent = new VerticalLayout();
         connectionTabContent.setSpacing(true);
-        connectionTabContent.setPadding(true);
+        connectionTabContent.setPadding(false);
+        connectionTabContent.addClassName("channel-properties");
 
         advancedTabContent = new VerticalLayout();
         advancedTabContent.setSpacing(true);
-        advancedTabContent.setPadding(true);
+        advancedTabContent.setPadding(false);
+        advancedTabContent.addClassName("channel-properties");
 
         var connectionTab = new Tab(t("Connection"));
         var advancedTab = new Tab(t("Advanced"));
@@ -167,6 +174,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
 
     private void clearPropertyFields() {
         textFields.clear();
+        charsetFields.clear();
         passwordFields.clear();
         numberFields.clear();
         checkboxes.clear();
@@ -197,11 +205,13 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
             if (field != null && field.getParent().orElse(null) instanceof com.vaadin.flow.component.HasComponents parent) parent.remove(field);
         }
         advancedTabContent.add(
-                createTextField("charset", t("Source charset (blank = unknown)"), properties.getOrDefault("charset", "")),
-                createTextField("outputCharset", t("Transformed output charset (optional)"), properties.getOrDefault("outputCharset", "")));
+                createCharsetField("charset", t("Source charset (blank = unknown)"), properties.getOrDefault("charset", "")),
+                createCharsetField("outputCharset", t("Transformed output charset (optional)"), properties.getOrDefault("outputCharset", "")));
         var visible=new java.util.HashSet<>(textFields.keySet());
+        visible.addAll(charsetFields.keySet());
         visible.addAll(passwordFields.keySet()); visible.addAll(numberFields.keySet()); visible.addAll(checkboxes.keySet());
         extraSettings.load(properties,visible); advancedTabContent.add(extraSettings);
+        updateRequiredMarkers();
         updateTabContent();
     }
 
@@ -288,10 +298,12 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
 
         var queueField = createTextField("queue", t("Queue Name"), properties.getOrDefault("queue", ""));
         var exchangeField = createTextField("exchange", t("Exchange Name"), properties.getOrDefault("exchange", ""));
+        exchangeField.addValueChangeListener(event -> updateRequiredMarkers());
         var routingKeyField = createTextField("routingKey", t("Routing Key"), properties.getOrDefault("routingKey", ""));
 
-        advancedTabContent.add(queueField, exchangeField, routingKeyField,
-                createCheckbox("declareQueue", t("Declare Durable Queue and Binding"), Boolean.parseBoolean(properties.getOrDefault("declareQueue", "false"))));
+        var declareQueue = createCheckbox("declareQueue", t("Declare Durable Queue and Binding"), Boolean.parseBoolean(properties.getOrDefault("declareQueue", "false")));
+        declareQueue.addValueChangeListener(event -> updateRequiredMarkers());
+        advancedTabContent.add(queueField, exchangeField, routingKeyField, declareQueue);
     }
 
     private TextField createTextField(String key, String label, String value) {
@@ -299,6 +311,20 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
         field.setValue(value);
         field.setWidthFull();
         textFields.put(key, field);
+        return field;
+    }
+
+    private ComboBox<String> createCharsetField(String key, String label, String value) {
+        var field = new ComboBox<String>(label);
+        field.setItems("UTF-8", "UTF-16", "UTF-16BE", "UTF-16LE", "ISO-8859-1", "windows-1251",
+                "windows-1252", "CP866", "US-ASCII", "KOI8-R", "Shift_JIS", "GB18030");
+        field.setAllowCustomValue(true);
+        field.addCustomValueSetListener(event -> field.setValue(event.getDetail()));
+        field.setClearButtonVisible(true);
+        field.setValue(value == null || value.isBlank() ? null : value);
+        field.setWidthFull();
+        field.setHelperText(t("Choose a common charset or enter any Java-supported charset name"));
+        charsetFields.put(key, field);
         return field;
     }
 
@@ -314,6 +340,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
         var field = new NumberField(t(label));
         field.setValue(value);
         field.setWidthFull();
+        field.setRequired(true);
         numberFields.put(key, field);
         return field;
     }
@@ -323,6 +350,30 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
         field.setValue(value);
         checkboxes.put(key, field);
         return field;
+    }
+
+    private void updateRequiredMarkers() {
+        ChannelType type = typeField.getValue();
+        ChannelDirection direction = directionField.getValue();
+        textFields.forEach((key, field) -> field.setRequired(isRequiredProperty(type, direction, key)));
+    }
+
+    private boolean isRequiredProperty(ChannelType type, ChannelDirection direction, String key) {
+        if (type == null) return false;
+        return switch (type) {
+            case DIRECTORY -> key.equals("directoryPath");
+            case FTP -> key.equals("host") || key.equals("username") || key.equals("remoteDirectory");
+            case SFTP -> key.equals("host") || key.equals("username") || key.equals("remoteDirectory")
+                    || (key.equals("knownHostsPath") && !Boolean.TRUE.equals(checkboxes.containsKey("allowUnknownKeys")
+                    && checkboxes.get("allowUnknownKeys").getValue()));
+            case KAFKA -> key.equals("bootstrapServers") || key.equals("topic");
+            case RABBITMQ -> key.equals("host") || key.equals("username")
+                    || (key.equals("queue") && (direction == ChannelDirection.INBOUND
+                    || (textFields.containsKey("exchange") && textFields.get("exchange").getValue().isBlank())
+                    || (checkboxes.containsKey("declareQueue") && checkboxes.get("declareQueue").getValue())))
+                    || (key.equals("routingKey") && direction == ChannelDirection.OUTBOUND
+                    && textFields.containsKey("exchange") && !textFields.get("exchange").getValue().isBlank());
+        };
     }
 
     private void updateTabContent() {
@@ -349,6 +400,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
         Map<String, String> properties = new HashMap<>(extraSettings.settings());
 
         textFields.forEach((key, field) -> properties.put(key, field.getValue()));
+        charsetFields.forEach((key, field) -> properties.put(key, field.getValue() == null ? "" : field.getValue()));
         passwordFields.forEach((key, field) -> properties.put(key, field.getValue()));
         numberFields.forEach((key,field) -> {
             Double value=field.getValue();

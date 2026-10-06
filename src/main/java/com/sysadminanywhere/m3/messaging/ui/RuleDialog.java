@@ -13,8 +13,9 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
-import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
 import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.value.ValueChangeMode;
@@ -33,7 +34,7 @@ public class RuleDialog extends Dialog {
     final ComboBox<RuleType> typeField;
     final ComboBox<ChannelSettings> channelField;
     final ComboBox<ChannelSettings> destinationField;
-    final RuleFlowPreview flow = new RuleFlowPreview();
+    final RadioButtonGroup<OutboundPayloadMode> outboundPayloadModeField;
     final RuleLoadingSettings loadingField = new RuleLoadingSettings();
     final NumberField priorityField;
     final Checkbox enabledField;
@@ -50,9 +51,9 @@ public class RuleDialog extends Dialog {
         this.onSaveCallback = onSaveCallback;
 
         setHeaderTitle(rule == null ? t("Add Rule") : t("Edit Rule"));
-        setWidth("1100px");
+        setWidth("820px");
         setMaxWidth("calc(100vw - 32px)");
-        setHeight("90%");
+        setMaxHeight("90vh");
 
         nameField = new TextField(t("Name"));
         nameField.setRequired(true);
@@ -87,17 +88,25 @@ public class RuleDialog extends Dialog {
         destinationField.setItemLabelGenerator(channel -> channel.getName() + (Boolean.TRUE.equals(channel.getEnabled()) ? "" : t(" (disabled)")));
         destinationField.setWidthFull();
         destinationField.setClearButtonVisible(true);
-        channelField.addValueChangeListener(e -> updateFlow());
-        destinationField.addValueChangeListener(e -> updateFlow());
         destinationField.setHelperText(t("Select the outbound channel that receives this message"));
+        destinationField.setVisible(true);
+        outboundPayloadModeField = new RadioButtonGroup<>(t("Target receives"));
+        outboundPayloadModeField.setItems(OutboundPayloadMode.values());
+        outboundPayloadModeField.setItemLabelGenerator(mode -> t(mode == OutboundPayloadMode.MESSAGE_ID ? "Message ID" : "Original message body"));
+        outboundPayloadModeField.setValue(OutboundPayloadMode.BODY);
+        outboundPayloadModeField.setHelperText(t("Choose whether the target receives the message body or its ID. In ID mode, it can download the original bytes from /api/v1/messages/{id}/payload."));
+        outboundPayloadModeField.setEnabled(true);
         typeField.addValueChangeListener(event -> {
             boolean outbound = event.getValue() == RuleType.OUTBOUND;
             destinationField.setRequired(outbound);
-            channelField.setVisible(!outbound); channelField.setRequired(!outbound);
+            channelField.setRequired(!outbound);
+            channelField.setVisible(!outbound);
+            destinationField.setVisible(true);
             loadingField.setVisible(event.getValue() == RuleType.INBOUND);
         });
 
         priorityField = new NumberField(t("Priority"));
+        priorityField.setRequired(true);
         priorityField.setValue(0.0);
         priorityField.setWidthFull();
         priorityField.setMin(0);
@@ -108,16 +117,19 @@ public class RuleDialog extends Dialog {
         enabledField = new Checkbox(t("Enabled"));
         enabledField.setValue(true);
 
-        var form = new HorizontalLayout(nameField, typeField, priorityField, enabledField);
-        form.setWrap(true);
+        var form = new FormLayout(nameField, typeField, channelField, destinationField,
+                outboundPayloadModeField, priorityField, enabledField);
+        form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("640px", 2));
         form.setWidthFull();
+        form.setColspan(outboundPayloadModeField, 2);
 
         loadingField.setVisible(false);
-        flow.configure(ruleService, this::refreshRule, channelField, destinationField, loadingField, null);
-        var content = new VerticalLayout(form, flow);
+        var content = new VerticalLayout(form, loadingField);
         content.setSpacing(true);
         content.setPadding(false);
         content.setWidthFull();
+        content.getStyle().set("max-height", "calc(90vh - 130px)");
         content.getStyle().set("overflow-y", "auto");
 
         add(content);
@@ -134,13 +146,12 @@ public class RuleDialog extends Dialog {
         if (rule != null) {
             loadRule(rule);
         }
-        typeField.addValueChangeListener(e -> updateFlow());
-        updateFlow();
     }
 
     private void loadRule(Rule rule) {
         nameField.setValue(rule.getName());
         typeField.setValue(rule.getRuleType());
+        outboundPayloadModeField.setValue(rule.getOutboundPayloadMode());
         channelField.setItems(channelSettingsService.findAll());
         channelField.setValue(rule.getSourceChannel());
         priorityField.setValue((double) rule.getPriority());
@@ -148,7 +159,6 @@ public class RuleDialog extends Dialog {
         loadingField.load(rule.getLoadingProperties());
         destinationField.setValue(channelSettingsService.findByDirection(ChannelDirection.OUTBOUND).stream()
                 .filter(channel -> channel.getName().equals(rule.getDestinationChannelName())).findFirst().orElse(null));
-        updateFlow();
     }
 
     private void saveRule() {
@@ -174,7 +184,8 @@ public class RuleDialog extends Dialog {
             currentRule = ruleService.saveConfiguration(ruleId, nameField.getValue(),
                     currentRule == null ? null : currentRule.getDescription(), typeField.getValue(),
                     outbound ? null : channelField.getValue().getId(), (int) priority, enabledField.getValue(), null,
-                    destinationField.getValue() == null ? null : destinationField.getValue().getId(), loadingField.settings());
+                    destinationField.getValue() == null ? null : destinationField.getValue().getId(),
+                    outboundPayloadModeField.getValue(), loadingField.settings());
             ruleId = currentRule.getId();
             Notification.show(t("Rule saved"), 3000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             close();
@@ -183,16 +194,5 @@ public class RuleDialog extends Dialog {
             Notification.show(t("Error saving rule: ") + t(error.getMessage()), 4000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
-    }
-    private void refreshRule() {
-        if (ruleId != null) {
-            currentRule = ruleService.findById(ruleId);
-            if (currentRule != null) {
-                updateFlow();
-            }
-        }
-    }
-    private void updateFlow() {
-        flow.show(currentRule, typeField.getValue() == RuleType.OUTBOUND ? null : channelField.getValue(), destinationField.getValue());
     }
 }

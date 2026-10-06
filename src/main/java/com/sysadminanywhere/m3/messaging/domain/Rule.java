@@ -29,6 +29,10 @@ public class Rule {
     @Column(name = "rule_type", nullable = false)
     private RuleType ruleType;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "outbound_payload_mode", nullable = false, length = 20)
+    private OutboundPayloadMode outboundPayloadMode = OutboundPayloadMode.BODY;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "source_channel_id", nullable = false)
     private ChannelSettings sourceChannel;
@@ -106,6 +110,13 @@ public class Rule {
 
     public void setRuleType(RuleType ruleType) {
         this.ruleType = ruleType;
+        this.updatedAt = Instant.now();
+    }
+
+    public OutboundPayloadMode getOutboundPayloadMode() { return outboundPayloadMode; }
+
+    public void setOutboundPayloadMode(OutboundPayloadMode mode) {
+        this.outboundPayloadMode = mode == null ? OutboundPayloadMode.BODY : mode;
         this.updatedAt = Instant.now();
     }
 

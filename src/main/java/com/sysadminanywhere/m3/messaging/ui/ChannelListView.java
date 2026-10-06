@@ -25,7 +25,7 @@ import com.vaadin.flow.router.Route;
 import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
 
 @Route(value = "channels")
-@MenuItem(order = 2, icon = "icons/channel.svg", title = "Channels", section = MenuSection.SETTINGS)
+@MenuItem(order = 2, icon = "icons/channel.svg", title = "Channels", section = MenuSection.ADMINISTRATION)
 class ChannelListView extends VerticalLayout implements HasDynamicTitle {
 
     private final ChannelSettingsService channelSettingsService;
@@ -41,7 +41,7 @@ class ChannelListView extends VerticalLayout implements HasDynamicTitle {
         typeFilter.setClearButtonVisible(true);
         typeFilter.addValueChangeListener(event -> refreshGrid());
 
-        var addButton = new Button(t("Add Channel"), VaadinIcon.PLUS.create(), event -> addChannel());
+        var addButton = new Button(t("Add Channel"), event -> addChannel());
         addButton.addThemeVariants(ButtonVariant.PRIMARY);
 
         var toolbar = new HorizontalLayout();
@@ -58,21 +58,22 @@ class ChannelListView extends VerticalLayout implements HasDynamicTitle {
                     pageRequest.getPageNumber(), pageRequest.getPageSize(), sort)).stream();
         });
         channelGrid.addColumn(ChannelSettings::getName).setHeader(t("Name")).setSortProperty("name")
-                .setWidth("100px").setFlexGrow(1);
+                .setWidth("160px").setFlexGrow(1);
         channelGrid.addColumn(item -> Translations.enumLabel(item.getChannelType())).setHeader(t("Type")).setSortProperty("channelType")
-                .setWidth("70px").setFlexGrow(0);
+                .setWidth("150px").setFlexGrow(0);
         channelGrid.addColumn(item -> Translations.enumLabel(item.getDirection())).setHeader(t("Direction")).setSortProperty("direction")
-                .setWidth("100px").setFlexGrow(0);
-        channelGrid.addColumn(settings -> settings.getDirection() == ChannelDirection.INBOUND ? t("Rule managed") : settings.getEnabled() ? t("Enabled") : t("Disabled"))
-                .setHeader(t("Status")).setWidth("75px").setFlexGrow(0);
-        channelGrid.addColumn(settings -> {
-            if (settings.getDirection() != ChannelDirection.INBOUND) return "—";
-            return t("Managed by loading rules");
-        }).setHeader(t("Loading")).setWidth("170px").setFlexGrow(0);
+                .setWidth("160px").setFlexGrow(0);
+        channelGrid.addComponentColumn(settings -> {
+            boolean inbound = settings.getDirection() == ChannelDirection.INBOUND;
+            String label = inbound ? t("Rules") : settings.getEnabled() ? t("Enabled") : t("Disabled");
+            var status = new com.vaadin.flow.component.html.Span(label);
+            if (inbound) status.getElement().setAttribute("title", t("Managed by loading rules"));
+            return status;
+        }).setHeader(t("Status")).setWidth("130px").setFlexGrow(0);
         channelGrid.addColumn(ChannelSettings::getDescription).setHeader(t("Description"))
-                .setWidth("90px").setFlexGrow(1);
+                .setWidth("200px").setFlexGrow(1);
         channelGrid.addComponentColumn(this::createActionButtons).setHeader(t("Actions"))
-                .setWidth("120px").setFlexGrow(0);
+                .setWidth("160px").setFlexGrow(0);
         channelGrid.setEmptyStateText(t("No channels found"));
         channelGrid.setSizeFull();
 

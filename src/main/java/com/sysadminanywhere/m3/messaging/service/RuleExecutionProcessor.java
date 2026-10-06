@@ -132,7 +132,10 @@ public class RuleExecutionProcessor {
                     .anyMatch(action -> action.getActionType() == ActionType.ROUTE)).findFirst().orElseThrow();
             var destination = com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService.target(routingRule,
                     channels);
-            var transformed = ruleEngine.applyTransformations(input, matchedRules);
+            boolean sendMessageId = routingRule.getOutboundPayloadMode()
+                    == com.sysadminanywhere.m3.messaging.domain.OutboundPayloadMode.MESSAGE_ID;
+            var transformed = sendMessageId ? ruleEngine.applyMetadataActions(input, matchedRules)
+                    : ruleEngine.applyTransformations(input, matchedRules);
             var outbound = new Message(MessageDirection.OUTBOUND, "", stored.getPayloadType());
             String output = PayloadCodec.charset((String) transformed.getHeaders().get("outputCharset"));
             if (output != null && transformed.getPayload() instanceof byte[])
@@ -140,8 +143,11 @@ public class RuleExecutionProcessor {
             boolean changed = transformed.getPayload() != input.getPayload() || output != null;
             if (changed && output == null) output = PayloadCodec.charset(destination.getProperties().get("outputCharset"));
             if (changed && output == null) output = stored.getCharset() == null ? "UTF-8" : stored.getCharset();
-            outbound.setContent(changed ? RulePayloads.encode(transformed.getPayload(), output, objectMapper) : stored.getPayloadBytes(),
-                    changed ? output : stored.getCharset(), changed ? "RULE" : stored.getCharsetSource(), "BASE64");
+            byte[] outboundBytes = sendMessageId
+                    ? Long.toString(stored.getId()).getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                    : changed ? RulePayloads.encode(transformed.getPayload(), output, objectMapper) : stored.getPayloadBytes();
+            outbound.setContent(outboundBytes, sendMessageId ? "UTF-8" : changed ? output : stored.getCharset(),
+                    sendMessageId ? "RULE" : changed ? "RULE" : stored.getCharsetSource(), "BASE64");
             transformed.getHeaders().forEach((key, value) -> {
                 if (!Set.of("id", "timestamp", "encoding", "charset").contains(key)
                         && (value instanceof String || value instanceof Number || value instanceof Boolean)) outbound.addMetadata(key, value.toString());
@@ -149,7 +155,8 @@ public class RuleExecutionProcessor {
             outbound.addMetadata("encoding", "base64");
             if (outbound.getCharset() != null) outbound.addMetadata("charset", outbound.getCharset());
             outbound.addMetadata("sourceMessageId",stored.getId().toString());
-            outbound.setPayloadType(changed ? PayloadCodec.outputType(stored.getPayloadType(),output) : stored.getPayloadType());
+            if (sendMessageId) outbound.addMetadata("m3MessagePayloadPath", "/api/v1/messages/" + stored.getId() + "/payload");
+            outbound.setPayloadType(sendMessageId ? "text/plain" : changed ? PayloadCodec.outputType(stored.getPayloadType(),output) : stored.getPayloadType());
             outbound.addMetadata("payloadType",outbound.getPayloadType());
             outbound.setSourceSystem(stored.getSourceSystem());
             outbound.setTargetSystem(destination.getName());

@@ -182,6 +182,16 @@ public class RuleService {
     public Rule saveConfiguration(Long ruleId, String name, String description, RuleType type,
                                   Long sourceId, Integer priority, Boolean enabled, Long poolId, Long destinationId,
                                   java.util.Map<String,String> loading) {
+        OutboundPayloadMode existingMode = ruleId == null ? OutboundPayloadMode.BODY
+                : ruleRepository.findById(ruleId).map(Rule::getOutboundPayloadMode).orElse(OutboundPayloadMode.BODY);
+        return saveConfiguration(ruleId, name, description, type, sourceId, priority, enabled, poolId,
+                destinationId, existingMode, loading);
+    }
+
+    @Transactional
+    public Rule saveConfiguration(Long ruleId, String name, String description, RuleType type,
+                                  Long sourceId, Integer priority, Boolean enabled, Long poolId, Long destinationId,
+                                  OutboundPayloadMode payloadMode, java.util.Map<String,String> loading) {
         if (name == null || name.isBlank() || type == null || priority == null || priority < 0 || priority > 9999)
             throw new IllegalArgumentException("Name, type and a priority between 0 and 9999 are required");
         if (type == RuleType.OUTBOUND && destinationId == null)
@@ -199,6 +209,8 @@ public class RuleService {
             throw new IllegalArgumentException("Loading rules require an inbound source channel");
         Rule saved = previous == null ? createRule(name, type, sourceId, priority)
                 : updateRule(ruleId, name, description, type, sourceId, priority, enabled);
+        saved.setOutboundPayloadMode(destination == null ? OutboundPayloadMode.BODY
+                : payloadMode == null ? OutboundPayloadMode.BODY : payloadMode);
         saved.setEnabled(enabled);
         saved.setDescription(description);
         if (loading != null) {

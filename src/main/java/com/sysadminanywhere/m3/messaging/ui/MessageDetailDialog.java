@@ -12,12 +12,13 @@ import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.tabs.TabSheet;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.server.streams.DownloadHandler;
@@ -70,6 +71,7 @@ public class MessageDetailDialog extends Dialog {
         this.metadataRepository = metadataRepository;
         this.submissions = submissions;
 
+        addClassName("message-detail-dialog");
         setHeaderTitle(t("Message Details"));
         setWidth("1000px");
         setMaxWidth("calc(100vw - 32px)");
@@ -88,27 +90,33 @@ public class MessageDetailDialog extends Dialog {
 
         payloadArea = new TextArea(t("Payload"));
         payloadArea.setWidthFull();
-        payloadArea.setHeight("300px");
+        payloadArea.setHeight("calc(85vh - 260px)");
         payloadArea.setReadOnly(true);
         charsetSelector.setItems("UTF-8", "windows-1251", "KOI8-R", "IBM866", "ISO-8859-1", "UTF-16", "UTF-16LE", "UTF-16BE");
         charsetSelector.addValueChangeListener(event -> refreshPreview());
         previewHint.getStyle().set("white-space", "normal");
 
         metadataGrid = new Grid<>();
-        metadataGrid.addColumn(MessageMetadata::getKey).setHeader(t("Key")).setWidth("220px").setFlexGrow(0);
-        metadataGrid.addColumn(MessageMetadata::getValue).setHeader(t("Value")).setFlexGrow(1);
-        metadataGrid.addThemeVariants(GridVariant.LUMO_WRAP_CELL_CONTENT);
+        metadataGrid.addColumn(MessageMetadata::getKey).setHeader(t("Key")).setAutoWidth(true).setFlexGrow(0);
+        metadataGrid.addComponentColumn(item -> {
+            var value = new Span(item.getValue());
+            value.getElement().setAttribute("title", item.getValue());
+            return value;
+        }).setHeader(t("Value")).setFlexGrow(1);
         metadataGrid.setEmptyStateText(t("No metadata"));
         metadataGrid.setWidthFull();
-        metadataGrid.setHeight("240px");
+        metadataGrid.setHeightFull();
 
         jobsGrid.addColumn(MessageService.JobInfo::ruleId).setHeader(t("Rule"));
         jobsGrid.addColumn(MessageService.JobInfo::pool).setHeader(t("Worker pool"));
         jobsGrid.addColumn(job -> Translations.enumLabel(job.status())).setHeader(t("Status"));
         jobsGrid.addColumn(MessageService.JobInfo::attempts).setHeader(t("Attempts"));
-        jobsGrid.addColumn(MessageService.JobInfo::error).setHeader(t("Error")).setFlexGrow(2);
-        jobsGrid.addThemeVariants(GridVariant.LUMO_WRAP_CELL_CONTENT);
-        jobsGrid.setHeight("180px"); jobsGrid.setWidthFull();
+        jobsGrid.addComponentColumn(job -> {
+            var error = new Span(job.error() == null ? "" : job.error());
+            if (job.error() != null) error.getElement().setAttribute("title", job.error());
+            return error;
+        }).setHeader(t("Error")).setFlexGrow(2);
+        jobsGrid.setHeightFull(); jobsGrid.setWidthFull();
         retryButton.addClickListener(event -> {
             try {
                 Long id = currentMessage.getId(); messageService.retry(id);
@@ -119,24 +127,29 @@ public class MessageDetailDialog extends Dialog {
                         com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
             }
         });
-        var detailsTab = new VerticalLayout();
-        detailsTab.setSpacing(true);
-        detailsTab.add(
-                new HorizontalLayout(idField, directionField, statusField),
-                new HorizontalLayout(sourceSystemField, targetSystemField, payloadTypeField),
-                new HorizontalLayout(createdAtField, processedAtField),
-                new HorizontalLayout(charsetField, sizeField)
-        );
-        detailsTab.getChildren().forEach(row -> {
-            if (row instanceof HorizontalLayout layout) { layout.setWrap(true); layout.setWidthFull(); }
-        });
-        detailsTab.setPadding(false);
-        var mainLayout = new VerticalLayout(detailsTab, charsetSelector, previewHint, payloadArea,
-                new Span(t("Metadata")), metadataGrid, new Span(t("Rule execution / delivery")), jobsGrid);
-        mainLayout.setPadding(false);
-        mainLayout.setWidthFull();
-        mainLayout.setFlexShrink(0, payloadArea, metadataGrid);
-        add(mainLayout);
+        FormLayout detailsTab = new FormLayout(idField, statusField, directionField,
+                sourceSystemField, targetSystemField, payloadTypeField,
+                createdAtField, processedAtField, charsetField, sizeField);
+        detailsTab.addClassName("message-summary-form");
+        detailsTab.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("600px", 2), new FormLayout.ResponsiveStep("1150px", 3));
+        var detailsContent = new VerticalLayout(detailsTab);
+        detailsContent.setPadding(false); detailsContent.setWidthFull();
+        var metadataContent = new VerticalLayout(metadataGrid);
+        metadataContent.setPadding(false); metadataContent.setSizeFull();
+        var processingContent = new VerticalLayout(jobsGrid);
+        processingContent.setPadding(false); processingContent.setSizeFull();
+        var payloadContent = new VerticalLayout(charsetSelector, previewHint, payloadArea);
+        payloadContent.setPadding(false); payloadContent.setSizeFull();
+        var tabs = new TabSheet();
+        tabs.addClassName("message-detail-tabs");
+        tabs.setWidthFull();
+        tabs.setHeight("calc(85vh - 120px)");
+        tabs.add(t("Overview"), detailsContent);
+        tabs.add(t("Message body"), payloadContent);
+        tabs.add(t("Metadata"), metadataContent);
+        tabs.add(t("Processing"), processingContent);
+        add(tabs);
 
         // Footer buttons
         downloadLink.setText(t("Download original payload"));
@@ -212,7 +225,7 @@ public class MessageDetailDialog extends Dialog {
     private TextField createReadOnlyField(String label) {
         var field = new TextField(t(label));
         field.setReadOnly(true);
-        field.setWidth("200px");
+        field.setWidthFull();
         return field;
     }
 
@@ -307,7 +320,7 @@ public class MessageDetailDialog extends Dialog {
                 return;
             }
         }
-        payloadArea.setValue(text.length() > 5000 ? text.substring(0, 5000) + "\n\n… [" + t("Preview limited to 5000 characters; download for full content") + "]" : text);
+        payloadArea.setValue(text);
     }
 
     private void deleteMessage() {

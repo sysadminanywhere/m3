@@ -20,7 +20,7 @@ body {
 /* One continuous workspace frame; its only inner divider is beside the page menu. */
 .m3-shell {
     display: grid;
-    grid-template-columns: 87px minmax(0, 1fr);
+    grid-template-columns: 98px minmax(0, 1fr);
     width: 100%;
     height: 100dvh;
     box-sizing: border-box;
@@ -37,7 +37,7 @@ body {
     align-items: center;
     min-height: 0;
     box-sizing: border-box;
-    padding: 21px 13px 16px;
+    padding: 21px 9px 16px;
     background: radial-gradient(ellipse at 110% 50%, #e0e8f5 0%, #edf2fa 44%, #f9fbfd 100%);
 }
 
@@ -63,6 +63,7 @@ body {
     flex-direction: column;
     gap: 10px;
     margin-top: 20px;
+    flex: 1 1 auto;
 }
 
 .primary-nav-button {
@@ -72,7 +73,7 @@ body {
     align-items: center;
     justify-content: center;
     gap: 5px;
-    width: 60px;
+    width: 80px;
     height: 56px;
     box-sizing: border-box;
     margin: 0;
@@ -82,6 +83,7 @@ body {
     background: transparent;
     color: #41516c;
     font: 400 10px/12px Arial, sans-serif;
+    white-space: nowrap;
     cursor: pointer;
 }
 
@@ -103,7 +105,7 @@ body {
 
 .workspace-frame {
     display: grid;
-    grid-template-columns: 225px minmax(0, 1fr);
+    grid-template-columns: 220px minmax(0, 1fr);
     min-width: 0;
     min-height: 0;
     margin: 13px 0 7px;
@@ -220,6 +222,62 @@ body {
     overflow: auto;
 }
 
+.settings-page {
+    width: min(100%, 880px);
+    box-sizing: border-box;
+    margin: 0 auto;
+    padding: 28px 32px 40px;
+    gap: 0;
+}
+.settings-page-heading {
+    margin: 0 0 6px;
+    color: var(--m3-ink);
+    font-size: 22px;
+    line-height: 1.3;
+}
+.settings-page-intro {
+    margin: 0 0 22px;
+    color: var(--m3-muted);
+    font-size: 14px;
+    line-height: 1.5;
+}
+.settings-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+    align-items: center;
+    gap: 24px;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0 0 12px;
+    padding: 18px 20px;
+    border: 1px solid var(--m3-line);
+    border-radius: 10px;
+    background: var(--m3-panel);
+}
+.settings-card-copy { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.settings-card-title { color: var(--m3-ink); font-size: 15px; font-weight: 600; }
+.settings-card-description { color: var(--m3-muted); font-size: 13px; line-height: 1.45; }
+.settings-card-control { min-width: 0; width: 100%; }
+.settings-card-control vaadin-combo-box { width: 100%; }
+html[theme~="dark"] .settings-card { border-color: #334155; background: #111d2b; }
+@media (max-width: 640px) {
+    .settings-page { padding: 20px 16px 32px; }
+    .settings-card { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px; }
+    .settings-card-control { max-width: none; }
+}
+
+/* Message detail tabs must fit their dialog instead of creating a second horizontal scroller. */
+.message-detail-tabs { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.message-detail-tabs::part(content) { min-width: 0; max-width: 100%; overflow-x: hidden; box-sizing: border-box; }
+.message-summary-form { min-width: 0; max-width: 100%; width: 100%; box-sizing: border-box; }
+.message-summary-form > * { min-width: 0; max-width: 100%; }
+.message-summary-form vaadin-text-field { min-width: 0; width: 100%; }
+.message-detail-dialog { max-width: calc(100vw - 32px); }
+.worker-pool-form { width: 100%; min-width: 0; box-sizing: border-box; }
+.worker-pool-form > * { min-width: 0; }
+.worker-pool-form vaadin-integer-field,
+.worker-pool-form vaadin-text-field { width: 100%; min-width: 0; }
+
 .page-toolbar {
     box-sizing: border-box;
     align-items: flex-end;
@@ -241,28 +299,95 @@ body {
     min-width: 180px;
 }
 
+.channel-properties {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 8px 18px;
+}
+
+.channel-properties > * { min-width: 0; }
+.channel-properties > .channel-extra-settings { grid-column: 1 / -1; }
+
+@media (max-width: 700px) {
+    .channel-properties { grid-template-columns: minmax(0, 1fr); }
+}
+
 .app-footer {
     color: var(--m3-muted);
     font-size: 12px;
 }
 
 vaadin-grid {
-    border: 1px solid #e4eaf2;
-    border-radius: 10px;
+    --vaadin-grid-cell-padding: 0 14px;
+    border: 1px solid #dce3ec;
+    border-radius: 12px;
     background: #fff;
+    color: #273244;
+    font-size: 14px;
 }
 
 vaadin-grid::part(header-cell) {
-    color: #475467;
-    background: #f8fafc;
-    font-size: 12px;
-    font-weight: 600;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 0 14px;
+    border-right: 0;
+    border-bottom: 1px solid #dce3ec;
+    color: #435065;
+    background: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+vaadin-grid::part(body-cell) {
+    box-sizing: border-box;
+    min-height: 34px;
+    height: auto;
+    padding: 6px 12px;
+    border-right: 0;
+    border-bottom: 1px solid #e7ebf1;
+    color: #303b4d;
+    background: #fff;
+    line-height: 1.25;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+vaadin-grid::part(body-cell):hover {
+    background: #f7f9fc;
+}
+
+vaadin-number-field::part(increase-button),
+vaadin-number-field::part(decrease-button),
+vaadin-integer-field::part(increase-button),
+vaadin-integer-field::part(decrease-button) {
+    display: none;
 }
 
 vaadin-button[theme~="primary"] {
     --vaadin-button-background: var(--m3-blue);
     --vaadin-button-text-color: #fff;
 }
+
+.rule-steps-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; margin-top: 8px; gap: 10px; width: 100%; }
+.rule-steps-panel > :first-child { grid-column: 1 / -1; }
+.rule-steps-section { width: 100%; min-width: 0; }
+.rule-steps-panel > h3 { margin: 4px 0; font-size: 17px; }
+.rule-steps-section {
+    padding: 12px 14px;
+    border: 1px solid #dce3ec;
+    border-radius: 10px;
+    background: #fff;
+}
+.rule-steps-heading { margin: 0 0 8px; font-size: 15px; }
+.rule-step-row { display: flex; align-items: center; gap: 6px; min-height: 36px; border-bottom: 1px solid #e7ebf1; }
+.rule-step-description { justify-content: flex-start; max-width: 100%; white-space: normal; text-align: left; }
+.rule-step-muted { display: block; padding: 4px 0; color: var(--m3-muted); font-size: 13px; }
+html[theme~="dark"] .rule-steps-section { border-color: #334155; background: #111d2b; }
+html[theme~="dark"] .rule-step-row { border-bottom-color: #29384b; }
+@media (max-width: 1050px) { .rule-steps-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .rule-steps-panel { grid-template-columns: minmax(0, 1fr); } }
 
 html[theme~="dark"] {
     --m3-ink: #f8fafc;
@@ -281,6 +406,22 @@ html[theme~="dark"] .section-nav-link,
 html[theme~="dark"] .app-page-title { color: #e2e8f0; }
 html[theme~="dark"] .primary-nav-button.active,
 html[theme~="dark"] .section-nav-link.current { background: #253247; }
+html[theme~="dark"] vaadin-grid {
+    border-color: #334155;
+    background: #111d2b;
+    color: #e2e8f0;
+}
+html[theme~="dark"] vaadin-grid::part(header-cell) {
+    border-bottom-color: #334155;
+    color: #cbd5e1;
+    background: #111d2b;
+}
+html[theme~="dark"] vaadin-grid::part(body-cell) {
+    border-bottom-color: #29384b;
+    color: #e2e8f0;
+    background: #111d2b;
+}
+html[theme~="dark"] vaadin-grid::part(body-cell):hover { background: #1b2a3d; }
 
 /* Visual rule configuration */
 .rule-flow-card {
@@ -296,7 +437,6 @@ html[theme~="dark"] .section-nav-link.current { background: #253247; }
     background: var(--lumo-contrast-5pct); padding: 16px; box-sizing: border-box;
 }
 
-.language-selector { margin-top: auto; flex: none; --lumo-font-size-m: 12px; }
 .primary-nav-button { overflow-wrap: anywhere; padding: 2px; }
 
 /* Editable rule canvas */

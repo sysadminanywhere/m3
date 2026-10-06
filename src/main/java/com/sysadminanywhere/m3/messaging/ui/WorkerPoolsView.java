@@ -60,10 +60,10 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         dockerHelp.setOpened(false);
         dockerHelp.setWidthFull();
 
-        grid.addComponentColumn(this::poolCell).setHeader(t("Pool")).setWidth("88px").setFlexGrow(1);
-        grid.addColumn(this::capacityLabel).setHeader(t("Capacity")).setWidth("76px").setFlexGrow(0);
+        grid.addComponentColumn(this::poolCell).setHeader(t("Pool")).setWidth("140px").setFlexGrow(1);
+        grid.addColumn(this::capacityLabel).setHeader(t("Count")).setWidth("110px").setFlexGrow(0);
         grid.addColumn(pool -> capacityStatus(pool.getName()))
-                .setHeader(t("Running")).setWidth("110px").setFlexGrow(0);
+                .setHeader(t("Running")).setWidth("160px").setFlexGrow(0);
         grid.addComponentColumn(pool -> {
             var load = metricsService.summary(pool.getId());
             var values = new VerticalLayout(
@@ -76,7 +76,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
             if (load.sampledAt() == null) values.getElement().setAttribute("title", t("Waiting for the first Docker metrics sample"));
             else values.getElement().setAttribute("title", t("Last sample: ") + load.sampledAt());
             return values;
-        }).setHeader(t("Load · CPU / RAM")).setWidth("165px").setFlexGrow(0);
+        }).setHeader(t("Load · CPU / RAM")).setWidth("255px").setFlexGrow(0);
         grid.addComponentColumn(pool -> {
             var edit = new Button(VaadinIcon.COG.create(), event -> openCapacityDialog(pool));
             edit.setAriaLabel(t("Change capacity for ") + pool.getName());
@@ -94,7 +94,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
             delete.setEnabled(service.canDelete(pool.getId()));
             actions.add(delete);
             return actions;
-        }).setHeader(t("Actions")).setWidth("105px").setFlexGrow(0);
+        }).setHeader(t("Actions")).setWidth("125px").setFlexGrow(0);
         grid.setEmptyStateText(t("No worker pools configured"));
         grid.setSizeFull();
         setSizeFull();
@@ -159,8 +159,11 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
 
     private void openCreateDialog() {
         var dialog = new Dialog();
+        dialog.setWidth("600px");
+        dialog.setMaxWidth("calc(100vw - 32px)");
         dialog.setHeaderTitle(t("Create worker pool"));
         var name = new TextField(t("Pool name"));
+        name.setRequired(true);
         name.setPlaceholder("transformers");
         name.setHelperText(t("Lowercase letters, numbers and hyphens"));
         var desired = numberField(t("Desired containers"), 1);
@@ -169,6 +172,12 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         var autoScale = new Checkbox(t("Auto-scale from queued jobs"));
         var jobsPerWorker = queueLimitField(50);
         var fields = new FormLayout(name, desired, min, max, autoScale, jobsPerWorker);
+        fields.addClassName("worker-pool-form");
+        fields.setWidthFull();
+        fields.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("520px", 2));
+        fields.setColspan(autoScale, 2);
+        fields.setColspan(jobsPerWorker, 2);
         var save = new Button(t("Create"), event -> {
             try {
                 var pool = service.create(name.getValue().trim(), desired.getValue(), min.getValue(), max.getValue(),
@@ -180,18 +189,28 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         });
         save.addThemeVariants(ButtonVariant.PRIMARY);
         var cancel = new Button(t("Cancel"), event -> dialog.close());
-        dialog.add(fields, new HorizontalLayout(save, cancel));
+        dialog.add(fields);
+        dialog.getFooter().add(cancel, save);
         dialog.open();
     }
 
     private void openCapacityDialog(RuleWorkerPool pool) {
         var dialog = new Dialog();
+        dialog.setWidth("520px");
+        dialog.setMaxWidth("calc(100vw - 32px)");
         dialog.setHeaderTitle(t("Capacity · ") + pool.getName());
         var desired = numberField(t("Desired containers"), pool.getDesiredReplicas());
         var min = numberField(t("Minimum"), pool.getMinReplicas());
         var max = numberField(t("Maximum"), pool.getMaxReplicas());
         var autoScale = new Checkbox(t("Auto-scale from queued jobs"), pool.isAutoScaleEnabled());
         var jobsPerWorker = queueLimitField(pool.getPendingJobsPerWorker());
+        var fields = new FormLayout(desired, min, max, autoScale, jobsPerWorker);
+        fields.addClassName("worker-pool-form");
+        fields.setWidthFull();
+        fields.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("460px", 2));
+        fields.setColspan(autoScale, 2);
+        fields.setColspan(jobsPerWorker, 2);
         var save = new Button(t("Save"), event -> {
             try {
                 var updated = service.updateCapacity(pool.getId(), desired.getValue(), min.getValue(), max.getValue(),
@@ -202,8 +221,8 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
             } catch (RuntimeException e) { showError(e); }
         });
         save.addThemeVariants(ButtonVariant.PRIMARY);
-        dialog.add(new FormLayout(desired, min, max, autoScale, jobsPerWorker),
-                new HorizontalLayout(save, new Button(t("Cancel"), e -> dialog.close())));
+        dialog.add(fields);
+        dialog.getFooter().add(new Button(t("Cancel"), e -> dialog.close()), save);
         dialog.open();
     }
 
@@ -214,6 +233,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         field.setMax(100);
         field.setStepButtonsVisible(true);
         field.setRequired(true);
+        field.setWidthFull();
         return field;
     }
 

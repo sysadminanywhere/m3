@@ -29,7 +29,8 @@ final class RuleSimulationDialog extends Dialog {
         input.setValue("{\"body\":\"  Hello M3  \"}"); input.setMinHeight("120px");
         var headers = new VerticalLayout(); headers.setPadding(false); var rows = new ArrayList<HeaderRow>();
         var addHeader = new Button(t("Add metadata"), e -> {
-            var key = new TextField(t("Key")); key.setMaxLength(100); var value = new TextField(t("Value")); value.setMaxLength(1000);
+            var key = new TextField(t("Key")); key.setMaxLength(100); key.setRequired(true);
+            var value = new TextField(t("Value")); value.setMaxLength(1000);
             var fields = new HorizontalLayout(key, value); fields.setWidthFull(); fields.setWrap(true); value.setWidth("300px");
             var row = new HeaderRow(key, value); rows.add(row);
             fields.add(new Button(t("Delete"), ignored -> { rows.remove(row); headers.remove(fields); })); headers.add(fields);

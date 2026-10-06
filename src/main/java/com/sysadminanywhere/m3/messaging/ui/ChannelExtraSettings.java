@@ -21,9 +21,10 @@ final class ChannelExtraSettings extends VerticalLayout {
     private Set<String> visible = Set.of();
 
     ChannelExtraSettings() {
+        addClassName("channel-extra-settings");
         setWidthFull(); setPadding(false); setSpacing(true);
         propertyRows.setWidthFull(); propertyRows.setPadding(false);
-        var addProperty = new Button(t("Add property"), VaadinIcon.PLUS.create(), event -> addRow("", ""));
+        var addProperty = new Button(t("Add property"), event -> addRow("", ""));
         addProperty.addThemeVariants(ButtonVariant.LUMO_SMALL);
         var hint = new Span(t("Additional protocol settings, for example kafka.security.protocol. Loading policy belongs to the rule."));
         hint.getStyle().set("white-space", "normal");

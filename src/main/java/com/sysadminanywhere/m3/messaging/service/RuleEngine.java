@@ -136,6 +136,19 @@ public class RuleEngine {
         return new org.springframework.messaging.support.GenericMessage<>(payload, headers);
     }
 
+    /** Apply metadata actions while leaving the stored message body untouched. */
+    public Message<?> applyMetadataActions(Message<?> springMessage, List<Rule> applicableRules) {
+        Map<String, Object> headers = new HashMap<>(springMessage.getHeaders());
+        for (Rule rule : applicableRules) {
+            for (RuleAction action : orderedActions(rule)) {
+                if (action.getActionType() == ActionType.ENRICH
+                        && action.getMetadataKey() != null && action.getMetadataValue() != null)
+                    headers.put(action.getMetadataKey(), action.getMetadataValue());
+            }
+        }
+        return new org.springframework.messaging.support.GenericMessage<>(springMessage.getPayload(), headers);
+    }
+
     private Object applyTransformation(Object payload, String script) {
         return RuleTransformations.apply(payload, script);
     }

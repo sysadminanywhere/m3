@@ -63,4 +63,7 @@
     <changeSet id="018-inbound-message-target" author="m3">
         <sqlFile path="changes/018-inbound-message-target.sql" relativeToChangelogFile="true"/>
     </changeSet>
+    <changeSet id="019-outbound-payload-mode" author="m3">
+        <sqlFile path="changes/019-outbound-payload-mode.sql" relativeToChangelogFile="true"/>
+    </changeSet>
 </databaseChangeLog>

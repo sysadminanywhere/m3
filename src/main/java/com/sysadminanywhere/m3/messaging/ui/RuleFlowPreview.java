@@ -55,7 +55,7 @@ final class RuleFlowPreview extends VerticalLayout {
                 conditions.add(new HorizontalLayout(edit, iconButton(VaadinIcon.TRASH, t("Delete"), () -> mutate(() -> rules.deleteCondition(condition.getId())))));
             }
         } else conditions.add(new Span(t("All messages")));
-        var addCondition = new Button(t("Add Condition"), VaadinIcon.PLUS.create(), e -> new RuleConditionEditorDialog(rules, rule.getId(), null, changed).open());
+        var addCondition = new Button(t("Add Condition"), e -> new RuleConditionEditorDialog(rules, rule.getId(), null, changed).open());
         addCondition.setEnabled(saved); conditions.add(addCondition);
         var branch = new Span(t("No match → this rule does not handle the message")); branch.addClassName("rule-branch-note"); conditions.add(branch);
         canvas.add(conditions); connect(canvas);
@@ -98,7 +98,7 @@ final class RuleFlowPreview extends VerticalLayout {
         if (!saved) add(new Span(t("Please save the rule first")));
     }
     private Button addAction(Rule rule, ActionType type, String label) {
-        var button = new Button(label, VaadinIcon.PLUS.create(), e -> new RuleActionEditorDialog(rules, rule.getId(), null, type, changed).open());
+        var button = new Button(label, e -> new RuleActionEditorDialog(rules, rule.getId(), null, type, changed).open());
         button.setEnabled(rule != null); return button;
     }
     private void edit(Rule rule, RuleAction action) { new RuleActionEditorDialog(rules, rule.getId(), action, changed).open(); }

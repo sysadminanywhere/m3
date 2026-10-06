@@ -68,11 +68,15 @@ final class RuleActionEditorDialog extends Dialog {
         setHeaderTitle(existing == null ? t("Add action") : t("Edit action"));
         setWidth("640px"); setMaxWidth("calc(100vw - 32px)");
         type.setItems(ActionType.TRANSFORM, ActionType.ENRICH, ActionType.FILTER);
+        type.setRequired(true);
         type.setItemLabelGenerator(t -> switch(t) {
             case TRANSFORM -> t("Transform body"); case ENRICH -> t("Add metadata");
             case FILTER -> t("Filter message"); default -> t("Route");
         });
         operation.setItems(Operation.values()); operation.setItemLabelGenerator(op -> t(op.label()));
+        operation.setRequired(true);
+        field.setRequired(true); parameter.setRequired(true);
+        filter.setRequired(true); key.setRequired(true); value.setRequired(true);
         field.setMaxLength(100); field.setHelperText(t("Top-level field name, for example body"));
         parameter.setMaxLength(1000); replacement.setMaxLength(1000);
         filter.setItems(true, false); filter.setItemLabelGenerator(pass -> pass ? "Pass message" : "Discard message");
@@ -81,7 +85,7 @@ final class RuleActionEditorDialog extends Dialog {
         key.addCustomValueSetListener(e -> key.setValue(e.getDetail()));
         key.setHelperText(t("Select or enter a key. outputCharset controls encoding of the transformed body."));
         value.setMaxLength(RuleAction.METADATA_VALUE_MAX_LENGTH);
-        var order = new IntegerField(t("Execution order")); order.setMin(0); order.setMax(9999);
+        var order = new IntegerField(t("Execution order")); order.setMin(0); order.setMax(9999); order.setRequired(true);
         order.setHelperText(t("Lower numbers execute first; ties follow creation order."));
         order.setValue(existing == null ? Math.min(9999, orderedActions(rules.findById(ruleId)).stream()
                 .mapToInt(RuleAction::getPriority).max().orElse(-1) + 1) : existing.getPriority());
@@ -143,6 +147,13 @@ final class RuleActionEditorDialog extends Dialog {
         replacement.setVisible(transform && op == Operation.REPLACE);
         filter.setVisible(type.getValue() == ActionType.FILTER);
         key.setVisible(type.getValue() == ActionType.ENRICH); value.setVisible(key.isVisible());
+        operation.setRequiredIndicatorVisible(transform);
+        field.setRequiredIndicatorVisible(transform && op == Operation.EXTRACT_FIELD);
+        parameter.setRequiredIndicatorVisible(transform && (op == Operation.REPLACE || op == Operation.ADD_PREFIX || op == Operation.ADD_SUFFIX));
+        replacement.setRequiredIndicatorVisible(false);
+        filter.setRequiredIndicatorVisible(type.getValue() == ActionType.FILTER);
+        key.setRequiredIndicatorVisible(type.getValue() == ActionType.ENRICH);
+        value.setRequiredIndicatorVisible(type.getValue() == ActionType.ENRICH);
         if (!transform) return;
         try {
             Object input = "JSON".equals(format.getValue()) ? JSON.readValue(sample.getValue(), Object.class) : sample.getValue();

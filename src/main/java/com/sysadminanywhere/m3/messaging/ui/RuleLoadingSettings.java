@@ -30,7 +30,7 @@ final class RuleLoadingSettings extends VerticalLayout {
 
     RuleLoadingSettings() {
         setWidthFull(); setPadding(false); setSpacing(true);
-        pattern.setValue("*"); pattern.setHelperText("Glob pattern, for example *.xml or *.txt");
+        pattern.setValue("*"); pattern.setHelperText(t("Glob pattern, for example *.xml or *.txt"));
         pattern.setWidth("250px");
         var fileFields = new HorizontalLayout(polling, minimumAge, pattern);
         fileFields.setWrap(true); fileFields.setWidthFull();
@@ -40,6 +40,7 @@ final class RuleLoadingSettings extends VerticalLayout {
         group.setWidth("280px"); group.setPlaceholder(t("Automatic: m3-rule-<id>"));
         group.setHelperText(t("Leave empty to use a separate consumer group for this rule"));
         offset.setItems("earliest", "latest", "none"); offset.setValue("earliest");
+        offset.setRequired(true);
         offset.setHelperText(t("Used when the group has no committed offset"));
         kafka.setWrap(true); kafka.setWidthFull();
         add(new Span(t("Loading settings")), files, kafka, brokerHint);
@@ -48,7 +49,7 @@ final class RuleLoadingSettings extends VerticalLayout {
     private static IntegerField positiveField(String label, int defaultValue) {
         var field = new IntegerField(t(label));
         field.setMin(1); field.setStep(1); field.setValue(defaultValue);
-        field.setRequiredIndicatorVisible(true);
+        field.setRequired(true);
         field.setErrorMessage(t("Enter a positive whole number"));
         field.addValueChangeListener(event -> {
             if (event.getValue() != null && event.getValue() > 0) field.setInvalid(false);

@@ -66,20 +66,20 @@ class InboundMessagesView extends VerticalLayout implements HasDynamicTitle {
                 toSpringPageRequest(query).withSort(org.springframework.data.domain.Sort.by("createdAt", "id").descending())
         ).stream());
         messageGrid.addItemDoubleClickListener(event -> detailDialog.openMessage(event.getItem().getId()));
-        messageGrid.addColumn(Message::getId).setHeader("ID").setWidth("52px").setFlexGrow(0);
-        messageGrid.addColumn(item -> Translations.enumLabel(item.getStatus())).setHeader(t("Status")).setWidth("80px").setFlexGrow(0);
-        messageGrid.addColumn(Message::getSourceSystem).setHeader(t("Source")).setWidth("88px").setFlexGrow(1);
-        messageGrid.addColumn(Message::getTargetSystem).setHeader(t("Target")).setWidth("84px").setFlexGrow(1);
-        messageGrid.addColumn(Message::getPayloadType).setHeader(t("Type")).setWidth("70px").setFlexGrow(0);
+        messageGrid.addColumn(Message::getId).setHeader("ID").setWidth("85px").setFlexGrow(0);
+        messageGrid.addColumn(item -> Translations.enumLabel(item.getStatus())).setHeader(t("Status")).setWidth("150px").setFlexGrow(0);
+        messageGrid.addColumn(Message::getSourceSystem).setHeader(t("Source")).setWidth("150px").setFlexGrow(1);
+        messageGrid.addColumn(Message::getTargetSystem).setHeader(t("Target")).setWidth("150px").setFlexGrow(1);
+        messageGrid.addColumn(Message::getPayloadType).setHeader(t("Type")).setWidth("200px").setFlexGrow(1);
         messageGrid.addColumn(msg -> dateTimeFormatter.format(msg.getCreatedAt())).setHeader(t("Created"))
-                .setWidth("130px").setFlexGrow(0);
+                .setWidth("200px").setFlexGrow(0);
         messageGrid.addComponentColumn(msg -> {
             var viewButton = new Button(t("View"), VaadinIcon.EYE.create());
             viewButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
             viewButton.setTooltipText(t("View details"));
             viewButton.addClickListener(e -> detailDialog.openMessage(msg.getId()));
             return viewButton;
-        }).setHeader(t("Actions")).setWidth("100px").setFlexGrow(0);
+        }).setHeader(t("Actions")).setWidth("130px").setFlexGrow(0);
         messageGrid.setEmptyStateText(t("No inbound messages found"));
         messageGrid.setSizeFull();
 

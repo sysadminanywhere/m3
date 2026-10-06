@@ -53,7 +53,8 @@ public class OutboundMessageApi {
     @Transactional(readOnly=true)
     public List<RuleInfo> rules() {
         return rules.findByRuleType(RuleType.OUTBOUND).stream().map(rule -> new RuleInfo(rule.getId(), rule.getName(),
-                Boolean.TRUE.equals(rule.getEnabled()), rule.getWorkerPool() == null ? null : rule.getWorkerPool().getName())).toList();
+                Boolean.TRUE.equals(rule.getEnabled()), rule.getWorkerPool() == null ? null : rule.getWorkerPool().getName(),
+                rule.getOutboundPayloadMode())).toList();
     }
     @GetMapping("/rules/forwarding")
     public List<OutboundSubmissionService.ForwardingRule> forwardingRules() {
@@ -69,6 +70,6 @@ public class OutboundMessageApi {
             @Size(max=100) Map<@NotBlank @Size(max=MessageMetadata.KEY_MAX_LENGTH) String,
                     @NotNull @Size(max=MessageMetadata.VALUE_MAX_LENGTH) String> metadata) { }
     public record DeliveryStatus(Long jobId, Long ruleId, String workerPool, RuleJobStatus status, int attempts, Instant nextAttemptAt, String error) { }
-    public record RuleInfo(Long id, String name, boolean enabled, String workerPool) { }
+    public record RuleInfo(Long id, String name, boolean enabled, String workerPool, OutboundPayloadMode payloadMode) { }
     public record ForwardRequest(@NotNull @Positive Long ruleId) { }
 }

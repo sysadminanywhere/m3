@@ -73,15 +73,18 @@ public class OutboundDeliveryTransactions {
         var input = org.springframework.messaging.support.MessageBuilder.withPayload(payload).copyHeaders(headers).build();
         if (!engine.evaluateConditions(rule, input) || engine.shouldFilter(input, List.of(rule)))
             throw new IllegalStateException("Message does not satisfy the selected outbound rule");
-        var transformed = engine.applyTransformations(input, List.of(rule));
+        boolean sendMessageId = rule.getOutboundPayloadMode() == OutboundPayloadMode.MESSAGE_ID;
+        var transformed = sendMessageId ? engine.applyMetadataActions(input, List.of(rule))
+                : engine.applyTransformations(input, List.of(rule));
         Object transformedPayload = transformed.getPayload();
         String output = PayloadCodec.charset((String) transformed.getHeaders().get("outputCharset"));
-        if (output != null && transformedPayload instanceof byte[])
+        if (!sendMessageId && output != null && transformedPayload instanceof byte[])
             throw new IllegalArgumentException("Output charset requires a decoded text payload; source charset is unknown");
         boolean changed = transformedPayload != input.getPayload() || output != null;
         if (changed && output == null) output = PayloadCodec.charset(target.getProperties().get("outputCharset"));
         if (changed && output == null) output = stored.getCharset() == null ? "UTF-8" : stored.getCharset();
-        byte[] bytes = changed ? RulePayloads.encode(transformedPayload, output, json) : stored.getPayloadBytes();
+        byte[] bytes = sendMessageId ? Long.toString(stored.getId()).getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                : changed ? RulePayloads.encode(transformedPayload, output, json) : stored.getPayloadBytes();
         var metadata = new TreeMap<String, String>();
         transformed.getHeaders().forEach((key, value) -> {
             if (!Set.of("id", "timestamp", "encoding").contains(key)
@@ -90,11 +93,16 @@ public class OutboundDeliveryTransactions {
         metadata.put("m3MessageId", stored.getId().toString());
         metadata.put("m3RuleId", rule.getId().toString());
         metadata.remove("charset");
-        if (!changed && stored.getCharset() != null) metadata.put("charset", stored.getCharset());
-        if (changed && !(transformedPayload instanceof byte[])) metadata.put("charset", output);
+        if (sendMessageId) {
+            metadata.put("m3MessagePayloadPath", "/api/v1/messages/" + stored.getId() + "/payload");
+            metadata.put("charset", "UTF-8");
+        } else {
+            if (!changed && stored.getCharset() != null) metadata.put("charset", stored.getCharset());
+            if (changed && !(transformedPayload instanceof byte[])) metadata.put("charset", output);
+        }
         stored.setTargetSystem(target.getName());
         return new PreparedOutboundDelivery(target.getId(), bytes,
-                changed ? PayloadCodec.outputType(stored.getPayloadType(), output) : stored.getPayloadType(), metadata);
+                sendMessageId ? "text/plain" : changed ? PayloadCodec.outputType(stored.getPayloadType(), output) : stored.getPayloadType(), metadata);
     }
 
     @Transactional

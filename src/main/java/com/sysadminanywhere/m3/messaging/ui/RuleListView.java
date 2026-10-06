@@ -10,7 +10,6 @@ import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
 import com.sysadminanywhere.m3.messaging.service.RuleService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.icon.Icon;
@@ -27,7 +26,7 @@ import com.vaadin.flow.router.Route;
 import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
 
 @Route(value = "rules")
-@MenuItem(order = 1, icon = "icons/rule.svg", title = "Rules", section = MenuSection.SETTINGS)
+@MenuItem(order = 3, icon = "icons/rule.svg", title = "Rules", section = MenuSection.ADMINISTRATION)
 class RuleListView extends VerticalLayout implements HasDynamicTitle {
 
     private final RuleService ruleService;
@@ -35,25 +34,17 @@ class RuleListView extends VerticalLayout implements HasDynamicTitle {
 
     final Button createBtn;
     final Grid<Rule> ruleGrid;
-    private final RuleMap ruleMap;
 
     RuleListView(RuleService ruleService, ChannelSettingsService channelSettingsService, com.sysadminanywhere.m3.messaging.source.SourceHealth sourceHealth,
             com.sysadminanywhere.m3.messaging.service.WorkerPoolCapacityService capacity) {
         this.ruleService = ruleService;
         this.channelSettingsService = channelSettingsService;
 
-        ruleMap = new RuleMap(ruleService);
         createBtn = new Button(t("Create Rule"), event -> openCreateDialog());
         createBtn.addThemeVariants(ButtonVariant.PRIMARY);
 
         var toolbar = new HorizontalLayout();
-        var mode = new ComboBox<String>(); mode.setItems("Diagram", "Table");
-        mode.setItemLabelGenerator(Translations::t); mode.setValue("Diagram"); mode.setAriaLabel(t("Display mode"));
-        mode.addValueChangeListener(e -> {
-            boolean diagram = "Diagram".equals(e.getValue()); setDiagramMode(diagram);
-            if (diagram) ruleMap.refresh();
-        });
-        toolbar.add(createBtn, mode);
+        toolbar.add(createBtn);
         if (!capacity.isConfigured()) {
             var hint = new com.vaadin.flow.component.html.Span(t("UI does not execute rules. Start a separate worker for the assigned pool: scripts/run-worker.ps1 -Pool default, or configure Docker Compose."));
             hint.getStyle().set("color", "var(--lumo-error-text-color)").set("white-space", "normal");
@@ -69,39 +60,49 @@ class RuleListView extends VerticalLayout implements HasDynamicTitle {
             return ruleService.page(org.springframework.data.domain.PageRequest.of(pageRequest.getPageNumber(),
                     pageRequest.getPageSize(), org.springframework.data.domain.Sort.by("id"))).stream();
         });
-        ruleGrid.addColumn(Rule::getName).setHeader(t("Name")).setWidth("100px").setFlexGrow(1);
-        ruleGrid.addColumn(item -> Translations.enumLabel(item.getRuleType())).setHeader(t("Type")).setWidth("82px").setFlexGrow(0);
+        ruleGrid.addColumn(Rule::getName).setHeader(t("Name")).setWidth("120px").setFlexGrow(1);
+        ruleGrid.addColumn(item -> Translations.enumLabel(item.getRuleType())).setHeader(t("Type")).setWidth("120px").setFlexGrow(0);
         ruleGrid.addColumn(rule -> rule.getSourceChannel() != null ? rule.getSourceChannel().getName() : "N/A")
-                .setHeader(t("Source Channel")).setWidth("130px").setFlexGrow(1);
-        ruleGrid.addColumn(rule -> rule.getWorkerPool() != null ? rule.getWorkerPool().getName() : t("Unassigned"))
-                .setHeader(t("Worker Pool")).setWidth("120px").setFlexGrow(0);
-        ruleGrid.addColumn(rule -> rule.getDestinationChannelName() == null ? t("Not selected") : rule.getDestinationChannelName())
-                .setHeader(t("Destination Channel")).setWidth("150px").setFlexGrow(1);
+                .setHeader(t("Source")).setWidth("135px").setFlexGrow(1);
         ruleGrid.addComponentColumn(rule -> {
-            var state = rule.getRuleType() == RuleType.INBOUND ? sourceHealth.get(rule.getId()) : null;
-            var label = new com.vaadin.flow.component.html.Span(state == null ? "—"
-                    : Boolean.TRUE.equals(rule.getEnabled()) ? t(state.status()) : t("DISABLED"));
-            if (state != null) label.getElement().setAttribute("title", state.error() == null
-                    ? t("Last heartbeat: ") + state.checkedAt() : t(state.error()));
+            String pool = rule.getWorkerPool() != null ? rule.getWorkerPool().getName() : t("Unassigned");
+            var label = new com.vaadin.flow.component.html.Span(pool);
+            var receiver = rule.getRuleType() == RuleType.INBOUND ? sourceHealth.get(rule.getId()) : null;
+            if (receiver != null) label.getElement().setAttribute("title", pool + " · "
+                    + t(receiver.status()) + (receiver.error() == null ? "" : " · " + t(receiver.error())));
             return label;
-        })
-                .setHeader(t("Receiver")).setWidth("110px").setFlexGrow(0);
-        ruleGrid.addColumn(Rule::getPriority).setHeader(t("Priority")).setWidth("72px").setFlexGrow(0);
+        }).setHeader(t("Pool")).setWidth("105px").setFlexGrow(0);
+        ruleGrid.addColumn(rule -> rule.getDestinationChannelName() == null ? t("Not selected") : rule.getDestinationChannelName())
+                .setHeader(t("Target")).setWidth("120px").setFlexGrow(1);
+        ruleGrid.addComponentColumn(rule -> {
+            String label = rule.getDestinationChannelName() == null ? t("Not selected")
+                    : t(rule.getOutboundPayloadMode() == com.sysadminanywhere.m3.messaging.domain.OutboundPayloadMode.MESSAGE_ID
+                    ? "Message ID" : "Original message body");
+            var value = new com.vaadin.flow.component.html.Span(rule.getDestinationChannelName() == null ? "—"
+                    : t(rule.getOutboundPayloadMode() == com.sysadminanywhere.m3.messaging.domain.OutboundPayloadMode.MESSAGE_ID ? "ID" : "Message body"));
+            value.getElement().setAttribute("title", label);
+            return value;
+        }).setHeader(t("Delivery format")).setWidth("88px").setFlexGrow(0);
+        ruleGrid.addColumn(Rule::getPriority).setHeader(t("Priority")).setWidth("100px").setFlexGrow(0);
         ruleGrid.addComponentColumn(rule -> {
             var enabledIcon = rule.getEnabled() ? VaadinIcon.CHECK.create() : VaadinIcon.CLOSE.create();
             var button = new Button(enabledIcon);
             button.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            button.setTooltipText(t(rule.getEnabled() ? "Enabled" : "Disabled"));
+            button.setAriaLabel(t(rule.getEnabled() ? "Enabled" : "Disabled"));
             button.addClickListener(event -> toggleRuleEnabled(rule));
             return button;
-        }).setHeader(t("Enabled")).setWidth("76px").setFlexGrow(0);
+        }).setHeader(t("Enabled")).setWidth("105px").setFlexGrow(0);
         ruleGrid.addComponentColumn(rule -> {
             var editButton = new Button(new Icon(VaadinIcon.EDIT));
             editButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            editButton.setTooltipText(t("Edit"));
+            editButton.setAriaLabel(t("Edit"));
             editButton.addClickListener(event -> openEditDialog(rule));
             var configureButton = new Button(t("Configure"), event -> getUI().ifPresent(ui -> ui.navigate("rules/" + rule.getId())));
             configureButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
             return new HorizontalLayout(editButton, configureButton);
-        }).setHeader(t("Actions")).setWidth("160px").setFlexGrow(0);
+        }).setHeader(t("Actions")).setWidth("140px").setFlexGrow(0);
         ruleGrid.setEmptyStateText(t("No rules configured"));
         ruleGrid.setSizeFull();
 
@@ -109,11 +110,10 @@ class RuleListView extends VerticalLayout implements HasDynamicTitle {
         addAttachListener(event -> {
             var ui = event.getUI();
             ui.setPollInterval(10000);
-            var registration = ui.addPollListener(poll -> { ruleGrid.getDataProvider().refreshAll(); if (ruleMap.isVisible()) ruleMap.refresh(); });
+            var registration = ui.addPollListener(poll -> ruleGrid.getDataProvider().refreshAll());
             addDetachListener(detach -> { registration.remove(); ui.setPollInterval(-1); });
         });
-        ruleGrid.setVisible(false);
-        add(toolbar, ruleMap, ruleGrid);
+        add(toolbar, ruleGrid);
         getStyle().set("overflow-y", "auto");
     }
 
@@ -127,10 +127,7 @@ class RuleListView extends VerticalLayout implements HasDynamicTitle {
         dialog.open();
     }
 
-    private void setDiagramMode(boolean diagram) { ruleMap.setVisible(diagram); ruleGrid.setVisible(!diagram); }
-
     private void refreshGrid() {
-        ruleMap.refresh();
         ruleGrid.getDataProvider().refreshAll();
     }
 

@@ -1,20 +1,17 @@
 package com.sysadminanywhere.m3.base.ui;
 
 import static com.sysadminanywhere.m3.base.i18n.Translations.t;
-import com.sysadminanywhere.m3.base.i18n.Translations;
 
 import com.sysadminanywhere.m3.base.ui.menu.MenuItemInfo;
 import com.sysadminanywhere.m3.base.ui.menu.MenuItemRegistry;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
-import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.NativeButton;
 import com.vaadin.flow.component.html.Span;
-import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.router.AfterNavigationEvent;
 import com.vaadin.flow.router.AfterNavigationObserver;
 import com.vaadin.flow.router.Layout;
@@ -53,12 +50,13 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         Div sections = new Div();
         sections.addClassName("primary-nav-sections");
         for (MenuSection section : menuItemRegistry.getSections()) {
+            if (section == MenuSection.SETTINGS) continue;
             NativeButton button = new NativeButton();
             button.addClassName("primary-nav-button");
             button.getElement().setAttribute("aria-label", t(section.getTitle()));
             String iconName = switch (section) {
                 case MESSAGING -> "globe";
-                case SETTINGS -> "messages";
+                case SETTINGS -> "settings";
                 case ADMINISTRATION -> "settings";
             };
             button.add(icon(iconName), new Span(section == MenuSection.ADMINISTRATION ? t("Admin") : t(section.getTitle())));
@@ -67,25 +65,14 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
             sections.add(button);
         }
         rail.add(sections);
-        var language = new com.vaadin.flow.component.combobox.ComboBox<java.util.Locale>();
-        language.setItems(Translations.LANGUAGES);
-        language.setItemLabelGenerator(locale -> locale.getLanguage().toUpperCase(java.util.Locale.ROOT));
-        language.setRenderer(new com.vaadin.flow.data.renderer.TextRenderer<>(locale -> locale.getDisplayLanguage(locale)));
-        language.getElement().setProperty("overlayWidth", "180px");
-        language.setAriaLabel(t("Language"));
-        language.setValue(Translations.locale());
-        language.setWidth("68px");
-        language.addClassName("language-selector");
-        language.getElement().setAttribute("title", "English · Русский · Deutsch · Français · Italiano · Português");
-        language.addValueChangeListener(event -> {
-            if (event.getValue() == null || !event.isFromClient()) return;
-            getUI().ifPresent(ui -> {
-                var locale = event.getValue();
-                ui.setLocale(locale); ui.getSession().setLocale(locale);
-                ui.getPage().executeJs("document.cookie = 'm3-language=' + $0 + '; Path=/; Max-Age=31536000; SameSite=Lax'; window.location.reload()", locale.getLanguage());
-            });
-        });
-        rail.add(language);
+        NativeButton settingsButton = new NativeButton();
+        settingsButton.addClassName("primary-nav-button");
+        settingsButton.addClassName("settings-nav-button");
+        settingsButton.add(icon("settings"), new Span(t("Settings")));
+        settingsButton.getElement().setAttribute("aria-label", t("Settings"));
+        settingsButton.addClickListener(event -> navigateToSection(MenuSection.SETTINGS));
+        sectionButtons.put(MenuSection.SETTINGS, settingsButton);
+        rail.add(settingsButton);
         secondaryNavigation.addClassName("secondary-navigation");
         secondaryNavigation.getElement().setAttribute("role", "navigation");
         secondaryNavigation.getElement().setAttribute("aria-label", t("Pages"));
@@ -97,6 +84,17 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         Div workspace = new Div(secondaryNavigation, main);
         workspace.addClassName("workspace-frame");
         add(rail, workspace);
+        addAttachListener(event -> event.getUI().getPage().executeJs("""
+                window.applyM3Theme = (preference) => {
+                  const media = window.matchMedia('(prefers-color-scheme: dark)');
+                  const apply = () => document.documentElement.setAttribute('theme',
+                    preference === 'dark' || (preference === 'system' && media.matches) ? 'dark' : 'light');
+                  apply();
+                  media.onchange = preference === 'system' ? apply : null;
+                };
+                const cookiePreference = document.cookie.split('; ').find(value => value.startsWith('m3-theme='))?.split('=')[1];
+                window.applyM3Theme(localStorage.getItem('m3-theme') || cookiePreference || 'system');
+                """));
         var sectionsList = menuItemRegistry.getSections();
         if (!sectionsList.isEmpty()) showSection(sectionsList.get(0));
     }
@@ -141,12 +139,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         pageLinks.clear();
         H3 title = new H3(t(section.getTitle()));
         title.addClassName("secondary-navigation-title");
-        NativeButton create = new NativeButton();
-        create.addClassName("secondary-navigation-create");
-        create.getElement().setAttribute("aria-label", t("Create new item"));
-        create.add(icon("plus"));
-        create.addClickListener(event -> triggerPageCreateAction());
-        Div header = new Div(title, create);
+        Div header = new Div(title);
         header.addClassName("secondary-navigation-header");
         Div nav = new Div();
         nav.addClassName("section-side-nav");
@@ -160,6 +153,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
                         case "Rules" -> "filter";
                         case "Channels" -> "link";
                         case "Workers" -> "cube";
+                        case "Settings" -> "settings";
                         default -> "file";
                     }), new Span(t(item.title())));
                     link.addClassName("section-nav-link");
@@ -186,16 +180,4 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         return image;
     }
 
-    private void triggerPageCreateAction() {
-        Button action = findPrimaryAction(currentView);
-        if (action == null) Notification.show(t("No create action is available on this page"));
-        else action.getElement().callJsFunction("click");
-    }
-
-    private Button findPrimaryAction(Component component) {
-        if (component == null) return null;
-        if (component instanceof Button button && button.getThemeNames().contains("primary")) return button;
-        return component.getChildren().map(this::findPrimaryAction).filter(java.util.Objects::nonNull)
-                .findFirst().orElse(null);
-    }
 }
