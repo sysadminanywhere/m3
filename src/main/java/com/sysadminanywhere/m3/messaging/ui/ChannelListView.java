@@ -17,6 +17,7 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.sysadminanywhere.m3.base.ui.ResponsiveGrid;
 import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.router.HasDynamicTitle;
@@ -77,6 +78,7 @@ class ChannelListView extends VerticalLayout implements HasDynamicTitle {
                 .setWidth("160px").setFlexGrow(0).setFrozenToEnd(true);
         channelGrid.setEmptyStateText(t("No channels found"));
         channelGrid.setSizeFull();
+        ResponsiveGrid.configure(channelGrid);
 
         setSizeFull();
         add(toolbar, channelGrid);

@@ -24,6 +24,7 @@ import com.vaadin.flow.router.HasDynamicTitle;
 
 @Route(value = "rules/:ruleId")
 class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasDynamicTitle {
+    private com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard guard;
 
     private final RuleService ruleService;
     private final ChannelSettingsService channelSettingsService;
@@ -118,6 +119,8 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
         loadingField.setVisible(false);
         stepsPanel.configure(ruleService, this::refreshSteps);
         add(toolbar, form, loadingField, stepsPanel);
+        guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(this, form, loadingField);
+        toolbar.add(guard.indicator());
         setHeightFull();
         getStyle().set("overflow-y", "auto");
     }
@@ -148,6 +151,7 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
             destinationField.setValue(channelSettingsService.findByDirection(ChannelDirection.OUTBOUND).stream()
                     .filter(channel -> channel.getName().equals(currentRule.getDestinationChannelName())).findFirst().orElse(null));
         }
+        guard.markSaved();
     }
 
     private void refreshSteps() {

@@ -18,6 +18,7 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.sysadminanywhere.m3.base.ui.ResponsiveGrid;
 import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.router.HasDynamicTitle;
@@ -105,6 +106,7 @@ class RuleListView extends VerticalLayout implements HasDynamicTitle {
         }).setHeader(t("Actions")).setWidth("140px").setFlexGrow(0).setFrozenToEnd(true);
         ruleGrid.setEmptyStateText(t("No rules configured"));
         ruleGrid.setSizeFull();
+        ResponsiveGrid.configure(ruleGrid);
 
         setSizeFull();
         addAttachListener(event -> {

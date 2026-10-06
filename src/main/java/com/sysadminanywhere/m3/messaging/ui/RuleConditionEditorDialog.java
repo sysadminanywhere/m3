@@ -60,6 +60,8 @@ final class RuleConditionEditorDialog extends Dialog {
         var form = new VerticalLayout(source, name, operator, value, connector, sentence); form.setPadding(false);
         source.setWidthFull(); name.setWidthFull(); operator.setWidthFull(); value.setWidthFull(); connector.setWidthFull();
         add(form); update.run();
+        var guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(this, form);
+        guard.markSaved();
         var save = new Button(t("Save"), e -> {
             try {
                 if (source.getValue() == null || (!"Whole body".equals(source.getValue()) && name.getValue() == null))
@@ -68,11 +70,11 @@ final class RuleConditionEditorDialog extends Dialog {
                         : ("Metadata".equals(source.getValue()) ? "header." : "payload.") + name.getValue();
                 if (existing == null) rules.addCondition(ruleId, field, operator.getValue(), value.getValue(), connector.getValue());
                 else rules.updateCondition(ruleId, existing.getId(), field, operator.getValue(), value.getValue(), connector.getValue());
-                onSave.run(); close();
+                guard.markSaved(); onSave.run(); close();
             } catch (IllegalArgumentException invalid) {
                 Notification.show(t(invalid.getMessage()), 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         });
-        save.addThemeVariants(ButtonVariant.PRIMARY); getFooter().add(new Button(t("Cancel"), e -> close()), save);
+        save.addThemeVariants(ButtonVariant.PRIMARY); getFooter().add(guard.indicator(), new Button(t("Cancel"), e -> guard.requestDiscard(this::close)), save);
     }
 }

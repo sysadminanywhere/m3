@@ -7,7 +7,10 @@ import com.sysadminanywhere.m3.base.ui.menu.MenuItemRegistry;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
+import com.vaadin.flow.component.dependency.JavaScript;
+import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.NativeButton;
@@ -26,11 +29,13 @@ import java.util.Map;
 
 /** Shared navigation and responsive workspace for every application view. */
 @Layout
+@JavaScript("context://theme-preference.js")
+@JavaScript("context://unsaved-changes.js")
 public final class MainLayout extends Div implements RouterLayout, AfterNavigationObserver {
     private final MenuItemRegistry menuItemRegistry;
     private final Div secondaryNavigation = new Div();
     private final Div viewContainer = new Div();
-    private final H3 pageTitle = new H3();
+    private final H1 pageTitle = new H1();
     private final Map<MenuSection, NativeButton> sectionButtons = new EnumMap<>(MenuSection.class);
     private final Map<String, RouterLink> pageLinks = new LinkedHashMap<>();
     private MenuSection activeSection;
@@ -40,6 +45,17 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
     public MainLayout(MenuItemRegistry menuItemRegistry) {
         this.menuItemRegistry = menuItemRegistry;
         addClassName("m3-shell");
+        Anchor skipLink = new Anchor("#m3-main-content", t("Skip to content"));
+        skipLink.setRouterIgnore(true);
+        skipLink.addClassName("skip-link");
+        // A fragment-only URL resolves against Vaadin's base URL, not the current route.
+        skipLink.getElement().executeJs("""
+                this.onclick = event => {
+                    event.preventDefault();
+                    document.getElementById('m3-main-content')?.focus({preventScroll: true});
+                };
+                """);
+        add(skipLink);
         Div rail = new Div();
         rail.addClassName("primary-navigation");
         rail.getElement().setAttribute("role", "navigation");
@@ -54,6 +70,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
             NativeButton button = new NativeButton();
             button.addClassName("primary-nav-button");
             button.getElement().setAttribute("aria-label", t(section.getTitle()));
+            button.getElement().setAttribute("title", t(section.getTitle()));
             String iconName = switch (section) {
                 case MESSAGING -> "globe";
                 case SETTINGS -> "settings";
@@ -70,6 +87,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         settingsButton.addClassName("settings-nav-button");
         settingsButton.add(icon("settings"), new Span(t("Settings")));
         settingsButton.getElement().setAttribute("aria-label", t("Settings"));
+        settingsButton.getElement().setAttribute("title", t("Settings"));
         settingsButton.addClickListener(event -> navigateToSection(MenuSection.SETTINGS));
         sectionButtons.put(MenuSection.SETTINGS, settingsButton);
         rail.add(settingsButton);
@@ -85,20 +103,11 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         Div main = new Div(pageHeader, viewContainer);
         main.addClassName("main-panel");
         main.getElement().setAttribute("role", "main");
+        main.setId("m3-main-content");
+        main.getElement().setAttribute("tabindex", "-1");
         Div workspace = new Div(secondaryNavigation, main);
         workspace.addClassName("workspace-frame");
         add(rail, workspace);
-        addAttachListener(event -> event.getUI().getPage().executeJs("""
-                window.applyM3Theme = (preference) => {
-                  const media = window.matchMedia('(prefers-color-scheme: dark)');
-                  const apply = () => document.documentElement.setAttribute('theme',
-                    preference === 'dark' || (preference === 'system' && media.matches) ? 'dark' : 'light');
-                  apply();
-                  media.onchange = preference === 'system' ? apply : null;
-                };
-                const cookiePreference = document.cookie.split('; ').find(value => value.startsWith('m3-theme='))?.split('=')[1];
-                window.applyM3Theme(localStorage.getItem('m3-theme') || cookiePreference || 'system');
-                """));
         var sectionsList = menuItemRegistry.getSections();
         if (!sectionsList.isEmpty()) showSection(sectionsList.get(0));
     }
@@ -113,15 +122,15 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
     @Override
     public void afterNavigation(AfterNavigationEvent event) {
         currentPath = event.getLocation().getPath();
+        String menuPath = currentPath.startsWith("channel/") || currentPath.equals("channel") ? "channels" : currentPath;
         MenuItemInfo currentItem = menuItemRegistry.getMenuItems().stream()
-                .filter(item -> item.path().equals(currentPath) || currentPath.startsWith(item.path() + "/"))
-                .findFirst().orElse(null);
+                .filter(item -> item.path().equals(menuPath) || menuPath.startsWith(item.path() + "/"))
+                .max(Comparator.comparingInt(item -> item.path().length())).orElse(null);
         PageTitle title = currentView == null ? null : currentView.getClass().getAnnotation(PageTitle.class);
         String text = currentView instanceof com.vaadin.flow.router.HasDynamicTitle dynamic ? dynamic.getPageTitle() : title != null ? title.value() : currentItem != null ? currentItem.title() : "M3";
         pageTitle.setText(t(text));
         getUI().ifPresent(ui -> ui.getPage().setTitle(t(text)));
         if (currentItem != null && currentItem.section() != activeSection) showSection(currentItem.section());
-        else if (currentPath.startsWith("channel/")) showSection(MenuSection.SETTINGS);
         updateCurrentLink();
     }
 
@@ -152,6 +161,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
                     RouterLink link = new RouterLink();
                     link.setRoute(item.viewClass().asSubclass(Component.class));
                     link.add(icon(switch (item.title()) {
+                        case "Overview" -> "globe";
                         case "Inbound" -> "inbound";
                         case "Outbound" -> "outbound";
                         case "Rules" -> "filter";
@@ -169,8 +179,9 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
     }
 
     private void updateCurrentLink() {
+        String menuPath = currentPath.startsWith("channel/") || currentPath.equals("channel") ? "channels" : currentPath;
         pageLinks.forEach((path, link) -> {
-            boolean current = path.equals(currentPath) || currentPath.startsWith(path + "/");
+            boolean current = path.equals(menuPath) || menuPath.startsWith(path + "/");
             link.setClassName("current", current);
             if (current) link.getElement().setAttribute("aria-current", "page");
             else link.getElement().removeAttribute("aria-current");

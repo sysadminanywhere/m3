@@ -29,6 +29,7 @@ import java.util.Map;
 
 @Route(value = "channel/:channelId?")
 class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, HasDynamicTitle {
+    private com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard guard;
 
     private final ChannelSettingsService channelSettingsService;
     private Long channelId;
@@ -117,6 +118,8 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
 
         setSizeFull();
         add(toolbar, basicForm, descriptionField, tabContentWrapper, connectionTabContent);
+        guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(this, basicForm, descriptionField, connectionTabContent, advancedTabContent);
+        toolbar.add(guard.indicator());
     }
 
     @Override
@@ -136,6 +139,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
             currentChannel = null;
             clearForm();
         }
+        guard.markSaved();
     }
 
     private void clearForm() {
@@ -449,6 +453,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
                 Notification.show(t("Channel updated"), 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             }
+            guard.markSaved();
             getUI().ifPresent(ui -> ui.navigate(ChannelListView.class));
         } catch (Exception e) {
             Notification.show(t("Error saving channel: ") + t(e.getMessage()), 3000, Notification.Position.BOTTOM_END)

@@ -14,7 +14,7 @@ public class HomeView extends VerticalLayout implements BeforeEnterObserver, Has
 
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
-        event.forwardTo("messages/inbound");
+        event.forwardTo("overview");
     }
     @Override public String getPageTitle() { return t("Home"); }
 }

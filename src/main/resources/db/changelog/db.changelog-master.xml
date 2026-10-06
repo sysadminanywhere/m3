@@ -66,4 +66,7 @@
     <changeSet id="019-outbound-payload-mode" author="m3">
         <sqlFile path="changes/019-outbound-payload-mode.sql" relativeToChangelogFile="true"/>
     </changeSet>
+    <changeSet id="020-worker-heartbeats" author="m3">
+        <sqlFile path="changes/020-worker-heartbeats.sql" relativeToChangelogFile="true"/>
+    </changeSet>
 </databaseChangeLog>

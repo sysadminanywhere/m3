@@ -3,6 +3,7 @@ package com.sysadminanywhere.m3.messaging.ui;
 import static com.sysadminanywhere.m3.base.i18n.Translations.t;
 import com.sysadminanywhere.m3.base.i18n.Translations;
 
+import com.sysadminanywhere.m3.base.ui.ResponsiveGrid;
 import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
 import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
 import com.sysadminanywhere.m3.messaging.domain.RuleWorkerPool;
@@ -97,6 +98,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         }).setHeader(t("Actions")).setWidth("125px").setFlexGrow(0).setFrozenToEnd(true);
         grid.setEmptyStateText(t("No worker pools configured"));
         grid.setSizeFull();
+        ResponsiveGrid.configure(grid);
         setSizeFull();
         add(toolbar, controllerStatus, dockerHelp, grid);
         refresh();
@@ -178,19 +180,22 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
                 new FormLayout.ResponsiveStep("520px", 2));
         fields.setColspan(autoScale, 2);
         fields.setColspan(jobsPerWorker, 2);
+        var guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(dialog, fields);
+        guard.markSaved();
         var save = new Button(t("Create"), event -> {
             try {
                 var pool = service.create(name.getValue().trim(), desired.getValue(), min.getValue(), max.getValue(),
                         autoScale.getValue(), jobsPerWorker.getValue());
+                guard.markSaved();
                 dialog.close();
                 refresh();
                 reconcileAfterSave(pool);
             } catch (RuntimeException e) { showError(e); }
         });
         save.addThemeVariants(ButtonVariant.PRIMARY);
-        var cancel = new Button(t("Cancel"), event -> dialog.close());
+        var cancel = new Button(t("Cancel"), event -> guard.requestDiscard(dialog::close));
         dialog.add(fields);
-        dialog.getFooter().add(cancel, save);
+        dialog.getFooter().add(guard.indicator(), cancel, save);
         dialog.open();
     }
 
@@ -211,10 +216,13 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
                 new FormLayout.ResponsiveStep("460px", 2));
         fields.setColspan(autoScale, 2);
         fields.setColspan(jobsPerWorker, 2);
+        var guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(dialog, fields);
+        guard.markSaved();
         var save = new Button(t("Save"), event -> {
             try {
                 var updated = service.updateCapacity(pool.getId(), desired.getValue(), min.getValue(), max.getValue(),
                         autoScale.getValue(), jobsPerWorker.getValue());
+                guard.markSaved();
                 dialog.close();
                 refresh();
                 reconcileAfterSave(updated);
@@ -222,7 +230,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         });
         save.addThemeVariants(ButtonVariant.PRIMARY);
         dialog.add(fields);
-        dialog.getFooter().add(new Button(t("Cancel"), e -> dialog.close()), save);
+        dialog.getFooter().add(guard.indicator(), new Button(t("Cancel"), e -> guard.requestDiscard(dialog::close)), save);
         dialog.open();
     }
 

@@ -317,3 +317,25 @@ conditions, filter, and all transformations/metadata additions with the worker's
 result body and metadata. The preview does not perform channel I/O or store messages. It starts from decoded
 example text; it does not simulate transport, charset detection or final byte encoding.
 Canvas actions/conditions are saved immediately. Channel/loading/worker settings require **Save** on the rule.
+
+
+## Message search, overview and unsaved changes
+
+Inbound and outbound lists filter by message ID, status, source, target and calendar dates.
+Source/target search is case insensitive and treats `%`, `_` and backslashes literally. Dates
+use the displayed server time zone and include the entire final day. **Apply filters** updates
+the URL (`id`, `status`, `source`, `target`, `from`, `to`); links can be shared and browser Back
+restores filters. Invalid links show an error and no results. Reset clears all filters.
+
+**Overview** is the start page. Queue counts, failed messages and unpublished receipts refresh
+every 15 seconds, with a manual refresh button. Failed message cards open the filtered list.
+Availability counts worker processes reporting in the last 35 seconds; idle and outbound-only
+workers report every 10 seconds. Heartbeats prove process liveness, not transport health.
+Deploy the UI first to apply migration 020, then restart workers with the updated version.
+Older workers do not report heartbeats. Records older than a day are removed by workers.
+
+Channel, rule, condition, action and worker pool forms show **Unsaved changes**. Navigating
+away, Cancel, Escape or clicking outside a dialog offers discard/continue. Browser reload
+and closing the tab use the browser's native warning. Reverting editable fields clears the
+indicator; successful Save establishes the new baseline. Preview inputs and immediately
+saved rule steps do not mark the parent form dirty.

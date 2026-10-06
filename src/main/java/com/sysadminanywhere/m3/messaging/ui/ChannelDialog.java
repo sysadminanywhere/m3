@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 public class ChannelDialog extends Dialog {
+    private com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard guard;
 
     private final ChannelSettingsService channelSettingsService;
     private final Consumer<Void> onSaveCallback;
@@ -145,7 +146,7 @@ public class ChannelDialog extends Dialog {
         var saveButton = new Button(t("Save"), event -> saveChannel());
         saveButton.addThemeVariants(ButtonVariant.PRIMARY);
 
-        var cancelButton = new Button(t("Cancel"), event -> close());
+        var cancelButton = new Button(t("Cancel"), event -> guard.requestDiscard(this::close));
 
         getFooter().add(cancelButton, saveButton);
 
@@ -155,6 +156,9 @@ public class ChannelDialog extends Dialog {
         } else {
             clearForm();
         }
+        guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(this, content);
+        getFooter().addComponentAsFirst(guard.indicator());
+        guard.markSaved();
     }
 
     private void clearForm() {
@@ -506,6 +510,7 @@ public class ChannelDialog extends Dialog {
                 Notification.show(t("Channel updated"), 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             }
+            guard.markSaved();
             close();
             if (onSaveCallback != null) {
                 onSaveCallback.accept(null);

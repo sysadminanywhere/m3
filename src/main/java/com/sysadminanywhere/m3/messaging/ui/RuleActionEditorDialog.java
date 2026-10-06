@@ -122,18 +122,20 @@ final class RuleActionEditorDialog extends Dialog {
             if (existing.getFilterResult() != null) filter.setValue(existing.getFilterResult());
         }
         type.setValue(existing == null ? (initialType == null ? ActionType.TRANSFORM : initialType) : existing.getActionType());
+        var guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(this, type, operation, field, parameter, replacement, filter, key, value, order);
+        guard.markSaved();
         var save = new Button(t("Save"), e -> {
             try {
                 rules.saveVisualAction(ruleId, existing == null ? null : existing.getId(), type.getValue(),
                         type.getValue() == ActionType.TRANSFORM ? RuleTransformations.encode(spec()) : null,
                         filter.getValue(), key.getValue(), value.getValue(), order.getValue());
-                onSave.run(); close();
+                guard.markSaved(); onSave.run(); close();
             } catch (IllegalArgumentException invalid) {
                 Notification.show(t(invalid.getMessage()), 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         });
         save.addThemeVariants(ButtonVariant.PRIMARY);
-        getFooter().add(new Button(t("Cancel"), e -> close()), save);
+        getFooter().add(guard.indicator(), new Button(t("Cancel"), e -> guard.requestDiscard(this::close)), save);
         updatePreview();
     }
     private Spec spec() { return new Spec(operation.getValue(), field.getValue(), parameter.getValue(), replacement.getValue()); }

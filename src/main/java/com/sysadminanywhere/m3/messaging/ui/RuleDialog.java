@@ -23,6 +23,7 @@ import com.vaadin.flow.data.value.ValueChangeMode;
 import java.util.function.Consumer;
 
 public class RuleDialog extends Dialog {
+    private com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard guard;
 
     private final RuleService ruleService;
     private final ChannelSettingsService channelSettingsService;
@@ -138,7 +139,7 @@ public class RuleDialog extends Dialog {
         var saveButton = new Button(t("Save"), event -> saveRule());
         saveButton.addThemeVariants(ButtonVariant.PRIMARY);
 
-        var cancelButton = new Button(t("Cancel"), event -> close());
+        var cancelButton = new Button(t("Cancel"), event -> guard.requestDiscard(this::close));
 
         getFooter().add(cancelButton, saveButton);
 
@@ -146,6 +147,9 @@ public class RuleDialog extends Dialog {
         if (rule != null) {
             loadRule(rule);
         }
+        guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(this, form, loadingField);
+        getFooter().addComponentAsFirst(guard.indicator());
+        guard.markSaved();
     }
 
     private void loadRule(Rule rule) {
@@ -188,6 +192,7 @@ public class RuleDialog extends Dialog {
                     outboundPayloadModeField.getValue(), loadingField.settings());
             ruleId = currentRule.getId();
             Notification.show(t("Rule saved"), 3000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+            guard.markSaved();
             close();
             if (onSaveCallback != null) onSaveCallback.accept(null);
         } catch (Exception error) {

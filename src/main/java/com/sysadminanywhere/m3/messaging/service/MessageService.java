@@ -50,6 +50,11 @@ public class MessageService {
     }
 
     @Transactional(readOnly = true)
+    public Page<Message> search(MessageDirection direction, MessageSearch filters, Pageable pageable) {
+        return messageRepository.findAll(filters.specification(direction, java.time.ZoneId.systemDefault()), pageable);
+    }
+
+    @Transactional(readOnly = true)
     public Page<Message> findByStatus(MessageStatus status, Pageable pageable) {
         return messageRepository.findByStatus(status, pageable);
     }
