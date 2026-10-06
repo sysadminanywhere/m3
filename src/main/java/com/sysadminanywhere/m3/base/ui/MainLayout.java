@@ -173,7 +173,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         });
     }
 
-    private Image icon(String name) {
+    private Component icon(String name) {
         Image image = new Image("icons/navigation/" + name + ".svg", "");
         image.addClassName("navigation-icon");
         image.getElement().setAttribute("aria-hidden", "true");
