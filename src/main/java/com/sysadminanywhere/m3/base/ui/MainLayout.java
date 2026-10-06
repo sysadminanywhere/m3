@@ -24,7 +24,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** The navigation rail and workspace share one frame, matching the reference layout. */
+/** Shared navigation and responsive workspace for every application view. */
 @Layout
 public final class MainLayout extends Div implements RouterLayout, AfterNavigationObserver {
     private final MenuItemRegistry menuItemRegistry;
@@ -78,7 +78,11 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         secondaryNavigation.getElement().setAttribute("aria-label", t("Pages"));
         pageTitle.addClassName("app-page-title");
         viewContainer.addClassName("view-container");
-        Div main = new Div(pageTitle, viewContainer);
+        Span brand = new Span("M3");
+        brand.addClassName("workspace-brand");
+        Div pageHeader = new Div(pageTitle, brand);
+        pageHeader.addClassName("workspace-header");
+        Div main = new Div(pageHeader, viewContainer);
         main.addClassName("main-panel");
         main.getElement().setAttribute("role", "main");
         Div workspace = new Div(secondaryNavigation, main);

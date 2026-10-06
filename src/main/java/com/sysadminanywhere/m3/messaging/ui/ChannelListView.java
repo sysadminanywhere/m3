@@ -67,6 +67,7 @@ class ChannelListView extends VerticalLayout implements HasDynamicTitle {
             boolean inbound = settings.getDirection() == ChannelDirection.INBOUND;
             String label = inbound ? t("Rules") : settings.getEnabled() ? t("Enabled") : t("Disabled");
             var status = new com.vaadin.flow.component.html.Span(label);
+            status.addClassNames("status-badge", inbound ? "status-neutral" : settings.getEnabled() ? "status-success" : "status-neutral");
             if (inbound) status.getElement().setAttribute("title", t("Managed by loading rules"));
             return status;
         }).setHeader(t("Status")).setWidth("130px").setFlexGrow(0);
@@ -84,6 +85,8 @@ class ChannelListView extends VerticalLayout implements HasDynamicTitle {
     private HorizontalLayout createActionButtons(ChannelSettings channel) {
         var editButton = new Button(VaadinIcon.EDIT.create());
         editButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
+        editButton.setAriaLabel(t("Edit"));
+        editButton.setTooltipText(t("Edit"));
         editButton.addClickListener(event -> openChannelDialog(channel));
 
         var toggleButton = new Button(channel.getEnabled() ? VaadinIcon.PAUSE.create() : VaadinIcon.PLAY.create());
@@ -92,10 +95,13 @@ class ChannelListView extends VerticalLayout implements HasDynamicTitle {
 
         var deleteButton = new Button(VaadinIcon.TRASH.create());
         deleteButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);
+        deleteButton.setAriaLabel(t("Delete"));
+        deleteButton.setTooltipText(t("Delete"));
         deleteButton.addClickListener(event -> deleteChannel(channel));
 
         toggleButton.setVisible(channel.getDirection()==ChannelDirection.OUTBOUND);
         toggleButton.setTooltipText(t("Change outbound availability"));
+        toggleButton.setAriaLabel(t("Change outbound availability"));
         return new HorizontalLayout(editButton, toggleButton, deleteButton);
     }
 

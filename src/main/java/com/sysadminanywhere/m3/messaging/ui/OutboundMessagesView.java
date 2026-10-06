@@ -67,7 +67,7 @@ class OutboundMessagesView extends VerticalLayout implements HasDynamicTitle {
         ).stream());
         messageGrid.addItemDoubleClickListener(event -> detailDialog.openMessage(event.getItem().getId()));
         messageGrid.addColumn(Message::getId).setHeader("ID").setWidth("85px").setFlexGrow(0);
-        messageGrid.addColumn(item -> Translations.enumLabel(item.getStatus())).setHeader(t("Status")).setWidth("150px").setFlexGrow(0);
+        messageGrid.addComponentColumn(item -> new MessageStatusBadge(item.getStatus())).setHeader(t("Status")).setWidth("150px").setFlexGrow(0);
         messageGrid.addColumn(Message::getSourceSystem).setHeader(t("Source")).setWidth("150px").setFlexGrow(1);
         messageGrid.addColumn(Message::getTargetSystem).setHeader(t("Target")).setWidth("150px").setFlexGrow(1);
         messageGrid.addColumn(Message::getPayloadType).setHeader(t("Type")).setWidth("200px").setFlexGrow(1);
