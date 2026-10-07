@@ -151,4 +151,20 @@ class MessageServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Payload type length exceeds");
     }
+    @Test void uncertainDeliveryNeedsExplicitAcknowledgementBeforeManualRetry() {
+        var channel=new com.sysadminanywhere.m3.messaging.domain.ChannelSettings("target",com.sysadminanywhere.m3.messaging.domain.ChannelType.DIRECTORY,com.sysadminanywhere.m3.messaging.domain.ChannelDirection.OUTBOUND);
+        var rule=new com.sysadminanywhere.m3.messaging.domain.Rule("send",com.sysadminanywhere.m3.messaging.domain.RuleType.OUTBOUND,channel);
+        var pool=new com.sysadminanywhere.m3.messaging.domain.RuleWorkerPool("default",1,1,4); rule.setWorkerPool(pool);
+        var job=new com.sysadminanywhere.m3.messaging.domain.RuleExecutionJob(testMessage,rule,pool);
+        org.springframework.test.util.ReflectionTestUtils.setField(job,"id",1L);
+        job.claim("worker"); job.markDeliveryStarted(); job.uncertain(new IllegalStateException("Uncertain"));
+        testMessage.setStatus(MessageStatus.FAILED);
+        when(messageRepository.findById(1L)).thenReturn(Optional.of(testMessage));
+        when(jobs.findByMessage_IdOrderByRule_PriorityAsc(1L)).thenReturn(List.of(job));
+        assertThatThrownBy(()->messageService.retry(1L)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("acknowledge");
+        assertThat(job.getStatus()).isEqualTo(com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.FAILED);
+        messageService.retry(1L,true);
+        assertThat(job.getStatus()).isEqualTo(com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.PENDING);
+        assertThat(job.isDeliveryUncertain()).isFalse();
+    }
 }

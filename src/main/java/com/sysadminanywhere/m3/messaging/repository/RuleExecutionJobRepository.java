@@ -19,7 +19,7 @@ public interface RuleExecutionJobRepository extends JpaRepository<RuleExecutionJ
 
     @Modifying
     @Query(value = "update rule_execution_job set status = 'PENDING', worker_id = null, claimed_at = null, claim_token = null " +
-            "where status = 'PROCESSING' and worker_pool_id = (select worker_pool_id from rule_worker_pool where name = :pool) " +
+            "where status = 'PROCESSING' and delivery_started=false and worker_pool_id = (select worker_pool_id from rule_worker_pool where name = :pool) " +
             "and claimed_at < now() - (:leaseSeconds * interval '1 second')", nativeQuery = true)
     int releaseExpiredClaims(@Param("pool") String pool, @Param("leaseSeconds") int leaseSeconds);
 

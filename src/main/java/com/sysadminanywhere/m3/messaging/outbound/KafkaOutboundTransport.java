@@ -33,6 +33,8 @@ public class KafkaOutboundTransport implements OutboundTransport {
             record.headers().remove("contentType");
             record.headers().add("contentType", delivery.payloadType().getBytes(StandardCharsets.UTF_8));
             record.headers().remove("m3MessageId"); record.headers().add("m3MessageId", Long.toString(id).getBytes(StandardCharsets.UTF_8));
+            producer.partitionsFor(settings.required("topic"));
+            DeliveryAttempt.started();
             producer.send(record).get(15, TimeUnit.SECONDS);
         } finally { producer.close(Duration.ofSeconds(3)); }
     }

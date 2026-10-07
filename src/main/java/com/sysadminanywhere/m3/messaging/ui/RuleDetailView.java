@@ -22,6 +22,7 @@ import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.router.HasDynamicTitle;
 
+@jakarta.annotation.security.RolesAllowed("ADMIN")
 @Route(value = "rules/:ruleId")
 class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasDynamicTitle {
     private com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard guard;
@@ -181,11 +182,11 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
             ruleService.saveConfiguration(ruleId, nameField.getValue(), currentRule.getDescription(), typeField.getValue(),
                     outbound ? null : channelField.getValue().getId(), (int) priority, enabledField.getValue(),
                     workerPoolField.getValue().getId(), destinationField.getValue() == null ? null : destinationField.getValue().getId(),
-                    outboundPayloadModeField.getValue(), loadingField.settings());
+                    outboundPayloadModeField.getValue(), loadingField.settings(), currentRule == null ? null : currentRule.getVersion());
             loadRule();
             Notification.show(t("Rule saved"), 3000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
         } catch (Exception error) {
-            Notification.show(t("Error saving rule: ") + t(error.getMessage()), 4000, Notification.Position.BOTTOM_END)
+            Notification.show(t("Error saving rule: ") + com.sysadminanywhere.m3.base.ui.SaveErrors.message(error), 4000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
     }

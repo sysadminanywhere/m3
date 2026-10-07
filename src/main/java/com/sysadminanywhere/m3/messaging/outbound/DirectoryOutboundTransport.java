@@ -24,6 +24,7 @@ public class DirectoryOutboundTransport implements OutboundTransport {
         Path temporary = Files.createTempFile(root, ".m3-" + id + "-", ".part");
         try {
             Files.write(temporary, delivery.body());
+            DeliveryAttempt.started();
             try { Files.move(temporary, target); }
             catch (FileAlreadyExistsException anotherWorkerFinished) { verifyExisting(target, delivery.body()); }
         } finally { Files.deleteIfExists(temporary); }

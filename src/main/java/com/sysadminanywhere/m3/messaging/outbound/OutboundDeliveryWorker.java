@@ -14,7 +14,7 @@ public class OutboundDeliveryWorker {
         var claim = transactions.claim();
         if (claim == null) return false;
         try {
-            sender.send(claim.messageId(), claim.delivery());
+            sender.send(claim.messageId(), claim.delivery(), claim.endpoint(), () -> transactions.started(claim));
             transactions.succeeded(claim);
         } catch (Exception error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();

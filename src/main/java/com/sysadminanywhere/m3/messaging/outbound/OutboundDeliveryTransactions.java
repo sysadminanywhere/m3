@@ -15,7 +15,10 @@ import java.util.*;
 
 @Service
 public class OutboundDeliveryTransactions {
-    public record Claim(long jobId, long messageId, UUID token, PreparedOutboundDelivery delivery) { }
+    public record Claim(long jobId, long messageId, UUID token, PreparedOutboundDelivery delivery, com.sysadminanywhere.m3.messaging.service.JobConfiguration.Channel endpoint) {
+        public Claim(long jobId,long messageId,UUID token,PreparedOutboundDelivery delivery) { this(jobId,messageId,token,delivery,null); }
+    }
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.JobConfiguration configurations;
     private final RuleExecutionJobRepository jobs;
     private final ChannelSettingsRepository channels;
     private final RuleEngine engine;
@@ -51,7 +54,7 @@ public class OutboundDeliveryTransactions {
             var plan = job.getResult() == null ? prepare(job) : json.readValue(job.getResult(), PreparedOutboundDelivery.class);
             if (job.getResult() == null) job.setResult(json.writeValueAsString(plan));
             job.claim(worker);
-            return new Claim(job.getId(), job.getMessageId(), job.getClaimToken(), plan);
+            return new Claim(job.getId(), job.getMessageId(), job.getClaimToken(), plan, configurations.read(job).destination());
         } catch (Exception error) {
             job.fail(error);
             finish(job.getMessage(), MessageStatus.FAILED);
@@ -60,10 +63,10 @@ public class OutboundDeliveryTransactions {
     }
 
     private PreparedOutboundDelivery prepare(RuleExecutionJob job) throws Exception {
-        var stored = job.getMessage(); var rule = job.getRule();
+        var stored = job.getMessage(); var configuration=configurations.read(job); var rule = configuration.restore();
         if (!Boolean.TRUE.equals(rule.getEnabled()) || rule.getRuleType() != RuleType.OUTBOUND)
             throw new IllegalStateException("Outbound rule is disabled or changed type");
-        var target = OutboundSubmissionService.target(rule, channels);
+        var target = configuration.destination()==null ? OutboundSubmissionService.target(rule,channels) : configuration.destination().restore();
         Map<String, Object> headers = new HashMap<>();
         stored.getMetadata().forEach(value -> headers.put(value.getKey(), value.getValue()));
         headers.put("sourceSystem", stored.getSourceSystem()); headers.put("channelName", stored.getSourceSystem());
@@ -106,6 +109,13 @@ public class OutboundDeliveryTransactions {
     }
 
     @Transactional
+    public void started(Claim claim) {
+        var job=locked(claim);
+        if(job==null) throw new IllegalStateException("Outbound claim expired before sending");
+        job.markDeliveryStarted();
+    }
+
+    @Transactional
     public void succeeded(Claim claim) {
         var job = locked(claim);
         if (job == null) return;
@@ -117,7 +127,10 @@ public class OutboundDeliveryTransactions {
     public void failed(Claim claim, Exception error) {
         var job = locked(claim);
         if (job == null) return;
-        if (job.getAttempts() >= maxAttempts || error instanceof IllegalArgumentException) {
+        if (job.isDeliveryStarted()) {
+            job.uncertain(new IllegalStateException("Delivery outcome is uncertain. Check the receiver before an explicit retry.",error));
+            finish(job.getMessage(),MessageStatus.FAILED);
+        } else if (job.getAttempts() >= maxAttempts || error instanceof IllegalArgumentException) {
             job.fail(error); finish(job.getMessage(), MessageStatus.FAILED);
         } else job.retry(error, Math.min(60, 1L << Math.min(job.getAttempts(), 5)));
     }

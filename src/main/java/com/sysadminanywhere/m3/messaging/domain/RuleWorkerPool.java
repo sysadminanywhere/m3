@@ -10,6 +10,11 @@ import java.util.List;
 @Table(name = "rule_worker_pool", uniqueConstraints = @UniqueConstraint(name = "uk_rule_worker_pool_name", columnNames = "name"))
 public class RuleWorkerPool {
 
+    @Version
+    @Column(nullable = false, columnDefinition="bigint not null default 0")
+    private long version;
+    public long getVersion() { return version; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "worker_pool_id")

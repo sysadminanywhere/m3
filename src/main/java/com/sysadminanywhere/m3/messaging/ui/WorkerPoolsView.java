@@ -29,6 +29,7 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 
+@jakarta.annotation.security.RolesAllowed("ADMIN")
 @Route("workers")
 @MenuItem(title = "Workers", icon = "icons/worker.svg", order = 1, section = MenuSection.ADMINISTRATION)
 class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
@@ -221,7 +222,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         var save = new Button(t("Save"), event -> {
             try {
                 var updated = service.updateCapacity(pool.getId(), desired.getValue(), min.getValue(), max.getValue(),
-                        autoScale.getValue(), jobsPerWorker.getValue());
+                        autoScale.getValue(), jobsPerWorker.getValue(), pool.getVersion());
                 guard.markSaved();
                 dialog.close();
                 refresh();
@@ -267,13 +268,13 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
             capacityService.reconcile(pool.getId());
             refresh();
         } catch (RuntimeException e) {
-            Notification.show(t("Capacity saved; container reconciliation will retry: ") + t(e.getMessage()),
+            Notification.show(t("Capacity saved; container reconciliation will retry: ") + com.sysadminanywhere.m3.base.ui.SaveErrors.message(e),
                     6000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
     }
 
     private void showError(RuntimeException error) {
-        Notification.show(error.getMessage() == null ? t("Could not save worker pool") : t(error.getMessage()),
+        Notification.show(error.getMessage() == null ? t("Could not save worker pool") : com.sysadminanywhere.m3.base.ui.SaveErrors.message(error),
                 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
     }
     @Override public String getPageTitle() { return t("Rule Workers"); }

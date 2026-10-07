@@ -462,3 +462,7 @@ vaadin-date-picker[focused]::part(input-field) { border-color: var(--m3-blue); }
     .message-filter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     .filter-timezone { width: 100%; margin-left: 0; }
 }
+
+.login-page { background: radial-gradient(ellipse at 30% 20%, color-mix(in srgb, var(--m3-primary) 12%, transparent), transparent 65%), var(--m3-canvas); }
+.login-page h1 { color: var(--m3-primary); font-size: 2.8rem; letter-spacing: -.08em; margin-bottom: 0; }
+.login-page vaadin-login-form { border-radius: 1.5rem; box-shadow: 0 12px 48px #202b4014; }

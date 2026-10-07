@@ -28,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Shared navigation and responsive workspace for every application view. */
+@jakarta.annotation.security.PermitAll
 @Layout
 @JavaScript("context://theme-preference.js")
 @JavaScript("context://unsaved-changes.js")
@@ -42,7 +43,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
     private String currentPath = "";
     private Component currentView;
 
-    public MainLayout(MenuItemRegistry menuItemRegistry) {
+    public MainLayout(MenuItemRegistry menuItemRegistry, com.vaadin.flow.spring.security.AuthenticationContext authenticationContext) {
         this.menuItemRegistry = menuItemRegistry;
         addClassName("m3-shell");
         Anchor skipLink = new Anchor("#m3-main-content", t("Skip to content"));
@@ -66,7 +67,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         Div sections = new Div();
         sections.addClassName("primary-nav-sections");
         for (MenuSection section : menuItemRegistry.getSections()) {
-            if (section == MenuSection.SETTINGS) continue;
+            if (section == MenuSection.SETTINGS || menuItemRegistry.getMenuItems().stream().noneMatch(item -> item.section() == section && allowed(item))) continue;
             NativeButton button = new NativeButton();
             button.addClassName("primary-nav-button");
             button.getElement().setAttribute("aria-label", t(section.getTitle()));
@@ -98,7 +99,8 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         viewContainer.addClassName("view-container");
         Span brand = new Span("M3");
         brand.addClassName("workspace-brand");
-        Div pageHeader = new Div(pageTitle, brand);
+        var logout = new NativeButton(t("Sign out"), event -> authenticationContext.logout());
+        Div pageHeader = new Div(pageTitle, brand, logout);
         pageHeader.addClassName("workspace-header");
         Div main = new Div(pageHeader, viewContainer);
         main.addClassName("main-panel");
@@ -137,7 +139,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
     private void navigateToSection(MenuSection section) {
         showSection(section);
         menuItemRegistry.getMenuItems().stream()
-                .filter(item -> item.section() == section)
+                .filter(item -> item.section() == section && allowed(item))
                 .min(Comparator.comparingInt(MenuItemInfo::order))
                 .ifPresent(item -> getUI().ifPresent(ui -> ui.navigate(item.viewClass().asSubclass(Component.class))));
     }
@@ -156,7 +158,7 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
         header.addClassName("secondary-navigation-header");
         Div nav = new Div();
         nav.addClassName("section-side-nav");
-        menuItemRegistry.getMenuItems().stream().filter(item -> item.section() == section)
+        menuItemRegistry.getMenuItems().stream().filter(item -> item.section() == section && allowed(item))
                 .sorted(Comparator.comparingInt(MenuItemInfo::order)).forEach(item -> {
                     RouterLink link = new RouterLink();
                     link.setRoute(item.viewClass().asSubclass(Component.class));
@@ -186,6 +188,12 @@ public final class MainLayout extends Div implements RouterLayout, AfterNavigati
             if (current) link.getElement().setAttribute("aria-current", "page");
             else link.getElement().removeAttribute("aria-current");
         });
+    }
+
+    private boolean allowed(MenuItemInfo item) {
+        var roles = item.viewClass().getAnnotation(jakarta.annotation.security.RolesAllowed.class);
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return roles == null || auth != null && auth.getAuthorities().stream().anyMatch(a -> java.util.Arrays.asList(roles.value()).contains(a.getAuthority().replace("ROLE_", "")));
     }
 
     private Component icon(String name) {

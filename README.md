@@ -339,3 +339,62 @@ away, Cancel, Escape or clicking outside a dialog offers discard/continue. Brows
 and closing the tab use the browser's native warning. Reverting editable fields clears the
 indicator; successful Save establishes the new baseline. Preview inputs and immediately
 saved rule steps do not mark the parent form dirty.
+
+## Access, encrypted configuration and deployment
+
+Initialize local credentials with `pwsh -File scripts/Initialize-LocalSecurity.ps1` before starting.
+The script creates `.m3/local-security.properties`, excluded from Git and restricted to the current user.
+It never overwrites an existing key. Accounts are `admin`, `operator` and `viewer`; their generated
+passwords are in that file. Admin manages configuration, operator submits/forwards/retries/deletes messages,
+and viewer reads messages and monitoring. Use **Sign out** to end a browser session.
+Admin can inspect successful configuration and message operations in **Administration → Audit log**.
+Audit records contain actor, operation, entity ID and time, without payloads or credentials.
+
+For Docker set `M3_ADMIN_PASSWORD` (16–72 UTF-8 bytes) and `M3_SECRET_KEY` (32 random bytes in Base64).
+Optional `M3_OPERATOR_PASSWORD` and `M3_VIEWER_PASSWORD` enable those accounts. Serve production through HTTPS.
+The control plane forwards the same encryption key to managed workers. Preserve and back up the key
+separately from the database: changing or losing it prevents reading existing configuration.
+Start the upgraded control plane to apply migration 021 before starting upgraded workers; stop old
+control planes/workers before this upgrade. Existing channel properties are encrypted at startup with
+AES-256-GCM, and existing secrets are never populated into browser fields. Blank secret fields keep the
+saved value; removing an extra-property row removes that property. Migration 021 installs `pg_trgm` in
+the public schema, so the migration account needs permission to install that extension.
+
+API calls require HTTP Basic credentials. Mutating calls also require `X-M3-Request: 1`.
+Browser session cookies do not authorize the API. For example, use `curl -u admin -H "X-M3-Request: 1"`
+with the existing POST examples; curl prompts for the password. Payload download links also require
+authorization. Avoid putting credentials in URLs or committed scripts.
+
+New jobs save an encrypted snapshot of rule steps and channel settings in their acceptance transaction.
+Later edits affect new jobs; retries preserve their original snapshot. Resubmit or forward a new copy to
+use updated rules. Pool assignment remains operational, and disabling a channel stops sending.
+Legacy queued jobs without a snapshot adopt the configuration when first processed.
+Concurrent edits use version checks and report a conflict instead of silently overwriting changes.
+
+Outbound transports persist the start of an irreversible send. A failure or expired worker claim after
+that boundary becomes **uncertain delivery**, with automatic retries stopped. Verify the receiver first;
+the UI then allows an explicitly acknowledged retry. API retries need `acknowledgeUncertain=true`.
+Receivers should deduplicate the stable `m3DeliveryId` header. Arbitrary external systems cannot provide
+an exactly-once guarantee; an acknowledged manual retry can still create a duplicate.
+
+Condition regular expressions use RE2J to avoid catastrophic backtracking. Backreferences and lookaround
+are unsupported; update existing expressions using those constructs before upgrading. Unsupported
+expressions fail the job visibly instead of silently treating a matching message as a non-match.
+
+## Retention and regression checks
+
+Business messages and deduplication keys are retained indefinitely by default. Set
+`M3_RETENTION_MESSAGES_DAYS` or `M3_RETENTION_IDEMPOTENCY_DAYS` to a positive number to enable deletion.
+Only completed messages are removed; pending/running/failed jobs, unpublished receipts and originals
+referenced by copies are preserved. Idempotency expiry defines the window for rejecting repeated requests.
+Published notification rows default to 30 days; audit rows default to 365 days. Override with
+`M3_RETENTION_RECEIPTS_DAYS` and `M3_RETENTION_AUDIT_DAYS`; zero disables deletion.
+Cleanup runs every six hours in bounded batches of 500 rows.
+
+Run Java checks with `./mvnw test` and JavaScript checks with `node --test src/test/js/*.test.cjs`.
+Browser regression checks require Chrome and a running test instance:
+`npm --prefix browser-tests ci`, then `npm --prefix browser-tests test`.
+They check authentication, roles, audit, logout, URL filters and unsaved dialog changes without saving
+configuration. Set `M3_TEST_URL` to target a separate instance; passwords come from the environment
+or the ignored local credentials file. Use isolated instances for mutation/transport integration tests;
+the Java integration suite creates its own PostgreSQL, RabbitMQ and Kafka containers.

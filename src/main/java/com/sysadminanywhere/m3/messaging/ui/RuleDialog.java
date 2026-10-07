@@ -189,14 +189,14 @@ public class RuleDialog extends Dialog {
                     currentRule == null ? null : currentRule.getDescription(), typeField.getValue(),
                     outbound ? null : channelField.getValue().getId(), (int) priority, enabledField.getValue(), null,
                     destinationField.getValue() == null ? null : destinationField.getValue().getId(),
-                    outboundPayloadModeField.getValue(), loadingField.settings());
+                    outboundPayloadModeField.getValue(), loadingField.settings(), currentRule == null ? null : currentRule.getVersion());
             ruleId = currentRule.getId();
             Notification.show(t("Rule saved"), 3000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             guard.markSaved();
             close();
             if (onSaveCallback != null) onSaveCallback.accept(null);
         } catch (Exception error) {
-            Notification.show(t("Error saving rule: ") + t(error.getMessage()), 4000, Notification.Position.BOTTOM_END)
+            Notification.show(t("Error saving rule: ") + com.sysadminanywhere.m3.base.ui.SaveErrors.message(error), 4000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
     }

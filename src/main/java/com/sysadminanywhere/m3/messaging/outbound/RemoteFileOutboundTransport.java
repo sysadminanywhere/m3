@@ -44,6 +44,7 @@ public class RemoteFileOutboundTransport implements OutboundTransport {
                 return;
             }
             try {
+            DeliveryAttempt.started();
                 session.write(new ByteArrayInputStream(delivery.body()), temporary);
                 session.rename(temporary, target);
             } finally {

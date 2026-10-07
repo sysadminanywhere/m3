@@ -13,6 +13,11 @@ public class Rule {
 
     public static final int NAME_MAX_LENGTH = 200;
 
+    @Version
+    @Column(nullable = false, columnDefinition="bigint not null default 0")
+    private long version;
+    public long getVersion() { return version; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "rule_id")
@@ -68,6 +73,8 @@ public class Rule {
     private java.util.Map<String, String> loadingProperties = new java.util.HashMap<>();
 
     public java.util.Map<String, String> getLoadingProperties() { return loadingProperties; }
+
+    public static Rule snapshot(Long id, String name, RuleType type, ChannelSettings source) { var item=new Rule(name,type,source); item.id=id; return item; }
 
     protected Rule() {
     }

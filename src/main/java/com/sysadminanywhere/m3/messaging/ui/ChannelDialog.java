@@ -350,7 +350,8 @@ public class ChannelDialog extends Dialog {
 
     private PasswordField createPasswordField(String key, String label, String value) {
         var field = new PasswordField(t(label));
-        field.setValue(value);
+        field.setValue(currentChannel == null ? value : "");
+        if (currentChannel != null && value != null && !value.isBlank()) field.setHelperText(t("Leave empty to keep the saved secret"));
         field.setWidthFull();
         passwordFields.put(key, field);
         return field;
@@ -505,7 +506,7 @@ public class ChannelDialog extends Dialog {
                         nameField.getValue(),
                         descriptionField.getValue().isBlank() ? null : descriptionField.getValue(),
                         enabledField.getValue(),
-                        properties
+                        properties, currentChannel.getVersion()
                 );
                 Notification.show(t("Channel updated"), 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
@@ -516,7 +517,7 @@ public class ChannelDialog extends Dialog {
                 onSaveCallback.accept(null);
             }
         } catch (Exception e) {
-            Notification.show(t("Error saving channel: ") + t(e.getMessage()), 3000, Notification.Position.BOTTOM_END)
+            Notification.show(t("Error saving channel: ") + com.sysadminanywhere.m3.base.ui.SaveErrors.message(e), 3000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
     }

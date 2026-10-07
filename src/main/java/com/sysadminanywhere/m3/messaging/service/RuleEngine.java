@@ -7,8 +7,8 @@ import org.springframework.messaging.Message;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
+import com.google.re2j.Pattern;
+import com.google.re2j.PatternSyntaxException;
 
 @Component
 public class RuleEngine {
@@ -75,8 +75,7 @@ public class RuleEngine {
                 try {
                     yield Pattern.compile(conditionValue).matcher(fieldValueStr).find();
                 } catch (PatternSyntaxException e) {
-                    log.error("Invalid regex pattern: {}", conditionValue, e);
-                    yield false;
+                    throw new IllegalArgumentException("Invalid or unsupported regular expression in condition " + condition.getId(), e);
                 }
             }
         };

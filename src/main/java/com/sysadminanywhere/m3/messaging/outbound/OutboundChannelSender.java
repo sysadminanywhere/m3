@@ -25,6 +25,19 @@ public class OutboundChannelSender {
         transport.send(channel, messageId, delivery);
     }
 
+    public void send(long messageId, PreparedOutboundDelivery delivery,
+                     com.sysadminanywhere.m3.messaging.service.JobConfiguration.Channel endpoint, Runnable started) throws Exception {
+        var live=channels.findById(delivery.channelId()).orElseThrow(() -> new IllegalArgumentException("Outbound channel was deleted"));
+        if(!Boolean.TRUE.equals(live.getEnabled())) throw new IOException("Outbound channel is disabled");
+        var channel=endpoint==null ? live : endpoint.restore();
+        var transport=transports.get(channel.getChannelType());
+        if(transport==null) throw new IllegalArgumentException("No outbound transport for " + channel.getChannelType());
+        var metadata=new java.util.TreeMap<>(delivery.metadata());
+        metadata.put("m3DeliveryId","m3:"+messageId); metadata.put("m3MessageId",Long.toString(messageId));
+        var plan=new PreparedOutboundDelivery(delivery.channelId(),delivery.body(),delivery.payloadType(),metadata);
+        DeliveryAttempt.run(started,()->transport.send(channel,messageId,plan));
+    }
+
     static String fileName(long id, PreparedOutboundDelivery delivery) {
         String original = delivery.metadata().getOrDefault("fileName", "payload.dat");
         if (original.isBlank() || original.equals(".") || original.equals("..") || original.contains("/") || original.contains("\\")

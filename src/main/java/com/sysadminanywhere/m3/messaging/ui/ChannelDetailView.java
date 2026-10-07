@@ -27,6 +27,7 @@ import com.vaadin.flow.router.*;
 import java.util.HashMap;
 import java.util.Map;
 
+@jakarta.annotation.security.RolesAllowed("ADMIN")
 @Route(value = "channel/:channelId?")
 class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, HasDynamicTitle {
     private com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard guard;
@@ -334,7 +335,8 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
 
     private PasswordField createPasswordField(String key, String label, String value) {
         var field = new PasswordField(t(label));
-        field.setValue(value);
+        field.setValue(currentChannel == null ? value : "");
+        if (currentChannel != null && value != null && !value.isBlank()) field.setHelperText(t("Leave empty to keep the saved secret"));
         field.setWidthFull();
         passwordFields.put(key, field);
         return field;
@@ -448,7 +450,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
                         nameField.getValue(),
                         descriptionField.getValue().isBlank() ? null : descriptionField.getValue(),
                         enabledField.getValue(),
-                        properties
+                        properties, currentChannel.getVersion()
                 );
                 Notification.show(t("Channel updated"), 3000, Notification.Position.BOTTOM_END)
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
@@ -456,7 +458,7 @@ class ChannelDetailView extends VerticalLayout implements BeforeEnterObserver, H
             guard.markSaved();
             getUI().ifPresent(ui -> ui.navigate(ChannelListView.class));
         } catch (Exception e) {
-            Notification.show(t("Error saving channel: ") + t(e.getMessage()), 3000, Notification.Position.BOTTOM_END)
+            Notification.show(t("Error saving channel: ") + com.sysadminanywhere.m3.base.ui.SaveErrors.message(e), 3000, Notification.Position.BOTTOM_END)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
     }

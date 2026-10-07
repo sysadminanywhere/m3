@@ -21,3 +21,8 @@ node_modules/
 src/main/frontend/generated/
 src/main/frontend/index.html
 vite.generated.ts
+
+# Private local login credentials and AES key
+/.m3/
+/playwright-report/
+/test-results/

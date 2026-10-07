@@ -25,6 +25,7 @@ import com.vaadin.flow.router.Route;
 
 import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
 
+@jakarta.annotation.security.RolesAllowed("ADMIN")
 @Route(value = "channels")
 @MenuItem(order = 2, icon = "icons/channel.svg", title = "Channels", section = MenuSection.ADMINISTRATION)
 class ChannelListView extends VerticalLayout implements HasDynamicTitle {

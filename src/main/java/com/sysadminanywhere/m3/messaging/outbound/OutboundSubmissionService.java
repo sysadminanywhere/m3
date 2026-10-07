@@ -14,6 +14,7 @@ import java.util.*;
 
 @Service
 public class OutboundSubmissionService {
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.JobConfiguration configurations;
     private final RuleRepository rules;
     private final ChannelSettingsRepository channels;
     private final MessageRepository messages;
@@ -44,6 +45,8 @@ public class OutboundSubmissionService {
 
     /** Persist a byte-for-byte snapshot and its job without changing the source message. */
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.operate()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public Message forward(long sourceMessageId, long ruleId, String requestKey) {
         if (requestKey != null && (requestKey.isBlank() || requestKey.length() > 200))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Idempotency-Key must be 1-200 characters");
@@ -77,13 +80,15 @@ public class OutboundSubmissionService {
         messages.save(copy);
         copy.addMetadata("m3MessageId", copy.getId().toString());
         copy.addMetadata("m3RuleId", Long.toString(ruleId));
-        jobs.save(new RuleExecutionJob(copy, rule, rule.getWorkerPool()));
+        var job=new RuleExecutionJob(copy,rule,rule.getWorkerPool()); configurations.freeze(job); jobs.save(job);
         if (key != null) jdbc.update("INSERT INTO outbound_message_request(rule_id,request_key,message_id,request_digest) VALUES(?,?,?,?)",
                 ruleId, key, copy.getId(), digest);
         return copy;
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.operate()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public Message submit(long ruleId, String payload, String payloadType, String charset, Map<String, String> metadata, String requestKey) {
         Map<String, String> values = metadata == null ? Map.of() : metadata;
         validate(payload, payloadType, values, requestKey);
@@ -111,7 +116,7 @@ public class OutboundSubmissionService {
         values.forEach(message::addMetadata);
         message.addMetadata("outboundRuleId", Long.toString(ruleId));
         messages.save(message);
-        jobs.save(new RuleExecutionJob(message, rule, rule.getWorkerPool()));
+        var job=new RuleExecutionJob(message,rule,rule.getWorkerPool()); configurations.freeze(job); jobs.save(job);
         if (key != null) jdbc.update("INSERT INTO outbound_message_request(rule_id,request_key,message_id,request_digest) VALUES(?,?,?,?)",
                 ruleId, key, message.getId(), digest);
         return message;

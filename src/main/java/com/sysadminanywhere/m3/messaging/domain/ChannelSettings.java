@@ -14,6 +14,11 @@ public class ChannelSettings {
     public static final int NAME_MAX_LENGTH = 200;
     public static final int DESCRIPTION_MAX_LENGTH = 500;
 
+    @Version
+    @Column(nullable = false, columnDefinition="bigint not null default 0")
+    private long version;
+    public long getVersion() { return version; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "channel_id")
@@ -44,11 +49,14 @@ public class ChannelSettings {
     @Nullable
     private Instant updatedAt;
 
+    @Convert(attributeName="value", converter=com.sysadminanywhere.m3.base.security.SecretValueConverter.class)
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "channel_properties", joinColumns = @JoinColumn(name = "channel_id"))
     @MapKeyColumn(name = "property_key")
     @Column(name = "property_value", columnDefinition = "TEXT")
     private Map<String, String> properties = new HashMap<>();
+
+    public static ChannelSettings snapshot(Long id, String name, ChannelType type, ChannelDirection direction, java.util.Map<String,String> properties) { var item=new ChannelSettings(name,type,direction); item.id=id; item.setProperties(new java.util.HashMap<>(properties)); return item; }
 
     protected ChannelSettings() {
     }

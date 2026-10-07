@@ -32,6 +32,8 @@ public class RuleWorkerPoolService {
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public RuleWorkerPool create(String name, int replicas, int minReplicas, int maxReplicas,
                                  boolean autoScaleEnabled, int pendingJobsPerWorker) {
         if (repository.existsByName(name)) throw new IllegalArgumentException("Worker pool already exists: " + name);
@@ -40,6 +42,16 @@ public class RuleWorkerPoolService {
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
+    public RuleWorkerPool updateCapacity(Long id,int replicas,int min,int max,boolean autoScale,int limit,long expectedVersion) {
+        com.sysadminanywhere.m3.base.persistence.Revisions.check(repository.findById(id).orElseThrow().getVersion(),expectedVersion);
+        return updateCapacity(id,replicas,min,max,autoScale,limit);
+    }
+
+    @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public RuleWorkerPool updateCapacity(Long id, int replicas, int minReplicas, int maxReplicas,
                                          boolean autoScaleEnabled, int pendingJobsPerWorker) {
         var pool = repository.findById(id).orElseThrow();
@@ -48,6 +60,8 @@ public class RuleWorkerPoolService {
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public void delete(Long id) {
         var pool = repository.findById(id).orElseThrow();
         if ("default".equals(pool.getName())) {

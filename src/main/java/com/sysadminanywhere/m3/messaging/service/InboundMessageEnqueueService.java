@@ -13,6 +13,7 @@ import java.util.Map;
 
 @Service
 public class InboundMessageEnqueueService {
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.JobConfiguration configurations;
     private final MessageRepository messageRepository;
     private final RuleRepository ruleRepository;
     private final RuleExecutionJobRepository jobRepository;
@@ -85,7 +86,7 @@ public class InboundMessageEnqueueService {
                 || !(headers.get("sourceChannelId") instanceof Number channelId)
                 || rule.getSourceChannel().getId().longValue()!=channelId.longValue())
             throw new IllegalArgumentException("Use an active loading rule for the selected source channel");
-        jobRepository.save(new RuleExecutionJob(stored,rule,rule.getWorkerPool()));
+        var job=new RuleExecutionJob(stored,rule,rule.getWorkerPool()); configurations.freeze(job); jobRepository.save(job);
         return stored;
     }
 

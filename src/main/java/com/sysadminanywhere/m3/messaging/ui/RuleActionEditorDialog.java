@@ -128,10 +128,10 @@ final class RuleActionEditorDialog extends Dialog {
             try {
                 rules.saveVisualAction(ruleId, existing == null ? null : existing.getId(), type.getValue(),
                         type.getValue() == ActionType.TRANSFORM ? RuleTransformations.encode(spec()) : null,
-                        filter.getValue(), key.getValue(), value.getValue(), order.getValue());
+                        filter.getValue(), key.getValue(), value.getValue(), order.getValue(), existing == null ? null : existing.getVersion());
                 guard.markSaved(); onSave.run(); close();
-            } catch (IllegalArgumentException invalid) {
-                Notification.show(t(invalid.getMessage()), 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            } catch (RuntimeException invalid) {
+                Notification.show(com.sysadminanywhere.m3.base.ui.SaveErrors.message(invalid), 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         });
         save.addThemeVariants(ButtonVariant.PRIMARY);

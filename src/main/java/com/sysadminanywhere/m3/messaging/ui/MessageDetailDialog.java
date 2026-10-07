@@ -118,13 +118,14 @@ public class MessageDetailDialog extends Dialog {
         }).setHeader(t("Error")).setFlexGrow(2);
         jobsGrid.setHeightFull(); jobsGrid.setWidthFull();
         retryButton.addClickListener(event -> {
-            try {
-                Long id = currentMessage.getId(); messageService.retry(id);
-                openMessage(id);
-                if (onChangeCallback != null) onChangeCallback.accept(id);
-            } catch (IllegalArgumentException invalid) {
-                com.vaadin.flow.component.notification.Notification.show(t(invalid.getMessage()),5000,
-                        com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
+            boolean uncertain=messageService.executionJobs(currentMessage.getId()).stream().anyMatch(MessageService.JobInfo::uncertain);
+            if(!uncertain) retry(false);
+            else {
+                var confirmation=new com.vaadin.flow.component.confirmdialog.ConfirmDialog();
+                confirmation.setHeader(t("Uncertain delivery"));
+                confirmation.setText(t("The receiver may already have this message. Verify the receiver before retrying; a duplicate is possible."));
+                confirmation.setConfirmText(t("Receiver checked — retry")); confirmation.setCancelText(t("Cancel")); confirmation.setCancelable(true);
+                confirmation.addConfirmListener(ignored -> retry(true)); confirmation.open();
             }
         });
         FormLayout detailsTab = new FormLayout(idField, statusField, directionField,
@@ -155,15 +156,19 @@ public class MessageDetailDialog extends Dialog {
         downloadLink.setText(t("Download original payload"));
         downloadLink.getElement().setAttribute("download", true);
 
+        boolean canOperate = new com.sysadminanywhere.m3.base.security.ServiceAccess().operate();
         var deleteButton = new Button(VaadinIcon.TRASH.create(), event -> deleteMessage());
         deleteButton.addThemeVariants(ButtonVariant.LUMO_ERROR);
+        deleteButton.setVisible(canOperate);
         deleteButton.setTooltipText(t("Delete message"));
 
         var closeButton = new Button(t("Close"), event -> close());
 
         sourceMessageButton.setVisible(false);
         sourceMessageButton.addClickListener(event -> openMessage(Long.parseLong(metadataValues.get("sourceMessageId"))));
-        getFooter().add(downloadLink, sourceMessageButton, new Button(t("Forward to channel"), event -> openForwardDialog()), retryButton, new Button(t("Refresh"), event -> {
+        var forwardButton = new Button(t("Forward to channel"), event -> openForwardDialog());
+        forwardButton.setVisible(canOperate);
+        getFooter().add(downloadLink, sourceMessageButton, forwardButton, retryButton, new Button(t("Refresh"), event -> {
             if (currentMessage != null) openMessage(currentMessage.getId());
         }), deleteButton, closeButton);
     }
@@ -239,7 +244,7 @@ public class MessageDetailDialog extends Dialog {
             setHeaderTitle(t("Message #") + messageId);
             var jobs = messageService.executionJobs(messageId);
             jobsGrid.setItems(jobs);
-            retryButton.setVisible(currentMessage.getStatus() == com.sysadminanywhere.m3.messaging.domain.MessageStatus.FAILED);
+            retryButton.setVisible(new com.sysadminanywhere.m3.base.security.ServiceAccess().operate() && currentMessage.getStatus() == com.sysadminanywhere.m3.messaging.domain.MessageStatus.FAILED);
             retryButton.setEnabled(jobs.stream().anyMatch(job -> job.status() == com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.FAILED));
             var dateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(Translations.locale())
                     .withZone(ZoneId.systemDefault());
@@ -353,4 +358,14 @@ public class MessageDetailDialog extends Dialog {
         confirmDialog.getFooter().add(cancelButton, confirmButton);
         confirmDialog.open();
     }
+    private void retry(boolean acknowledgeUncertain) {
+        try {
+            Long id=currentMessage.getId(); messageService.retry(id,acknowledgeUncertain); openMessage(id);
+            if(onChangeCallback!=null) onChangeCallback.accept(id);
+        } catch(IllegalArgumentException invalid) {
+            com.vaadin.flow.component.notification.Notification.show(t(invalid.getMessage()),5000,
+                    com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
+        }
+    }
+
 }

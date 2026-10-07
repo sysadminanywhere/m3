@@ -10,6 +10,11 @@ public class RuleCondition {
     public static final int FIELD_MAX_LENGTH = 100;
     public static final int VALUE_MAX_LENGTH = 1000;
 
+    @Version
+    @Column(nullable = false, columnDefinition="bigint not null default 0")
+    private long version;
+    public long getVersion() { return version; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "condition_id")
@@ -32,6 +37,8 @@ public class RuleCondition {
     @Enumerated(EnumType.STRING)
     @Column(name = "logical_operator", nullable = false)
     private LogicalOperator logicalOperator = LogicalOperator.AND;
+
+    public static RuleCondition snapshot(Long id, Rule rule, String field, ConditionOperator operator, String value) { var item=new RuleCondition(rule,field,operator,value); item.id=id; return item; }
 
     protected RuleCondition() {
     }

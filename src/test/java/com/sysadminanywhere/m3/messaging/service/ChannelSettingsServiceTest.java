@@ -297,4 +297,20 @@ class ChannelSettingsServiceTest {
         assertThat(defaults).containsEntry("host", "localhost");
         assertThat(defaults).containsEntry("port", "5672");
     }
+    @Test void rejectsStaleFormWithoutChangingConfiguration() {
+        when(channelSettingsRepository.findById(1L)).thenReturn(Optional.of(testChannel));
+        assertThatThrownBy(()->channelSettingsService.updateChannel(1L,"overwritten",null,true,Map.of(),99L))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("another session");
+        assertThat(testChannel.getName()).isEqualTo("test-channel");
+        verify(channelSettingsRepository,never()).save(any());
+    }
+    @Test void blankSecretPreservesExistingCredentialWhileAReplacementUpdatesIt() {
+        testChannel.setProperties(new java.util.HashMap<>(Map.of("password","existing")));
+        when(channelSettingsRepository.findById(1L)).thenReturn(Optional.of(testChannel));
+        when(channelSettingsRepository.save(any())).thenAnswer(invocation->invocation.getArgument(0));
+        channelSettingsService.updateChannel(1L,"test-channel",null,true,Map.of("password",""),testChannel.getVersion());
+        assertThat(testChannel.getProperties()).containsEntry("password","existing");
+        channelSettingsService.updateChannel(1L,"test-channel",null,true,Map.of("password","replacement"),testChannel.getVersion());
+        assertThat(testChannel.getProperties()).containsEntry("password","replacement");
+    }
 }

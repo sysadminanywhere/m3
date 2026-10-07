@@ -69,10 +69,10 @@ final class RuleConditionEditorDialog extends Dialog {
                 String field = "Whole body".equals(source.getValue()) ? "payload"
                         : ("Metadata".equals(source.getValue()) ? "header." : "payload.") + name.getValue();
                 if (existing == null) rules.addCondition(ruleId, field, operator.getValue(), value.getValue(), connector.getValue());
-                else rules.updateCondition(ruleId, existing.getId(), field, operator.getValue(), value.getValue(), connector.getValue());
+                else rules.updateCondition(ruleId, existing.getId(), field, operator.getValue(), value.getValue(), connector.getValue(), existing.getVersion());
                 guard.markSaved(); onSave.run(); close();
-            } catch (IllegalArgumentException invalid) {
-                Notification.show(t(invalid.getMessage()), 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            } catch (RuntimeException invalid) {
+                Notification.show(com.sysadminanywhere.m3.base.ui.SaveErrors.message(invalid), 4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         });
         save.addThemeVariants(ButtonVariant.PRIMARY); getFooter().add(guard.indicator(), new Button(t("Cancel"), e -> guard.requestDiscard(this::close)), save);

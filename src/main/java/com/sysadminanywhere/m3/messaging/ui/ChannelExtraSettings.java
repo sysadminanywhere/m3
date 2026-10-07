@@ -32,7 +32,8 @@ final class ChannelExtraSettings extends VerticalLayout {
     }
     private void addRow(String name, String content) {
         var key = new TextField(t("Key")); key.setMaxLength(255); key.setValue(name); key.setWidth("240px");
-        var value = new TextArea(t("Value")); value.setValue(content); value.setMinHeight("80px");
+        var value = new TextArea(t("Value")); value.setValue(com.sysadminanywhere.m3.base.security.SecretCipher.isSecret(name) ? "" : content);
+        if (com.sysadminanywhere.m3.base.security.SecretCipher.isSecret(name) && !content.isBlank()) value.setHelperText(t("Leave empty to keep the saved secret")); value.setMinHeight("80px");
         value.setWidthFull();
         var remove = new Button(VaadinIcon.TRASH.create());
         remove.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_ERROR);

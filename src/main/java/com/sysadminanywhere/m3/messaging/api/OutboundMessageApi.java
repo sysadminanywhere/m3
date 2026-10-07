@@ -47,7 +47,7 @@ public class OutboundMessageApi {
     public List<DeliveryStatus> status(@PathVariable long id) {
         outbound(id);
         return jobs.findByMessage_IdOrderByRule_PriorityAsc(id).stream().map(job -> new DeliveryStatus(job.getId(), job.getRule().getId(),
-                job.getWorkerPool().getName(), job.getStatus(), job.getAttempts(), job.getNextAttemptAt(), job.getErrorMessage())).toList();
+                job.getWorkerPool().getName(), job.getStatus(), job.getAttempts(), job.getNextAttemptAt(), job.getErrorMessage(),job.isDeliveryUncertain())).toList();
     }
     @GetMapping("/rules/outbound")
     @Transactional(readOnly=true)
@@ -69,7 +69,7 @@ public class OutboundMessageApi {
             @Size(max=64) String charset,
             @Size(max=100) Map<@NotBlank @Size(max=MessageMetadata.KEY_MAX_LENGTH) String,
                     @NotNull @Size(max=MessageMetadata.VALUE_MAX_LENGTH) String> metadata) { }
-    public record DeliveryStatus(Long jobId, Long ruleId, String workerPool, RuleJobStatus status, int attempts, Instant nextAttemptAt, String error) { }
+    public record DeliveryStatus(Long jobId, Long ruleId, String workerPool, RuleJobStatus status, int attempts, Instant nextAttemptAt, String error, boolean uncertain) { }
     public record RuleInfo(Long id, String name, boolean enabled, String workerPool, OutboundPayloadMode payloadMode) { }
     public record ForwardRequest(@NotNull @Positive Long ruleId) { }
 }

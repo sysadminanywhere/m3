@@ -15,6 +15,7 @@ import java.util.*;
 
 @Service
 public class RuleExecutionProcessor {
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.JobConfiguration configurations;
     private final RuleExecutionJobRepository jobs;
     private final MessageRepository messages;
     private final com.sysadminanywhere.m3.messaging.repository.ChannelSettingsRepository channels;
@@ -89,17 +90,26 @@ public class RuleExecutionProcessor {
 
     @Transactional
     public int reclaimExpired() {
-        return jobs.releaseExpiredClaims(poolName, claimLeaseSeconds);
+        int uncertain=entityManager.createNativeQuery("""
+                WITH expired AS (
+                    UPDATE rule_execution_job SET status='FAILED',delivery_uncertain=true,claimed_at=NULL,claim_token=NULL,
+                        completed_at=now(),error_message='Delivery outcome is uncertain. Check the receiver before an explicit retry.'
+                    WHERE status='PROCESSING' AND delivery_started=true
+                        AND worker_pool_id=(SELECT worker_pool_id FROM rule_worker_pool WHERE name=:pool)
+                        AND claimed_at < now()-(:lease * interval '1 second') RETURNING message_id
+                ) UPDATE message SET status='FAILED',processed_at=now() WHERE message_id IN (SELECT message_id FROM expired)
+                """).setParameter("pool",poolName).setParameter("lease",claimLeaseSeconds).executeUpdate();
+        return uncertain+jobs.releaseExpiredClaims(poolName, claimLeaseSeconds);
     }
 
     private void execute(RuleExecutionJob job, Message stored) throws Exception {
-        Object payload = RulePayloads.readForRules(stored, objectMapper, List.of(job.getRule()));
+        Object payload = RulePayloads.readForRules(stored, objectMapper, List.of(configurations.read(job).restore()));
         Map<String, Object> headers = new HashMap<>();
         headers.put("channelName", stored.getSourceSystem());
         headers.put("sourceSystem", stored.getSourceSystem());
         stored.getMetadata().forEach(metadata -> headers.put(metadata.getKey(), metadata.getValue()));
         var input = org.springframework.messaging.support.MessageBuilder.withPayload(payload).copyHeaders(headers).build();
-        Rule rule = job.getRule();
+        Rule rule = configurations.read(job).restore();
         if (rule.getRuleType()!=RuleType.INBOUND)
             throw new IllegalArgumentException("Loading rule changed type before the message was processed");
         if (!Boolean.TRUE.equals(rule.getEnabled()) || !ruleEngine.evaluateConditions(rule, input)) {
@@ -113,7 +123,7 @@ public class RuleExecutionProcessor {
         var completedJobs = jobs.findByMessage_IdOrderByRule_PriorityAsc(stored.getId());
         List<Rule> matchedRules = completedJobs.stream()
                 .filter(job -> "MATCHED".equals(job.getResult()))
-                .map(RuleExecutionJob::getRule)
+                .map(job -> configurations.read(job).restore())
                 .toList();
         if (matchedRules.isEmpty()) {
             setFinalStatus(stored, MessageStatus.PROCESSED);
@@ -130,8 +140,11 @@ public class RuleExecutionProcessor {
         if (target != null) {
             Rule routingRule = matchedRules.stream().filter(rule -> rule.getActions().stream()
                     .anyMatch(action -> action.getActionType() == ActionType.ROUTE)).findFirst().orElseThrow();
-            var destination = com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService.target(routingRule,
-                    channels);
+            var routingJob=completedJobs.stream().filter(job -> job.getRule().getId().equals(routingRule.getId())).findFirst().orElseThrow();
+            var configuration=configurations.read(routingJob);
+            var destination=configuration.destination()==null
+                    ? com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService.target(routingRule,channels)
+                    : configuration.destination().restore();
             boolean sendMessageId = routingRule.getOutboundPayloadMode()
                     == com.sysadminanywhere.m3.messaging.domain.OutboundPayloadMode.MESSAGE_ID;
             var transformed = sendMessageId ? ruleEngine.applyMetadataActions(input, matchedRules)
@@ -168,8 +181,9 @@ public class RuleExecutionProcessor {
                     outbound.getPayloadBytes(), outbound.getPayloadType(), metadata);
             String serializedPlan = objectMapper.writeValueAsString(plan);
             messages.save(outbound);
-            var deliveryJob = new RuleExecutionJob(outbound, routingRule, routingRule.getWorkerPool());
+            var deliveryJob = new RuleExecutionJob(outbound, routingJob.getRule(), routingJob.getRule().getWorkerPool());
             deliveryJob.setResult(serializedPlan);
+            configurations.freeze(deliveryJob,configuration);
             jobs.save(deliveryJob);
             stored.setTargetSystem(destination.getName());
         }

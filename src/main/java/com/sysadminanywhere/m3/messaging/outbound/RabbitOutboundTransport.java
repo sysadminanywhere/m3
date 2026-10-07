@@ -35,6 +35,8 @@ public class RabbitOutboundTransport implements OutboundTransport {
             delivery.metadata().forEach(properties::setHeader); properties.setHeader("m3MessageId", Long.toString(id));
             var template = new RabbitTemplate(connection); template.setMandatory(true);
             var correlation = new CorrelationData("m3:" + id);
+            try(var confirmedConnection=connection.createConnection()) { }
+            DeliveryAttempt.started();
             template.send(exchange, key, new org.springframework.amqp.core.Message(delivery.body(), properties), correlation);
             if (!correlation.getFuture().get(5, TimeUnit.SECONDS).ack() || correlation.getReturned() != null)
                 throw new IOException("Broker did not confirm routing of outbound message");

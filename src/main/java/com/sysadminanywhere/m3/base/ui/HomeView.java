@@ -9,6 +9,7 @@ import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 
+@jakarta.annotation.security.PermitAll
 @Route(value = "")
 public class HomeView extends VerticalLayout implements BeforeEnterObserver, HasDynamicTitle {
 

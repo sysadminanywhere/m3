@@ -11,6 +11,7 @@ import com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
 
+@jakarta.annotation.security.PermitAll
 @Route("messages/outbound")
 @MenuItem(order = 2, icon = "icons/message.svg", title = "Outbound", section = MenuSection.MESSAGING, parent = "Messages")
 class OutboundMessagesView extends MessageListView implements HasDynamicTitle {

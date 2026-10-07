@@ -69,4 +69,7 @@
     <changeSet id="020-worker-heartbeats" author="m3">
         <sqlFile path="changes/020-worker-heartbeats.sql" relativeToChangelogFile="true"/>
     </changeSet>
+    <changeSet id="021-hardening" author="m3">
+        <sqlFile path="changes/021-hardening.sql" relativeToChangelogFile="true" splitStatements="true" />
+    </changeSet>
 </databaseChangeLog>

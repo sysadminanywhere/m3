@@ -37,6 +37,8 @@ class RuleServiceTest {
     @Mock
     private RuleExecutionJobRepository executionJobRepository;
 
+    @Mock private jakarta.persistence.EntityManager entityManager;
+
     @InjectMocks
     private RuleService ruleService;
 
@@ -45,6 +47,7 @@ class RuleServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(ruleService, "entityManager", entityManager);
         sourceChannel = new ChannelSettings("source-channel", ChannelType.DIRECTORY, ChannelDirection.INBOUND);
         testRule = new Rule("test-rule", RuleType.INBOUND, sourceChannel);
     }
@@ -265,11 +268,12 @@ class RuleServiceTest {
 
     @Test
     void deleteCondition_ShouldDeleteFromRepository() {
-        // When
+        var condition = new RuleCondition(testRule, "payload", ConditionOperator.EQUALS, "x");
+        when(ruleConditionRepository.findById(1L)).thenReturn(Optional.of(condition));
         ruleService.deleteCondition(1L);
 
         // Then
-        verify(ruleConditionRepository).deleteById(1L);
+        verify(ruleConditionRepository).delete(any(RuleCondition.class));
     }
 
     @Test
@@ -292,11 +296,12 @@ class RuleServiceTest {
 
     @Test
     void deleteAction_ShouldDeleteFromRepository() {
-        // When
+        var action = new RuleAction(testRule, ActionType.ROUTE);
+        when(ruleActionRepository.findById(1L)).thenReturn(Optional.of(action));
         ruleService.deleteAction(1L);
 
         // Then
-        verify(ruleActionRepository).deleteById(1L);
+        verify(ruleActionRepository).delete(any(RuleAction.class));
     }
 
     @Test

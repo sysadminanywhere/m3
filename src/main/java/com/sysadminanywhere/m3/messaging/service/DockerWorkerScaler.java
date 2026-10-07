@@ -166,6 +166,7 @@ public class DockerWorkerScaler {
                 "SPRING_JPA_HIBERNATE_DDL_AUTO=validate",
                 "SPRING_LIQUIBASE_ENABLED=false",
                 "SPRING_JPA_SHOW_SQL=false",
+                "M3_SECRET_KEY=" + environment.getProperty("m3.secret-key"),
                 "M3_OUTBOUND_MAX_ATTEMPTS=" + outboundMaxAttempts,
                 "M3_WORKER_POOL=" + pool.getName(),
                 "M3_WORKER_INDEX=" + index

@@ -11,6 +11,11 @@ public class RuleAction {
     public static final int METADATA_KEY_MAX_LENGTH = 100;
     public static final int METADATA_VALUE_MAX_LENGTH = 1000;
 
+    @Version
+    @Column(nullable = false, columnDefinition="bigint not null default 0")
+    private long version;
+    public long getVersion() { return version; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "action_id")
@@ -56,6 +61,8 @@ public class RuleAction {
 
     @Column(name = "priority", nullable = false)
     private Integer priority = 0;
+
+    public static RuleAction snapshot(Long id, Rule rule, ActionType type) { var item=new RuleAction(rule,type); item.id=id; return item; }
 
     protected RuleAction() {
     }

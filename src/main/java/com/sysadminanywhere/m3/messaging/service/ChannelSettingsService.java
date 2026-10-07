@@ -83,12 +83,16 @@ public class ChannelSettingsService {
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public ChannelSettings createChannel(String name, ChannelType channelType, ChannelDirection direction,
                                           String description, Map<String, String> properties) {
         return createChannel(name, channelType, direction, description, properties, true);
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public ChannelSettings createChannel(String name, ChannelType channelType, ChannelDirection direction,
                                           String description, Map<String, String> properties, boolean enabled) {
         if (channelSettingsRepository.existsByName(name)) {
@@ -109,6 +113,17 @@ public class ChannelSettingsService {
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
+    public ChannelSettings updateChannel(Long channelId, String name, String description, Boolean enabled, Map<String,String> properties, long expectedVersion) {
+        var channel=channelSettingsRepository.findById(channelId).orElseThrow();
+        com.sysadminanywhere.m3.base.persistence.Revisions.check(channel.getVersion(), expectedVersion);
+        return updateChannel(channelId,name,description,enabled,properties);
+    }
+
+    @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public ChannelSettings updateChannel(Long channelId, String name, String description,
                                          Boolean enabled, Map<String, String> properties) {
         var channel = channelSettingsRepository.findById(channelId)
@@ -127,7 +142,11 @@ public class ChannelSettingsService {
         if (enabled != null || channel.getDirection()==ChannelDirection.INBOUND)
             channel.setEnabled(channel.getDirection()==ChannelDirection.INBOUND || enabled);
         if (properties != null) {
-            channel.setProperties(endpointProperties(properties));
+            var merged = endpointProperties(properties);
+            channel.getProperties().forEach((key,value) -> {
+                if (com.sysadminanywhere.m3.base.security.SecretCipher.isSecret(key) && merged.containsKey(key) && merged.get(key).isEmpty()) merged.put(key,value);
+            });
+            channel.setProperties(merged);
         }
 
         sourceRegistry.validate(channel);
@@ -137,6 +156,8 @@ public class ChannelSettingsService {
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public void deleteChannel(Long channelId) {
         var channel=channelSettingsRepository.findById(channelId).orElseThrow(() -> new IllegalArgumentException("Channel not found"));
         if (rules.existsBySourceChannel_Id(channelId) || actions.existsByDestinationChannel_Id(channelId)
@@ -147,6 +168,8 @@ public class ChannelSettingsService {
     }
 
     @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
     public void toggleEnabled(Long channelId) {
         var channel = channelSettingsRepository.findById(channelId)
                 .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + channelId));

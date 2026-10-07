@@ -58,6 +58,20 @@ public class RuleExecutionJob {
     @Column(name = "claim_token")
     private UUID claimToken;
 
+    @Convert(converter=com.sysadminanywhere.m3.base.security.SecretValueConverter.class)
+    @Column(name="configuration_snapshot", columnDefinition="TEXT")
+    private String configurationSnapshot;
+    @Column(name="delivery_started", nullable=false, columnDefinition="boolean not null default false")
+    private boolean deliveryStarted;
+    @Column(name="delivery_uncertain", nullable=false, columnDefinition="boolean not null default false")
+    private boolean deliveryUncertain;
+    public String getConfigurationSnapshot() { return configurationSnapshot; }
+    public void setConfigurationSnapshot(String value) { configurationSnapshot=value; }
+    public boolean isDeliveryStarted() { return deliveryStarted; }
+    public boolean isDeliveryUncertain() { return deliveryUncertain; }
+    public void markDeliveryStarted() { deliveryStarted=true; }
+    public void uncertain(Throwable error) { fail(error); deliveryUncertain=true; }
+
     protected RuleExecutionJob() {}
 
     public RuleExecutionJob(Message message, Rule rule, RuleWorkerPool workerPool) {
@@ -122,5 +136,6 @@ public class RuleExecutionJob {
     public void retryNow() {
         retry(new IllegalStateException("Retry requested"), 0);
         this.attempts = 0;
+        this.deliveryStarted=false; this.deliveryUncertain=false;
     }
 }

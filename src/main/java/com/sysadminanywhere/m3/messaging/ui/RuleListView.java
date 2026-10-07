@@ -26,6 +26,7 @@ import com.vaadin.flow.router.Route;
 
 import static com.vaadin.flow.spring.data.VaadinSpringDataHelpers.toSpringPageRequest;
 
+@jakarta.annotation.security.RolesAllowed("ADMIN")
 @Route(value = "rules")
 @MenuItem(order = 3, icon = "icons/rule.svg", title = "Rules", section = MenuSection.ADMINISTRATION)
 class RuleListView extends VerticalLayout implements HasDynamicTitle {

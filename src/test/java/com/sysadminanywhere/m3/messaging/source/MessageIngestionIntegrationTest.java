@@ -61,6 +61,9 @@ class MessageIngestionIntegrationTest {
             .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1))
             .withStartupTimeout(Duration.ofMinutes(2));
     @Container static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka-native:4.0.0");
+    private static HttpRequest.Builder authorizedRequest(java.net.URI uri) {
+        return HttpRequest.newBuilder(uri).header("X-M3-Request", "1").header("Authorization", "Basic " + java.util.Base64.getEncoder().encodeToString("admin:test-admin-password-123456".getBytes(StandardCharsets.UTF_8)));
+    }
     private static ConfigurableApplicationContext app;
     private static ConfigurableApplicationContext receiverWorker;
     @TempDir Path temp;
@@ -69,13 +72,13 @@ class MessageIngestionIntegrationTest {
     @AfterAll static void stopApplication() { if (receiverWorker != null) receiverWorker.close(); if (app != null) app.close(); }
     private static ConfigurableApplicationContext start() {
         return new SpringApplicationBuilder(Application.class).run(
-                "--server.port=0", "--vaadin.launch-browser=false", "--spring.jpa.show-sql=false",
+                "--m3.security.admin-password=test-admin-password-123456", "--m3.security.viewer-password=test-viewer-password-123456", "--m3.security.operator-password=test-operator-password-123456", "--m3.secret-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "--m3.security.vaadin-ui=false", "--server.port=0", "--vaadin.launch-browser=false", "--spring.jpa.show-sql=false",
                 "--spring.datasource.url=" + DB.getJdbcUrl(), "--spring.datasource.username=" + DB.getUsername(),
                 "--spring.datasource.password=" + DB.getPassword(), "--m3.docker.api-url=",
                 "--m3.broker.rabbit.host=" + RABBIT.getHost(), "--m3.broker.rabbit.port=" + RABBIT.getMappedPort(5672),
                 "--m3.broker.rabbit.username=m3", "--m3.broker.rabbit.password=m3",
                 "--m3.sources.reconcile-delay-ms=200", "--m3.receipts.poll-delay-ms=100",
-                "--spring.autoconfigure.exclude=com.vaadin.flow.spring.SpringBootAutoConfiguration,com.vaadin.hilla.EndpointController,com.vaadin.hilla.push.PushConfigurer,com.vaadin.hilla.ApplicationContextProvider,com.vaadin.hilla.startup.EndpointRegistryInitializer,com.vaadin.hilla.startup.RouteUnifyingServiceInitListener,com.vaadin.hilla.route.RouteUtilConfiguration,com.vaadin.hilla.route.RouteUnifyingConfiguration,com.vaadin.hilla.signals.config.SignalsConfiguration",
+                "--spring.autoconfigure.exclude=com.vaadin.flow.spring.SpringBootAutoConfiguration,com.vaadin.flow.spring.SpringSecurityAutoConfiguration,com.vaadin.hilla.EndpointController,com.vaadin.hilla.push.PushConfigurer,com.vaadin.hilla.ApplicationContextProvider,com.vaadin.hilla.startup.EndpointRegistryInitializer,com.vaadin.hilla.startup.RouteUnifyingServiceInitListener,com.vaadin.hilla.route.RouteUtilConfiguration,com.vaadin.hilla.route.RouteUnifyingConfiguration,com.vaadin.hilla.signals.config.SignalsConfiguration",
                 "--logging.level.org.apache.ftpserver=WARN", "--logging.level.org.apache.sshd=WARN",
                 "--logging.level.org.apache.kafka=WARN", "--logging.level.org.springframework.kafka=ERROR");
     }
@@ -98,7 +101,7 @@ class MessageIngestionIntegrationTest {
     private static ObjectMapper json() { return app.getBean(ObjectMapper.class); }
     private static ConfigurableApplicationContext worker(String pool) {
         return new SpringApplicationBuilder(Application.class).run("--spring.profiles.active=worker",
-                "--spring.main.web-application-type=none", "--spring.liquibase.enabled=false", "--spring.jpa.show-sql=false",
+                "--m3.secret-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "--spring.main.web-application-type=none", "--spring.liquibase.enabled=false", "--spring.jpa.show-sql=false",
                 "--spring.datasource.url=" + DB.getJdbcUrl(), "--spring.datasource.username=" + DB.getUsername(),
                 "--spring.datasource.password=" + DB.getPassword(), "--m3.worker.pool=" + pool,
                 "--m3.broker.rabbit.host=" + RABBIT.getHost(),"--m3.broker.rabbit.port=" + RABBIT.getMappedPort(5672),
@@ -114,7 +117,7 @@ class MessageIngestionIntegrationTest {
     }
     private static HttpResponse<String> submit(long ruleId, String payload, String payloadType, Map<String, String> metadata, String key) throws Exception {
         var body = json().writeValueAsString(Map.of("ruleId", ruleId, "payload", payload, "payloadType", payloadType, "metadata", metadata));
-        var request = HttpRequest.newBuilder(api("/api/v1/messages/outbound")).header("Content-Type", "application/json");
+        var request = authorizedRequest(api("/api/v1/messages/outbound")).header("Content-Type", "application/json");
         if (key != null) request.header("Idempotency-Key", key);
         return HttpClient.newHttpClient().send(request.POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
     }
@@ -195,7 +198,7 @@ class MessageIngestionIntegrationTest {
         return event;
     }
     private static HttpResponse<String> get(String path) throws Exception {
-        return HttpClient.newHttpClient().send(HttpRequest.newBuilder(api(path)).GET().build(), HttpResponse.BodyHandlers.ofString());
+        return HttpClient.newHttpClient().send(authorizedRequest(api(path)).GET().build(), HttpResponse.BodyHandlers.ofString());
     }
     private static URI api(String path) { return URI.create("http://localhost:" + app.getEnvironment().getProperty("local.server.port") + path); }
     private static byte[] binary() { return new byte[]{0, 1, 2, -1, -128, 65, 66}; }
@@ -347,7 +350,7 @@ class MessageIngestionIntegrationTest {
         assertThat(RABBIT.execInContainer("rabbitmqctl", "stop_app").getExitCode()).isZero();
         try {
             String request = json().writeValueAsString(Map.of("ruleId",loadingRuleId(source),"payload","saved while broker offline","payloadType","text/plain","metadata",Map.of("externalId","restart-1")));
-            var response = HttpClient.newHttpClient().send(HttpRequest.newBuilder(api("/api/v1/channels/" + source.getId() + "/messages"))
+            var response = HttpClient.newHttpClient().send(authorizedRequest(api("/api/v1/channels/" + source.getId() + "/messages"))
                     .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(request)).build(), HttpResponse.BodyHandlers.ofString());
             assertThat(response.statusCode()).isEqualTo(201);
             long id = json().readTree(response.body()).path("id").asLong();
@@ -375,7 +378,7 @@ class MessageIngestionIntegrationTest {
     void concurrentHttpRetriesCreateOneMessageAndOneReceipt() throws Exception {
         var source = source("http-idempotency", ChannelType.DIRECTORY,
                 Map.of("directoryPath", temp.resolve("http").toString(), "pollingInterval", "100"));
-        var request = HttpRequest.newBuilder(api("/api/v1/channels/" + source.getId() + "/messages"))
+        var request = authorizedRequest(api("/api/v1/channels/" + source.getId() + "/messages"))
                 .header("Content-Type", "application/json").header("Idempotency-Key", "order-42")
                 .POST(HttpRequest.BodyPublishers.ofString(json().writeValueAsString(Map.of("ruleId",loadingRuleId(source),"payload","same order","payloadType","text/plain","metadata",Map.of("externalId","order-42")))))
                 .build();
@@ -488,13 +491,18 @@ class MessageIngestionIntegrationTest {
         }
         assertThat(directory).doesNotExist();
         service.deleteCondition(condition.getId());
-        var retry = HttpClient.newHttpClient().send(HttpRequest.newBuilder(api("/api/v1/messages/" + id + "/retry"))
+        assertThat(jdbc().queryForObject("SELECT count(*) FROM rule_condition WHERE condition_id=?",Long.class,condition.getId())).isZero();
+        var retry = HttpClient.newHttpClient().send(authorizedRequest(api("/api/v1/messages/" + id + "/retry"))
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(retry.statusCode()).isEqualTo(202);
         try (var worker = worker("default")) {
-            await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, id)).isEqualTo("SENT"));
+            await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, id)).isEqualTo("FAILED"));
+            assertThat(directory).doesNotExist(); // Retry preserves the originally accepted condition.
+            var fresh=submit(rule,"blocked","text/plain",Map.of(),null);
+            long freshId=json().readTree(fresh.body()).path("id").asLong();
+            await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, freshId)).as(jdbc().queryForObject("SELECT error_message FROM rule_execution_job WHERE message_id=?",String.class,freshId)).isEqualTo("SENT"));
+            assertThat(Files.readString(directory.resolve("message-" + freshId + "-payload.dat"))).isEqualTo("blocked");
         }
-        assertThat(Files.readString(directory.resolve("message-" + id + "-payload.dat"))).isEqualTo("blocked");
     }
 
     @Test @Order(12)
@@ -540,7 +548,7 @@ class MessageIngestionIntegrationTest {
                 Map.of("directoryPath", outputDirectory.toString()));
         long rule = outboundRule(target);
         var before = get("/api/v1/messages/" + original).body();
-        var request = HttpRequest.newBuilder(api("/api/v1/messages/" + original + "/forward"))
+        var request = authorizedRequest(api("/api/v1/messages/" + original + "/forward"))
                 .header("Content-Type", "application/json").header("Idempotency-Key", "forward-file-test")
                 .POST(HttpRequest.BodyPublishers.ofString("{\"ruleId\":" + rule + "}")).build();
         var response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
@@ -554,5 +562,26 @@ class MessageIngestionIntegrationTest {
         assertThat(get("/api/v1/messages/" + original).body()).isEqualTo(before);
         assertThat(json().readTree(get("/api/v1/messages/" + copy).body()).path("charset").asText()).isEqualTo("windows-1251");
         assertThat(jdbc().queryForObject("SELECT count(*) FROM rule_execution_job WHERE message_id=?", Long.class, copy)).isEqualTo(1);
+    }
+    @Test @Order(14)
+    void requiresAuthenticationRolesAndExplicitMutationHeaderAndEncryptsStoredConfiguration() throws Exception {
+        var client=HttpClient.newHttpClient();
+        assertThat(client.send(HttpRequest.newBuilder(api("/api/v1/messages/1")).GET().build(),HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(401);
+        var viewer=HttpRequest.newBuilder(api("/api/v1/messages/1/retry")).header("X-M3-Request","1")
+                .header("Authorization","Basic "+Base64.getEncoder().encodeToString("viewer:test-viewer-password-123456".getBytes(StandardCharsets.UTF_8)))
+                .POST(HttpRequest.BodyPublishers.noBody()).build();
+        assertThat(client.send(viewer,HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(403);
+        assertThat(client.send(HttpRequest.newBuilder(api("/api/v1/messages/1/retry")).header("Authorization","Basic "+Base64.getEncoder().encodeToString("admin:test-admin-password-123456".getBytes(StandardCharsets.UTF_8)))
+                .POST(HttpRequest.BodyPublishers.noBody()).build(),HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(403);
+        var channel=channels().createChannel("encrypted-properties",ChannelType.RABBITMQ,ChannelDirection.OUTBOUND,null,Map.of("host",RABBIT.getHost(),"port",RABBIT.getMappedPort(5672).toString(),"exchange","m3.events","routingKey","test","username","m3","password","private-test-value"));
+        assertThat(jdbc().queryForObject("SELECT property_value FROM channel_properties WHERE channel_id=? AND property_key='password'",String.class,channel.getId())).startsWith("m3enc:v1:").doesNotContain("private-test-value");
+        assertThat(channels().findById(channel.getId()).orElseThrow().getProperties().get("password")).isEqualTo("private-test-value");
+        assertThat(jdbc().queryForObject("SELECT count(*) FROM rule_execution_job WHERE configuration_snapshot IS NOT NULL AND configuration_snapshot NOT LIKE 'm3enc:v1:%'",Long.class)).isZero();
+        assertThat(jdbc().queryForObject("SELECT count(*) FROM configuration_audit",Long.class)).isPositive();
+        var auth=new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("operator","unused",List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_OPERATOR")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(()->channels().toggleEnabled(channel.getId())).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        } finally { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
     }
 }

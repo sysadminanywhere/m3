@@ -59,9 +59,9 @@ public class MessageApi {
         return messageService.executionJobs(id);
     }
     @PostMapping("/messages/{id}/retry")
-    public ResponseEntity<Void> retry(@PathVariable long id) {
+    public ResponseEntity<Void> retry(@PathVariable long id,@RequestParam(defaultValue="false") boolean acknowledgeUncertain) {
         if (!messages.existsById(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Message not found");
-        try { messageService.retry(id); }
+        try { messageService.retry(id,acknowledgeUncertain); }
         catch (IllegalArgumentException invalid) { throw new ResponseStatusException(HttpStatus.CONFLICT,invalid.getMessage()); }
         return ResponseEntity.accepted().build();
     }
