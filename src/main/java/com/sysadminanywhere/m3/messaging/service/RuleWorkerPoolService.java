@@ -10,6 +10,7 @@ import java.util.List;
 
 @Service
 public class RuleWorkerPoolService {
+    @org.springframework.beans.factory.annotation.Autowired private WorkerCapacityAllocation allocation;
     private final RuleWorkerPoolRepository repository;
     private final RuleRepository ruleRepository;
     private final com.sysadminanywhere.m3.messaging.repository.RuleExecutionJobRepository jobs;
@@ -26,6 +27,13 @@ public class RuleWorkerPoolService {
     @Transactional(readOnly = true)
     public long ruleCount(Long poolId) { return ruleRepository.countByWorkerPool_Id(poolId); }
 
+    @Transactional
+    @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.configure()")
+    @com.sysadminanywhere.m3.base.persistence.AuditChange
+    public RuleWorkerPool updateCapacity(Long id,int replicas,int min,int max,boolean autoScale,int limit,long expectedVersion,int priority) {
+        var pool=updateCapacity(id,replicas,min,max,autoScale,limit,expectedVersion);pool.setCapacityPriority(priority);return pool;
+    }
+
     @Transactional(readOnly = true)
     public List<RuleWorkerPool> findAll() {
         return repository.findAll().stream().sorted(java.util.Comparator.comparing(RuleWorkerPool::getName)).toList();
@@ -37,6 +45,7 @@ public class RuleWorkerPoolService {
     public RuleWorkerPool create(String name, int replicas, int minReplicas, int maxReplicas,
                                  boolean autoScaleEnabled, int pendingJobsPerWorker) {
         if (repository.existsByName(name)) throw new IllegalArgumentException("Worker pool already exists: " + name);
+        allocation.validate(name,null,replicas,minReplicas,maxReplicas,autoScaleEnabled);
         return repository.save(new RuleWorkerPool(name, replicas, minReplicas, maxReplicas,
                 autoScaleEnabled, pendingJobsPerWorker));
     }
@@ -55,6 +64,7 @@ public class RuleWorkerPoolService {
     public RuleWorkerPool updateCapacity(Long id, int replicas, int minReplicas, int maxReplicas,
                                          boolean autoScaleEnabled, int pendingJobsPerWorker) {
         var pool = repository.findById(id).orElseThrow();
+        allocation.validate(pool.getName(),id,replicas,minReplicas,maxReplicas,autoScaleEnabled);
         pool.setCapacity(replicas, minReplicas, maxReplicas, autoScaleEnabled, pendingJobsPerWorker);
         return repository.save(pool);
     }
@@ -85,7 +95,7 @@ public class RuleWorkerPoolService {
     @Transactional
     public void ensureDefaultPool() {
         var pool = repository.findByName("default")
-                .orElseGet(() -> repository.save(new RuleWorkerPool("default", 1, 1, 4)));
+                .orElseGet(() -> repository.save(new RuleWorkerPool("default", 1, 1, 1)));
         ruleRepository.assignUnassigned(pool.getId());
     }
 }

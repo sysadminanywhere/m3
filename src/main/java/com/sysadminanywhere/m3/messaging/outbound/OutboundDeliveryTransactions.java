@@ -15,6 +15,7 @@ import java.util.*;
 
 @Service
 public class OutboundDeliveryTransactions {
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageHistoryService history;
     public record Claim(long jobId, long messageId, UUID token, PreparedOutboundDelivery delivery, com.sysadminanywhere.m3.messaging.service.JobConfiguration.Channel endpoint) {
         public Claim(long jobId,long messageId,UUID token,PreparedOutboundDelivery delivery) { this(jobId,messageId,token,delivery,null); }
     }
@@ -54,6 +55,7 @@ public class OutboundDeliveryTransactions {
             var plan = job.getResult() == null ? prepare(job) : json.readValue(job.getResult(), PreparedOutboundDelivery.class);
             if (job.getResult() == null) job.setResult(json.writeValueAsString(plan));
             job.claim(worker);
+            history.prepared(job.getMessageId(),job.getId(),plan);
             return new Claim(job.getId(), job.getMessageId(), job.getClaimToken(), plan, configurations.read(job).destination());
         } catch (Exception error) {
             job.fail(error);
@@ -97,7 +99,7 @@ public class OutboundDeliveryTransactions {
         metadata.put("m3RuleId", rule.getId().toString());
         metadata.remove("charset");
         if (sendMessageId) {
-            metadata.put("m3MessagePayloadPath", "/api/v1/messages/" + stored.getId() + "/payload");
+            metadata.put("m3MessagePayloadPath", "/api/v1/messages/" + stored.getId() + "/payload?original=true");
             metadata.put("charset", "UTF-8");
         } else {
             if (!changed && stored.getCharset() != null) metadata.put("charset", stored.getCharset());

@@ -61,6 +61,9 @@ public class RuleExecutionJob {
     @Convert(converter=com.sysadminanywhere.m3.base.security.SecretValueConverter.class)
     @Column(name="configuration_snapshot", columnDefinition="TEXT")
     private String configurationSnapshot;
+    @Column(name="configuration_hash",length=64) private String configurationHash;
+    public String getConfigurationHash() { return configurationHash; }
+    public void setConfigurationHash(String value) { configurationHash=value; }
     @Column(name="delivery_started", nullable=false, columnDefinition="boolean not null default false")
     private boolean deliveryStarted;
     @Column(name="delivery_uncertain", nullable=false, columnDefinition="boolean not null default false")

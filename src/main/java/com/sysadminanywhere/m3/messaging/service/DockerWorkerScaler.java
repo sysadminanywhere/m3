@@ -19,6 +19,7 @@ import java.util.*;
 @Component
 @Profile("!worker")
 public class DockerWorkerScaler {
+    @org.springframework.beans.factory.annotation.Autowired private WorkerDrainService drains;
     private final String apiUrl;
     private final String image;
     private final String network;
@@ -112,17 +113,20 @@ public class DockerWorkerScaler {
                 String name = containerName(pool.getName(), index);
                 ContainerInfo found = current.get(name);
                 if (found == null) {
+                    drains.resume(name);
                     String id = create(pool, name, index, imageId);
                     request("POST", "/containers/" + id + "/start", null, Set.of(204));
                 } else if (!imageId.equals(found.imageId()) || !revision(pool,index,imageId).equals(found.revision())) {
                     // Replace one existing worker per reconciliation, pinning creation to the inspected image.
-                    remove(found);
+                    if(!remove(found)) return;
+                    drains.resume(name);
                     String id = create(pool, name, index, imageId);
                     request("POST", "/containers/" + id + "/start", null, Set.of(204));
                     return;
                 } else if (!"running".equalsIgnoreCase(found.state())) {
+                    drains.resume(name);
                     request("POST", "/containers/" + found.id() + "/start", null, Set.of(204, 304));
-                }
+                } else drains.resume(name);
             }
         } catch (Exception e) {
             throw new IllegalStateException("Could not reconcile Docker workers for pool '" + pool.getName() + "'", e);
@@ -169,7 +173,10 @@ public class DockerWorkerScaler {
                 "M3_SECRET_KEY=" + environment.getProperty("m3.secret-key"),
                 "M3_OUTBOUND_MAX_ATTEMPTS=" + outboundMaxAttempts,
                 "M3_WORKER_POOL=" + pool.getName(),
-                "M3_WORKER_INDEX=" + index
+                "M3_WORKER_INDEX=" + index,
+                "HOSTNAME=" + containerName(pool.getName(),index),
+                "M3_LICENSE_PUBLIC_KEY=" + environment.getProperty("m3.license.public-key",""),
+                "M3_STORAGE_MODE=KEEP"
         ));
         for (String key : List.of("host","port","username","password","virtual-host","exchange","queue")) {
             String value=environment.getProperty("m3.broker.rabbit."+key);
@@ -201,11 +208,13 @@ public class DockerWorkerScaler {
         return created.path("Id").asText();
     }
 
-    private void remove(ContainerInfo container) throws Exception {
+    private boolean remove(ContainerInfo container) throws Exception {
+        if(!drains.request(container.name())) return false;
         if ("running".equalsIgnoreCase(container.state())) {
             request("POST", "/containers/" + container.id() + "/stop?t=45", null, Set.of(204, 304));
         }
         request("DELETE", "/containers/" + container.id() + "?force=true&v=false", null, Set.of(204));
+        return true;
     }
 
     private HttpResponse<String> request(String method, String path, String body, Set<Integer> accepted) throws Exception {

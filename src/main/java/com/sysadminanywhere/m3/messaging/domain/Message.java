@@ -31,8 +31,20 @@ public class Message {
     @Column(name = "status", nullable = false)
     private MessageStatus status = MessageStatus.PENDING;
 
-    @Column(name = "payload_bytes", nullable = false, columnDefinition = "bytea")
+    @Column(name = "payload_bytes", columnDefinition = "bytea")
     private byte[] payloadBytes;
+
+    @Column(name="search_text",columnDefinition="TEXT") private String searchText;
+    @Column(name="search_version",length=64) private String searchVersion;
+    @Column(name="correlation_id",length=200) private String correlationId;
+    @Column(name="archive_key",length=500) private String archiveKey;
+    @Column(name="archive_sha256",length=64) private String archiveSha256;
+    @Column(name="stored_size") private Integer storedSize;
+    @Transient private byte[] archivedPayload;
+    public boolean isArchived() { return archiveKey!=null && payloadBytes==null; }
+    public String getArchiveKey() { return archiveKey; }
+    public String getArchiveSha256() { return archiveSha256; }
+    public void loadArchivedPayload(byte[] bytes) { archivedPayload=bytes.clone(); }
 
     @Column(name = "charset", length = 64)
     private String charset;
@@ -95,8 +107,8 @@ public class Message {
     }
 
     public String getPayload() {
-        return "BASE64".equals(payloadFormat) ? java.util.Base64.getEncoder().encodeToString(payloadBytes)
-                : PayloadCodec.decode(payloadBytes, charset);
+        return "BASE64".equals(payloadFormat) ? java.util.Base64.getEncoder().encodeToString(getPayloadBytes())
+                : PayloadCodec.decode(getPayloadBytes(), charset);
     }
 
     public void setPayload(String payload) {
@@ -106,18 +118,24 @@ public class Message {
         setContent(PayloadCodec.encode(payload, "UTF-8"), "UTF-8", "TEXT_UTF8", "TEXT");
     }
 
-    public byte[] getPayloadBytes() { return payloadBytes.clone(); }
-    public int getPayloadSize() { return payloadBytes.length; }
+    public byte[] getPayloadBytes() {
+        byte[] bytes=payloadBytes==null?archivedPayload:payloadBytes;
+        if(bytes==null) throw new IllegalStateException("Load archived payload before reading bytes");
+        return bytes.clone();
+    }
+    public int getPayloadSize() { return payloadBytes==null?storedSize:payloadBytes.length; }
     public @Nullable String getCharset() { return charset; }
     public String getCharsetSource() { return charsetSource; }
     public String getPayloadFormat() { return payloadFormat; }
-    public String getDecodedText() { return PayloadCodec.decode(payloadBytes, charset); }
+    public String getDecodedText() { return PayloadCodec.decode(getPayloadBytes(), charset); }
     public void setContent(byte[] bytes, @Nullable String charset, String source, String format) {
         if (bytes == null || bytes.length > PAYLOAD_MAX_BYTES) throw new IllegalArgumentException("Payload exceeds the supported byte size");
         if (!java.util.Set.of("TEXT", "BASE64").contains(format)) throw new IllegalArgumentException("Invalid payload format");
         String canonical = PayloadCodec.charset(charset);
         if (format.equals("TEXT") && canonical == null) throw new IllegalArgumentException("Text requires a charset");
         this.payloadBytes = bytes.clone(); this.charset = canonical; this.charsetSource = source; this.payloadFormat = format;
+        this.storedSize=bytes.length; this.searchText=null; this.searchVersion=null;
+        this.archiveKey=null; this.archiveSha256=null; this.archivedPayload=null;
     }
 
     public String getPayloadType() {

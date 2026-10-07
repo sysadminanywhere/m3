@@ -29,6 +29,8 @@ import java.util.Map;
 @RequestMapping("/api/v1")
 @Profile("!worker")
 public class MessageApi {
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageInspectionService inspection;
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageHistoryService history;
     private final MessageRepository messages;
     private final com.sysadminanywhere.m3.messaging.service.MessageService messageService;
     private final ChannelSettingsRepository channels;
@@ -47,10 +49,10 @@ public class MessageApi {
     }
 
     @GetMapping("/messages/{id}")
-    @Transactional(readOnly = true)
-    public MessageResponse get(@PathVariable long id) {
+    @Transactional
+    public MessageResponse get(@PathVariable long id,@RequestParam(defaultValue="false") boolean original) {
         var message = messages.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Message not found"));
-        return response(message);
+        return response(message,inspection.view(id,null,original,null));
     }
 
     @GetMapping("/messages/{id}/jobs")
@@ -67,21 +69,23 @@ public class MessageApi {
     }
 
     @GetMapping("/messages/{id}/payload")
-    @Transactional(readOnly = true)
-    public ResponseEntity<byte[]> payload(@PathVariable long id) {
+    @Transactional
+    public ResponseEntity<byte[]> payload(@PathVariable long id,@RequestParam(defaultValue="false") boolean original,
+            @RequestParam(required=false) Long jobId) {
         var message = messages.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Message not found"));
+        byte[] bytes=inspection.view(id,jobId,original,null).bytes();
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("message-" + id + ".bin").build().toString())
-                .contentLength(message.getPayloadSize()).body(message.getPayloadBytes());
+                .contentLength(bytes.length).body(bytes);
     }
 
     @GetMapping("/messages/{id}/text")
-    @Transactional(readOnly = true)
-    public TextResponse text(@PathVariable long id, @RequestParam(required = false) String charset) {
+    @Transactional
+    public TextResponse text(@PathVariable long id, @RequestParam(required = false) String charset,
+            @RequestParam(defaultValue="false") boolean original,@RequestParam(required=false) Long jobId) {
         var message = messages.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Message not found"));
-        String selected = charset == null ? message.getCharset() : charset;
-        if (selected == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Charset is unknown; specify charset for preview");
-        try { return new TextResponse(PayloadCodec.decode(message.getPayloadBytes(), PayloadCodec.charset(selected)), PayloadCodec.charset(selected)); }
+        if (charset==null && jobId==null && original && message.getCharset()==null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Charset is unknown; specify charset for preview");
+        try { var view=inspection.view(id,jobId,original,charset);return new TextResponse(view.text(),view.charset()); }
         catch (IllegalArgumentException invalid) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, invalid.getMessage()); }
     }
 
@@ -137,16 +141,32 @@ public class MessageApi {
                     metadata, idempotencyKey == null ? null : "http:" + idempotencyKey);
         } catch (IllegalArgumentException invalid) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, invalid.getMessage()); }
         var stored = messages.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.GONE, "Message was deleted"));
-        return ResponseEntity.created(URI.create("/api/v1/messages/" + stored.getId())).body(response(stored));
+        return ResponseEntity.created(URI.create("/api/v1/messages/" + stored.getId())).body(response(stored,inspection.view(stored.getId(),null,false,null)));
     }
 
-    static MessageResponse response(Message message) {
-        return new MessageResponse(message.getId(), message.getDirection(), message.getStatus(), message.getPayload(),
+    static MessageResponse response(Message message,com.sysadminanywhere.m3.messaging.service.MessageInspectionService.PayloadView view) {
+        String payload=view.original() && "BASE64".equals(message.getPayloadFormat()) ? java.util.Base64.getEncoder().encodeToString(view.bytes()) : view.text();
+        return new MessageResponse(message.getId(), message.getDirection(), message.getStatus(), payload,
                 message.getPayloadType(), message.getSourceSystem(), message.getTargetSystem(), message.getCreatedAt(),
-                message.getProcessedAt(), message.getCharset(), message.getCharsetSource(), message.getPayloadSize(),
-                "BASE64".equals(message.getPayloadFormat()) ? "base64" : "text", message.getMetadata().stream()
-                .sorted(Comparator.comparing(MessageMetadata::getKey))
-                .map(value -> new Metadata(value.getKey(), value.getValue())).toList());
+                message.getProcessedAt(), view.original()?message.getCharset():"UTF-8", message.getCharsetSource(), message.getPayloadSize(),
+                view.original() && "BASE64".equals(message.getPayloadFormat()) ? "base64" : "text", view.metadata().entrySet().stream()
+                .map(value -> new Metadata(value.getKey(), value.getValue())).toList(),message.isArchived(),!view.original());
+    }
+
+    @GetMapping("/messages/{id}/history")
+    public List<com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Event> history(@PathVariable long id,@RequestParam(defaultValue="false") boolean original) {
+        if(!messages.existsById(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Message not found");
+        return history.events(id,original);
+    }
+    @GetMapping("/messages/{id}/related")
+    public List<com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Link> related(@PathVariable long id) {
+        if(!messages.existsById(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Message not found");
+        return history.links(id);
+    }
+    @GetMapping("/messages/{id}/versions")
+    public List<com.sysadminanywhere.m3.messaging.service.MessageInspectionService.BodyVersion> versions(@PathVariable long id) {
+        if(!messages.existsById(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Message not found");
+        return inspection.versions(id);
     }
 
     public record IncomingMessage(@jakarta.validation.constraints.NotNull @Size(max = Message.PAYLOAD_REQUEST_MAX_LENGTH) String payload,
@@ -161,5 +181,5 @@ public class MessageApi {
     public record MessageResponse(Long id, MessageDirection direction, MessageStatus status, String payload,
                                   String payloadType, String sourceSystem, String targetSystem, Instant createdAt,
                                   Instant processedAt, String charset, String charsetSource, int payloadSize,
-                                  String payloadEncoding, List<Metadata> metadata) { }
+                                  String payloadEncoding, List<Metadata> metadata,boolean archived,boolean masked) { }
 }

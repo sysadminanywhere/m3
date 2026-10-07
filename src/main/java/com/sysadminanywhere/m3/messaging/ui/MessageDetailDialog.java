@@ -43,6 +43,11 @@ public class MessageDetailDialog extends Dialog {
     private final com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService submissions;
     private Message currentMessage;
     private final Grid<MessageService.JobInfo> jobsGrid = new Grid<>();
+    private final Grid<com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Event> historyGrid=new Grid<>();
+    private final VerticalLayout relatedMessages=new VerticalLayout();
+    private final ComboBox<com.sysadminanywhere.m3.messaging.service.MessageInspectionService.BodyVersion> bodyVersion=new ComboBox<>(t("Payload version"));
+    private final com.vaadin.flow.component.checkbox.Checkbox revealOriginal=new com.vaadin.flow.component.checkbox.Checkbox(t("Show original (access is audited)"));
+    private boolean loading;
     private final Button retryButton = new Button(t("Retry processing"));
     private final Button sourceMessageButton = new Button(t("View original message"));
     private Consumer<Long> onChangeCallback;
@@ -94,6 +99,12 @@ public class MessageDetailDialog extends Dialog {
         payloadArea.setReadOnly(true);
         charsetSelector.setItems("UTF-8", "windows-1251", "KOI8-R", "IBM866", "ISO-8859-1", "UTF-16", "UTF-16LE", "UTF-16BE");
         charsetSelector.addValueChangeListener(event -> refreshPreview());
+        bodyVersion.setItemLabelGenerator(version -> version.jobId()==null?t("Stored payload"):t("Prepared delivery #{0}",version.jobId()));
+        bodyVersion.setWidthFull();
+        charsetSelector.setWidth("220px");charsetSelector.setMaxWidth("100%");
+        bodyVersion.addValueChangeListener(event -> refreshPreview());
+        revealOriginal.setVisible(new com.sysadminanywhere.m3.base.security.ServiceAccess().original());
+        revealOriginal.addValueChangeListener(event -> refreshPreview());
         previewHint.getStyle().set("white-space", "normal");
 
         metadataGrid = new Grid<>();
@@ -140,7 +151,9 @@ public class MessageDetailDialog extends Dialog {
         metadataContent.setPadding(false); metadataContent.setSizeFull();
         var processingContent = new VerticalLayout(jobsGrid);
         processingContent.setPadding(false); processingContent.setSizeFull();
-        var payloadContent = new VerticalLayout(charsetSelector, previewHint, payloadArea);
+        var controls=new HorizontalLayout(bodyVersion,charsetSelector);controls.setWidthFull();controls.setFlexGrow(1,bodyVersion);
+        controls.getStyle().set("flex-wrap","wrap").set("align-items","end");
+        var payloadContent = new VerticalLayout(controls,revealOriginal, previewHint, payloadArea);
         payloadContent.setPadding(false); payloadContent.setSizeFull();
         var tabs = new TabSheet();
         tabs.addClassName("message-detail-tabs");
@@ -150,6 +163,16 @@ public class MessageDetailDialog extends Dialog {
         tabs.add(t("Message body"), payloadContent);
         tabs.add(t("Metadata"), metadataContent);
         tabs.add(t("Processing"), processingContent);
+        historyGrid.addColumn(row -> java.time.format.DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(Translations.locale()).withZone(ZoneId.systemDefault()).format(row.occurredAt())).setHeader(t("Time"));
+        historyGrid.addColumn(row -> t(row.kind())).setHeader(t("Event"));
+        historyGrid.addColumn(row -> row.ruleId()==null?"":row.ruleId()+" / "+row.pool()).setHeader(t("Rule / pool"));
+        historyGrid.addColumn(row -> row.attempt()==0?"":row.attempt()).setHeader(t("Attempt"));
+        historyGrid.addColumn(com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Event::status).setHeader(t("Status"));
+        historyGrid.addColumn(com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Event::actor).setHeader(t("Actor"));
+        historyGrid.addColumn(com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Event::detail).setHeader(t("Details"));
+        historyGrid.setWidthFull(); historyGrid.setHeight("450px");
+        tabs.add(t("Routing history"),new VerticalLayout(relatedMessages,historyGrid));
+        tabs.setSelectedIndex(1);
         add(tabs);
 
         // Footer buttons
@@ -239,8 +262,15 @@ public class MessageDetailDialog extends Dialog {
     }
 
     public void openMessage(Long messageId) {
+        loading=true;
+        revealOriginal.setValue(false);
         currentMessage = messageService.findById(messageId);
         if (currentMessage != null) {
+            historyGrid.setItems(messageService.history().events(messageId));
+            relatedMessages.removeAll(); relatedMessages.setPadding(false);
+            relatedMessages.add(new Span(currentMessage.isArchived()?t("Cold archive · payload is loaded on request"):t("Hot storage")));
+            for(var link:messageService.history().links(messageId)) relatedMessages.add(new Button(t("Message #{0}",link.id())+" · "+Translations.enumLabel(com.sysadminanywhere.m3.messaging.domain.MessageDirection.valueOf(link.direction()))+" · "+Translations.enumLabel(com.sysadminanywhere.m3.messaging.domain.MessageStatus.valueOf(link.status())),event -> openMessage(link.id())));
+            var versions=messageService.inspection().versions(messageId); bodyVersion.setItems(versions);bodyVersion.setValue(versions.getFirst());
             setHeaderTitle(t("Message #") + messageId);
             var jobs = messageService.executionJobs(messageId);
             jobsGrid.setItems(jobs);
@@ -264,7 +294,6 @@ public class MessageDetailDialog extends Dialog {
             sizeField.setValue(Integer.toString(currentMessage.getPayloadSize()));
 
             List<MessageMetadata> metadata = metadataRepository.findByMessageId(messageId);
-            metadataGrid.setItems(metadata.stream().sorted(java.util.Comparator.comparing(MessageMetadata::getKey)).toList());
             metadataValues.clear();
             metadata.forEach(value -> metadataValues.put(value.getKey(), value.getValue()));
             String sourceId = metadataValues.get("sourceMessageId");
@@ -273,7 +302,6 @@ public class MessageDetailDialog extends Dialog {
             catch (NumberFormatException ignored) { }
             sourceMessageButton.setVisible(hasSource);
             sourceMessageButton.setText(t("View original #") + sourceId);
-            originalBytes = currentMessage.getPayloadBytes();
             boolean binary = "BASE64".equals(currentMessage.getPayloadFormat());
             charsetSelector.setEnabled(true);
             String charset = currentMessage.getCharset() == null ? "UTF-8" : currentMessage.getCharset();
@@ -283,21 +311,12 @@ public class MessageDetailDialog extends Dialog {
             choices.add(charset);
             charsetSelector.setItems(choices);
             charsetSelector.setValue(charset);
-            try {
-                byte[] content = originalBytes;
-                String name = metadataValues.getOrDefault("fileName", "payload" + (binary ? ".bin" : ".txt"));
-                name = name.replaceAll("[\\\\/:\\p{Cntrl}]", "_");
-                String downloadName = "message-" + messageId + "-" + name;
-                downloadLink.setHref(DownloadHandler.fromInputStream(event -> new DownloadResponse(
-                        new ByteArrayInputStream(content), downloadName, "application/octet-stream", content.length)));
-                downloadLink.setVisible(true);
-            } catch (IllegalArgumentException invalid) {
-                downloadLink.setVisible(false);
-            }
+            loading=false;
             refreshPreview();
 
             open();
         } else {
+            loading=false;
             com.vaadin.flow.component.notification.Notification.show(t("Message #") + messageId + t(" no longer exists"), 5000,
                     com.vaadin.flow.component.notification.Notification.Position.BOTTOM_END);
             close();
@@ -305,27 +324,26 @@ public class MessageDetailDialog extends Dialog {
     }
 
     private void refreshPreview() {
-        if (currentMessage == null) return;
-        String text;
-        {
-            if (originalBytes == null || charsetSelector.getValue() == null) {
-                payloadArea.clear();
-                previewHint.setText(t("Choose a charset for text preview."));
-                return;
-            }
-            try {
-                text = Charset.forName(charsetSelector.getValue()).newDecoder()
-                        .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
-                        .decode(ByteBuffer.wrap(originalBytes)).toString();
-                previewHint.setText((currentMessage.getCharset() == null ? t("Stored charset is unknown; this is a manual preview. ") : "")
-                        + t("Changing preview charset does not change stored bytes. Download preserves the original bytes."));
-            } catch (java.nio.charset.CharacterCodingException invalid) {
-                payloadArea.clear();
-                previewHint.setText(t("Cannot decode with the selected charset. Select another charset or download the original bytes."));
-                return;
-            }
+        if (loading || currentMessage == null || bodyVersion.getValue()==null) return;
+        try {
+            long id=currentMessage.getId(); Long jobId=bodyVersion.getValue().jobId();boolean original=revealOriginal.getValue();
+            String charset=jobId==null?charsetSelector.getValue():null;
+            var view=messageService.inspection().view(id,jobId,original,charset);
+            historyGrid.setItems(messageService.history().events(id,original));
+            payloadArea.setValue(view.text());
+            var metadata=view.metadata().entrySet().stream().map(entry -> new MessageMetadata(currentMessage,entry.getKey(),entry.getValue())).toList();
+            metadataGrid.setItems(metadata);
+            previewHint.setText(original?t("Original payload · access recorded in audit"):t("Sensitive fields are masked on the server. Downloads use this same access policy."));
+            downloadLink.setText(original?t("Download original payload"):t("Download masked payload"));
+            downloadLink.setHref(DownloadHandler.fromInputStream(event -> {
+                var fresh=messageService.inspection().view(id,jobId,original,charset);
+                return new DownloadResponse(new ByteArrayInputStream(fresh.bytes()),"message-"+id+(original?".bin":"-masked.txt"),"application/octet-stream",fresh.bytes().length);
+            }));
+            downloadLink.setVisible(true);
+        } catch(RuntimeException unavailable) {
+            payloadArea.clear();metadataGrid.setItems(List.of());downloadLink.setVisible(false);
+            previewHint.setText(t("Payload is unavailable, cannot be decoded, or access is denied. Refresh after resolving storage or permissions."));
         }
-        payloadArea.setValue(text);
     }
 
     private void deleteMessage() {

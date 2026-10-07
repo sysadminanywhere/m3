@@ -34,6 +34,8 @@ class MessageServiceTest {
     private com.sysadminanywhere.m3.messaging.repository.RuleExecutionJobRepository jobs;
     @Mock private org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Mock private jakarta.persistence.EntityManager entityManager;
+    @Mock private MessageHistoryService history;
+    @Mock private MessageInspectionService inspection;
 
     @InjectMocks
     private MessageService messageService;
@@ -43,6 +45,8 @@ class MessageServiceTest {
     @BeforeEach
     void setUp() {
         org.springframework.test.util.ReflectionTestUtils.setField(messageService, "entityManager", entityManager);
+        org.springframework.test.util.ReflectionTestUtils.setField(messageService, "history", history);
+        org.springframework.test.util.ReflectionTestUtils.setField(messageService, "inspection", inspection);
         testMessage = new Message(MessageDirection.INBOUND, "{\"data\": \"test\"}", "application/json");
     }
 

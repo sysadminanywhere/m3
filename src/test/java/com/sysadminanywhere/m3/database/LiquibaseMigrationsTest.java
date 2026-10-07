@@ -46,7 +46,7 @@ class LiquibaseMigrationsTest {
     void createsFreshSchemaCompatibleWithAllEntitiesAndDoesNotReapplyChanges() throws Exception {
         migrate();
         validateMappingsAndPersistPool();
-        assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(21);
+        assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(23);
         assertThat(number("SELECT count(*) FROM rule_worker_pool WHERE name = 'default'")).isEqualTo(1);
         assertThat(number("SELECT increment_by FROM pg_sequences WHERE schemaname = current_schema() AND sequencename = 'task_seq'")).isEqualTo(50);
         assertThat(number("SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname LIKE 'idx_%'")).isEqualTo(12);
@@ -55,7 +55,7 @@ class LiquibaseMigrationsTest {
 
         migrate();
 
-        assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(21);
+        assertThat(number("SELECT count(*) FROM databasechangelog")).isEqualTo(23);
         assertThat(number("SELECT desired_replicas FROM rule_worker_pool WHERE name = 'default'")).isEqualTo(3);
         assertThat(number("SELECT count(*) FROM message WHERE payload = 'preserve me'")).isEqualTo(1);
         assertThatThrownBy(() -> execute("INSERT INTO message(direction,status,payload,payload_type,created_at) VALUES('INBOUND','INVALID','x','text/plain',now())"))

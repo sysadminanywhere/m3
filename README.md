@@ -321,6 +321,8 @@ Canvas actions/conditions are saved immediately. Channel/loading/worker settings
 
 ## Message search, overview and unsaved changes
 
+Message troubleshooting now adds a masked payload-fragment search, correlation IDs, routing/attempt history, original/copy links and prepared delivery snapshots. Optional S3/MinIO tiering moves completed bodies out of PostgreSQL after seven days. Community executes one worker slot; signed offline Scale licenses enable shared capacity, multiple pools and autoscaling. See [troubleshooting, storage and Scale](docs/troubleshooting-storage-scale.md) for configuration, original-access permissions, API changes and upgrade requirements.
+
 Inbound and outbound lists filter by message ID, status, source, target and calendar dates.
 Source/target search is case insensitive and treats `%`, `_` and backslashes literally. Dates
 use the displayed server time zone and include the entire final day. **Apply filters** updates

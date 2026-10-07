@@ -15,6 +15,10 @@ import java.util.List;
 
 @Service
 public class MessageService {
+    @org.springframework.beans.factory.annotation.Autowired private MessageInspectionService inspection;
+    @org.springframework.beans.factory.annotation.Autowired private MessageHistoryService history;
+    public MessageInspectionService inspection() { return inspection; }
+    public MessageHistoryService history() { return history; }
 
     private final MessageRepository messageRepository;
     private final com.sysadminanywhere.m3.messaging.repository.RuleExecutionJobRepository jobs;
@@ -53,15 +57,19 @@ public class MessageService {
     public java.util.List<MessageSummary> searchSummary(MessageDirection direction,MessageSearch filters,Pageable page) {
         var cb=entityManager.getCriteriaBuilder(); var query=cb.createQuery(MessageSummary.class); var message=query.from(Message.class);
         query.select(cb.construct(MessageSummary.class,message.get("id"),message.get("status"),message.get("sourceSystem"),
-                message.get("targetSystem"),message.get("payloadType"),message.get("createdAt")));
-        query.where(filters.specification(direction,java.time.ZoneId.systemDefault()).toPredicate(message,query,cb));
+                message.get("targetSystem"),message.get("payloadType"),message.get("createdAt"),cb.isNotNull(message.get("archiveKey"))));
+        var predicate=filters.specification(direction,java.time.ZoneId.systemDefault()).toPredicate(message,query,cb);
+        if(!filters.text().isEmpty()||!filters.correlation().isEmpty()) predicate=cb.and(predicate,cb.equal(message.get("searchVersion"),inspection.searchVersion()));
+        query.where(predicate);
         query.orderBy(cb.desc(message.get("createdAt")),cb.desc(message.get("id")));
         return entityManager.createQuery(query).setFirstResult(Math.toIntExact(page.getOffset())).setMaxResults(page.getPageSize()).getResultList();
     }
 
     @Transactional(readOnly = true)
     public Page<Message> search(MessageDirection direction, MessageSearch filters, Pageable pageable) {
-        return messageRepository.findAll(filters.specification(direction, java.time.ZoneId.systemDefault()), pageable);
+        var specification=filters.specification(direction, java.time.ZoneId.systemDefault());
+        if(!filters.text().isEmpty()||!filters.correlation().isEmpty()) specification=specification.and((root,query,cb)->cb.equal(root.get("searchVersion"),inspection.searchVersion()));
+        return messageRepository.findAll(specification, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -73,7 +81,7 @@ public class MessageService {
     public List<JobInfo> executionJobs(Long messageId) {
         return jobs.findByMessage_IdOrderByRule_PriorityAsc(messageId).stream().map(job -> new JobInfo(
                 job.getId(),job.getRule().getId(),job.getWorkerPool().getName(),job.getStatus(),
-                job.getAttempts(),job.getNextAttemptAt(),job.getErrorMessage(),job.isDeliveryUncertain())).toList();
+                job.getAttempts(),job.getNextAttemptAt(),inspection.safeDiagnostic(job.getErrorMessage()),job.isDeliveryUncertain())).toList();
     }
     public record JobInfo(Long id,Long ruleId,String pool,com.sysadminanywhere.m3.messaging.domain.RuleJobStatus status,
                           int attempts,Instant nextAttemptAt,String error,boolean uncertain) { }
@@ -112,6 +120,7 @@ public class MessageService {
         }
         message.setStatus(MessageStatus.PENDING);
         message.setProcessedAt(null);
+        history.action(id,"RETRY_REQUESTED",null);
     }
 
     @Transactional

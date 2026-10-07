@@ -1,5 +1,7 @@
 # Original bytes and message charsets
 
+The byte/charset rules below describe transport originals. UI and API reads now use server-side masking unless an original-reader account explicitly requests original access. To download exact bytes use `/api/v1/messages/{id}/payload?original=true`. The UI's original toggle/download is permission-checked and audited; a masked download contains UTF-8 presentation text. See [troubleshooting, storage and Scale](troubleshooting-storage-scale.md).
+
 Messages store `payload_bytes` in PostgreSQL `bytea`. Nullable `charset` identifies the text charset; `charset_source` records its origin. `payload_format` controls the compatible JSON representation (`TEXT` or `BASE64`). Base64 is an HTTP transport representation, not the database storage format. New writes do not populate the legacy `payload` text column.
 
 ## Ingestion

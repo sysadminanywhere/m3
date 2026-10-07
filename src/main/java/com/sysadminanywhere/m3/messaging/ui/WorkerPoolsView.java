@@ -37,15 +37,20 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
     private final WorkerPoolCapacityService capacityService;
     private final WorkerPoolMetricsService metricsService;
     private final Grid<RuleWorkerPool> grid = new Grid<>();
+    private final com.sysadminanywhere.m3.messaging.service.ScaleLicenseService licenses;
+    private final com.sysadminanywhere.m3.messaging.service.WorkerCapacityAllocation allocation;
+    private final Span licenseStatus=new Span();
 
     WorkerPoolsView(RuleWorkerPoolService service, WorkerPoolCapacityService capacityService,
-                    WorkerPoolMetricsService metricsService) {
+                    WorkerPoolMetricsService metricsService,com.sysadminanywhere.m3.messaging.service.ScaleLicenseService licenses,
+                    com.sysadminanywhere.m3.messaging.service.WorkerCapacityAllocation allocation) {
+        this.licenses=licenses;this.allocation=allocation;
         this.service = service;
         this.capacityService = capacityService;
         this.metricsService = metricsService;
         var create = new Button(t("Create Worker Pool"), event -> openCreateDialog());
         create.addThemeVariants(ButtonVariant.PRIMARY);
-        var toolbar = new HorizontalLayout(create);
+        var toolbar = new HorizontalLayout(create,licenseStatus,new Button(t("License"),event -> getUI().ifPresent(ui -> ui.navigate("license"))));
         toolbar.addClassName("page-toolbar");
         toolbar.setWidthFull();
         var controllerStatus = new Span(capacityService.isConfigured()
@@ -64,7 +69,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
 
         grid.addComponentColumn(this::poolCell).setHeader(t("Pool")).setWidth("140px").setFlexGrow(1);
         grid.addColumn(this::capacityLabel).setHeader(t("Count")).setWidth("110px").setFlexGrow(0);
-        grid.addColumn(pool -> capacityStatus(pool.getName()))
+        grid.addColumn(pool -> capacityStatus(pool.getName())+(capacityService.limited(pool)?" · "+t("Capacity limited by license"):""))
                 .setHeader(t("Running")).setWidth("160px").setFlexGrow(0);
         grid.addComponentColumn(pool -> {
             var load = metricsService.summary(pool.getId());
@@ -135,6 +140,8 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         var ruleCount = new Span(t("Rules: {0}", service.ruleCount(pool.getId())));
         ruleCount.getStyle().set("color", "var(--m3-muted)").set("font-size", "var(--lumo-font-size-xs)");
         var cell = new VerticalLayout(name, ruleCount);
+        Long age=capacityService.oldestQueuedSeconds(pool);
+        cell.add(new Span(age==null?t("No queued jobs"):t("Oldest queued job: {0} s",age)));
         cell.setPadding(false);
         cell.setSpacing(false);
         return cell;
@@ -171,7 +178,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         name.setHelperText(t("Lowercase letters, numbers and hyphens"));
         var desired = numberField(t("Desired containers"), 1);
         var min = numberField(t("Minimum"), 1);
-        var max = numberField(t("Maximum"), 4);
+        var max = numberField(t("Maximum"), Math.min(4,licenses.state().maxWorkers()));
         var autoScale = new Checkbox(t("Auto-scale from queued jobs"));
         var jobsPerWorker = queueLimitField(50);
         var fields = new FormLayout(name, desired, min, max, autoScale, jobsPerWorker);
@@ -205,12 +212,14 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         dialog.setWidth("520px");
         dialog.setMaxWidth("calc(100vw - 32px)");
         dialog.setHeaderTitle(t("Capacity · ") + pool.getName());
-        var desired = numberField(t("Desired containers"), pool.getDesiredReplicas());
-        var min = numberField(t("Minimum"), pool.getMinReplicas());
-        var max = numberField(t("Maximum"), pool.getMaxReplicas());
+        var desired = numberField(t("Desired containers"), Math.min(pool.getDesiredReplicas(),licenses.state().maxWorkers()));
+        var min = numberField(t("Minimum"), Math.min(pool.getMinReplicas(),licenses.state().maxWorkers()));
+        var max = numberField(t("Maximum"), Math.min(pool.getMaxReplicas(),licenses.state().maxWorkers()));
         var autoScale = new Checkbox(t("Auto-scale from queued jobs"), pool.isAutoScaleEnabled());
         var jobsPerWorker = queueLimitField(pool.getPendingJobsPerWorker());
-        var fields = new FormLayout(desired, min, max, autoScale, jobsPerWorker);
+        var priority=new IntegerField(t("Capacity priority"));priority.setMin(0);priority.setMax(10000);priority.setValue(pool.getCapacityPriority());
+        priority.setHelperText(t("Lower values receive shared capacity first."));
+        var fields = new FormLayout(desired, min, max, autoScale, jobsPerWorker,priority);
         fields.addClassName("worker-pool-form");
         fields.setWidthFull();
         fields.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
@@ -222,7 +231,7 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         var save = new Button(t("Save"), event -> {
             try {
                 var updated = service.updateCapacity(pool.getId(), desired.getValue(), min.getValue(), max.getValue(),
-                        autoScale.getValue(), jobsPerWorker.getValue(), pool.getVersion());
+                        autoScale.getValue(), jobsPerWorker.getValue(), pool.getVersion(),priority.getValue());
                 guard.markSaved();
                 dialog.close();
                 refresh();
@@ -261,7 +270,10 @@ class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
         } catch (RuntimeException e) { showError(e); }
     }
 
-    private void refresh() { grid.setItems(service.findAll()); }
+    private void refresh() {
+        grid.setItems(service.findAll());var state=licenses.state();
+        licenseStatus.setText(t("{0} · {1} / {2} worker slots · {3}",state.tier(),allocation.used(),state.maxWorkers(),t(state.condition())));
+    }
 
     private void reconcileAfterSave(RuleWorkerPool pool) {
         try {

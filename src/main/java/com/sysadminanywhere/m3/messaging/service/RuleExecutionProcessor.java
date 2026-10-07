@@ -15,6 +15,7 @@ import java.util.*;
 
 @Service
 public class RuleExecutionProcessor {
+    @org.springframework.beans.factory.annotation.Autowired private MessageHistoryService history;
     @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.JobConfiguration configurations;
     private final RuleExecutionJobRepository jobs;
     private final MessageRepository messages;
@@ -126,12 +127,14 @@ public class RuleExecutionProcessor {
                 .map(job -> configurations.read(job).restore())
                 .toList();
         if (matchedRules.isEmpty()) {
+            history.action(stored.getId(),"NO_MATCH",null);
             setFinalStatus(stored, MessageStatus.PROCESSED);
             return;
         }
 
         var input = createInput(stored, matchedRules);
         if (ruleEngine.shouldFilter(input, matchedRules)) {
+            history.action(stored.getId(),"FILTERED",null);
             setFinalStatus(stored, MessageStatus.PROCESSED);
             return;
         }
@@ -168,7 +171,7 @@ public class RuleExecutionProcessor {
             outbound.addMetadata("encoding", "base64");
             if (outbound.getCharset() != null) outbound.addMetadata("charset", outbound.getCharset());
             outbound.addMetadata("sourceMessageId",stored.getId().toString());
-            if (sendMessageId) outbound.addMetadata("m3MessagePayloadPath", "/api/v1/messages/" + stored.getId() + "/payload");
+            if (sendMessageId) outbound.addMetadata("m3MessagePayloadPath", "/api/v1/messages/" + stored.getId() + "/payload?original=true");
             outbound.setPayloadType(sendMessageId ? "text/plain" : changed ? PayloadCodec.outputType(stored.getPayloadType(),output) : stored.getPayloadType());
             outbound.addMetadata("payloadType",outbound.getPayloadType());
             outbound.setSourceSystem(stored.getSourceSystem());
@@ -185,6 +188,8 @@ public class RuleExecutionProcessor {
             deliveryJob.setResult(serializedPlan);
             configurations.freeze(deliveryJob,configuration);
             jobs.save(deliveryJob);
+            history.action(stored.getId(),"ROUTED",outbound.getId());
+            history.action(outbound.getId(),"COPY_CREATED",stored.getId());
             stored.setTargetSystem(destination.getName());
         }
         setFinalStatus(stored, MessageStatus.PROCESSED);

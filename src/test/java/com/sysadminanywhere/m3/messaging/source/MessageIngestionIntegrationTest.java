@@ -198,6 +198,7 @@ class MessageIngestionIntegrationTest {
         return event;
     }
     private static HttpResponse<String> get(String path) throws Exception {
+        path=path+(path.contains("?")?"&":"?")+"original=true";
         return HttpClient.newHttpClient().send(authorizedRequest(api(path)).GET().build(), HttpResponse.BodyHandlers.ofString());
     }
     private static URI api(String path) { return URI.create("http://localhost:" + app.getEnvironment().getProperty("local.server.port") + path); }
@@ -562,6 +563,25 @@ class MessageIngestionIntegrationTest {
         assertThat(get("/api/v1/messages/" + original).body()).isEqualTo(before);
         assertThat(json().readTree(get("/api/v1/messages/" + copy).body()).path("charset").asText()).isEqualTo("windows-1251");
         assertThat(jdbc().queryForObject("SELECT count(*) FROM rule_execution_job WHERE message_id=?", Long.class, copy)).isEqualTo(1);
+    }
+    @Test @Order(15)
+    void masksApiAndDownloadsRequiresOriginalPermissionAndAuditsReads() throws Exception {
+        var target=channels().createChannel("privacy-output",ChannelType.DIRECTORY,ChannelDirection.OUTBOUND,null,Map.of("directoryPath",temp.resolve("privacy").toString()));
+        String payload="{\"password\":\"body-private-secret\",\"name\":\"Alice\"}";
+        var submitted=submit(outboundRule(target),payload,"application/json",Map.of("token","metadata-private-secret"),"privacy-test");
+        assertThat(submitted.statusCode()).as(submitted.body()).isEqualTo(202);
+        assertThat(submitted.body()).doesNotContain("body-private-secret","metadata-private-secret");
+        long id=json().readTree(submitted.body()).path("id").asLong();var client=HttpClient.newHttpClient();
+        String credentials=Base64.getEncoder().encodeToString("viewer:test-viewer-password-123456".getBytes(StandardCharsets.UTF_8));
+        for(String suffix:List.of("","/payload","/text")) {
+            var masked=client.send(HttpRequest.newBuilder(api("/api/v1/messages/"+id+suffix)).header("Authorization","Basic "+credentials).GET().build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(masked.statusCode()).as(masked.body()).isEqualTo(200);assertThat(masked.body()).doesNotContain("body-private-secret","metadata-private-secret");
+            var forbidden=client.send(HttpRequest.newBuilder(api("/api/v1/messages/"+id+suffix+"?original=true")).header("Authorization","Basic "+credentials).GET().build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(forbidden.statusCode()).as(forbidden.body()).isEqualTo(403);
+        }
+        assertThat(json().readTree(get("/api/v1/messages/"+id).body()).path("payload").asText()).isEqualTo(payload);
+        assertThat(jdbc().queryForObject("SELECT count(*) FROM configuration_audit WHERE operation='authorize' AND entity_id=?",Long.class,id)).isPositive();
+        assertThat(jdbc().queryForObject("SELECT convert_from(payload_bytes,'UTF8') FROM message WHERE message_id=?",String.class,id)).isEqualTo(payload);
     }
     @Test @Order(14)
     void requiresAuthenticationRolesAndExplicitMutationHeaderAndEncryptsStoredConfiguration() throws Exception {

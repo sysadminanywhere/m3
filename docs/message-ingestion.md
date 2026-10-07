@@ -1,5 +1,7 @@
 # Message ingestion and external consumers
 
+API previews and downloads are masked by default. Exact-byte consumers must have `PAYLOAD_ORIGINAL` authority and request `original=true`, for example `/api/v1/messages/{id}/payload?original=true`. Optional tiering can move completed bodies to object storage while retaining the catalog. See [troubleshooting, storage and Scale](troubleshooting-storage-scale.md) for the access policy and upgrade contract.
+
 The ingestion contract is:
 
 1. Receive data from a configured source.

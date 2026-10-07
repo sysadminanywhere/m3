@@ -72,4 +72,10 @@
     <changeSet id="021-hardening" author="m3">
         <sqlFile path="changes/021-hardening.sql" relativeToChangelogFile="true" splitStatements="true" />
     </changeSet>
+    <changeSet id="022-message-observability" author="m3">
+        <sqlFile path="changes/022-message-observability.sql" relativeToChangelogFile="true" splitStatements="false" />
+    </changeSet>
+    <changeSet id="023-scale-license" author="m3">
+        <sqlFile path="changes/023-scale-license.sql" relativeToChangelogFile="true" />
+    </changeSet>
 </databaseChangeLog>

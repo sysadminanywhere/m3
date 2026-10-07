@@ -14,6 +14,8 @@ import java.util.*;
 
 @Service
 public class OutboundSubmissionService {
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageArchiveService archive;
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageHistoryService history;
     @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.JobConfiguration configurations;
     private final RuleRepository rules;
     private final ChannelSettingsRepository channels;
@@ -64,6 +66,7 @@ public class OutboundSubmissionService {
         }
         var source = entityManager.find(Message.class, sourceMessageId, jakarta.persistence.LockModeType.PESSIMISTIC_READ);
         if (source == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Source message not found");
+        archive.hydrate(source);
         var rule = rules.findById(ruleId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rule not found"));
         if (rule.getRuleType() != RuleType.OUTBOUND || !Boolean.TRUE.equals(rule.getEnabled()) || rule.getWorkerPool() == null)
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Rule must be enabled, OUTBOUND and assigned to a worker pool");
@@ -81,6 +84,8 @@ public class OutboundSubmissionService {
         copy.addMetadata("m3MessageId", copy.getId().toString());
         copy.addMetadata("m3RuleId", Long.toString(ruleId));
         var job=new RuleExecutionJob(copy,rule,rule.getWorkerPool()); configurations.freeze(job); jobs.save(job);
+        history.action(sourceMessageId,"FORWARDED",copy.getId());
+        history.action(copy.getId(),"COPY_CREATED",sourceMessageId);
         if (key != null) jdbc.update("INSERT INTO outbound_message_request(rule_id,request_key,message_id,request_digest) VALUES(?,?,?,?)",
                 ruleId, key, copy.getId(), digest);
         return copy;

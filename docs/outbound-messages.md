@@ -1,5 +1,7 @@
 # Outgoing messages
 
+Message API responses/downloads are now masked by default. Original reads require `PAYLOAD_ORIGINAL` authority and `original=true`; transport delivery still uses unmodified original/prepared bytes. ID-mode payload URLs include `/payload?original=true` for newly prepared jobs. See [troubleshooting, storage and Scale](troubleshooting-storage-scale.md) for history, archive and license setup.
+
 Submit a message to the control plane with the ID of the rule that must deliver it:
 
 ```http

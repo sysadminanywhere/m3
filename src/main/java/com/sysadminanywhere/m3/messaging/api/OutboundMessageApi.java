@@ -21,6 +21,7 @@ import jakarta.persistence.LockModeType;
 @RequestMapping("/api/v1")
 @Profile("!worker")
 public class OutboundMessageApi {
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageInspectionService inspection;
     private final OutboundSubmissionService submissions;
     private final MessageRepository messages;
     private final RuleExecutionJobRepository jobs;
@@ -33,21 +34,21 @@ public class OutboundMessageApi {
     public ResponseEntity<MessageApi.MessageResponse> submit(@Valid @RequestBody Request request,
             @RequestHeader(name="Idempotency-Key", required=false) String key) {
         var stored = submissions.submit(request.ruleId(), request.payload(), request.payloadType(), request.charset(), request.metadata(), key);
-        return ResponseEntity.accepted().location(URI.create("/api/v1/messages/" + stored.getId())).body(MessageApi.response(stored));
+        return ResponseEntity.accepted().location(URI.create("/api/v1/messages/" + stored.getId())).body(MessageApi.response(stored,inspection.view(stored.getId(),null,false,null)));
     }
     @PostMapping("/messages/{id}/forward")
     @Transactional
     public ResponseEntity<MessageApi.MessageResponse> forward(@PathVariable long id, @Valid @RequestBody ForwardRequest request,
             @RequestHeader(name="Idempotency-Key", required=false) String key) {
         var stored = submissions.forward(id, request.ruleId(), key);
-        return ResponseEntity.accepted().location(URI.create("/api/v1/messages/" + stored.getId())).body(MessageApi.response(stored));
+        return ResponseEntity.accepted().location(URI.create("/api/v1/messages/" + stored.getId())).body(MessageApi.response(stored,inspection.view(stored.getId(),null,false,null)));
     }
     @GetMapping("/messages/{id}/delivery")
     @Transactional(readOnly=true)
     public List<DeliveryStatus> status(@PathVariable long id) {
         outbound(id);
         return jobs.findByMessage_IdOrderByRule_PriorityAsc(id).stream().map(job -> new DeliveryStatus(job.getId(), job.getRule().getId(),
-                job.getWorkerPool().getName(), job.getStatus(), job.getAttempts(), job.getNextAttemptAt(), job.getErrorMessage(),job.isDeliveryUncertain())).toList();
+                job.getWorkerPool().getName(), job.getStatus(), job.getAttempts(), job.getNextAttemptAt(), inspection.safeDiagnostic(job.getErrorMessage()),job.isDeliveryUncertain())).toList();
     }
     @GetMapping("/rules/outbound")
     @Transactional(readOnly=true)

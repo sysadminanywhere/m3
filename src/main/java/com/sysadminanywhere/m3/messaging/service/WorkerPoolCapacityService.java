@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 @Service
 @Profile("!worker")
 public class WorkerPoolCapacityService {
+    @org.springframework.beans.factory.annotation.Autowired private WorkerCapacityAllocation allocation;
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(WorkerPoolCapacityService.class);
     private final RuleWorkerPoolRepository pools;
     private final RuleExecutionJobRepository jobs;
@@ -24,14 +25,15 @@ public class WorkerPoolCapacityService {
 
     public void reconcile(Long poolId) {
         RuleWorkerPool pool = pools.findById(poolId).orElseThrow();
-        scaler.reconcile(pool, effectiveReplicas(pool));
+        reconcileAll();
     }
 
     public void removePool(String poolName) { scaler.removePool(poolName); }
 
     public void reconcileAll() {
+        var targets=allocation.targets();
         for (var pool : pools.findAll()) {
-            try { scaler.reconcile(pool,effectiveReplicas(pool)); }
+            try { scaler.reconcile(pool,targets.getOrDefault(pool.getName(),0)); }
             catch (RuntimeException error) { log.warn("Could not reconcile pool '{}'",pool.getName(),error); }
         }
         scaler.removeOrphanPools(name -> pools.findByName(name).isPresent());
@@ -42,12 +44,23 @@ public class WorkerPoolCapacityService {
         try {
             var pool = pools.findByName(poolName).orElseThrow();
             long backlog = queueDepth(pool);
-            return scaler.runningCount(poolName) + " / " + effectiveReplicas(pool) + " · " + backlog + " jobs";
+            int target=effectiveReplicas(pool);
+            String status=scaler.runningCount(poolName) + " / " + target + " · " + backlog + " jobs";
+            return status;
         }
         catch (Exception e) { return "Unavailable"; }
     }
 
     public boolean isConfigured() { return scaler.isConfigured(); }
+    public boolean limited(RuleWorkerPool pool) {
+        long backlog=queueDepth(pool);
+        int requested=pool.isAutoScaleEnabled()?(int)Math.clamp((backlog+pool.getPendingJobsPerWorker()-1)/pool.getPendingJobsPerWorker(),pool.getMinReplicas(),pool.getMaxReplicas()):pool.getDesiredReplicas();
+        return effectiveReplicas(pool)<requested;
+    }
+    public Long oldestQueuedSeconds(RuleWorkerPool pool) {
+        return jdbc.queryForObject("SELECT extract(epoch FROM now()-min(j.created_at))::bigint FROM rule_execution_job j JOIN rule r ON r.rule_id=j.rule_id WHERE r.worker_pool_id=? AND j.status='PENDING'",Long.class,pool.getId());
+    }
+    @org.springframework.beans.factory.annotation.Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public String scaleTarget(RuleWorkerPool pool) {
         return pool.isAutoScaleEnabled()
@@ -56,11 +69,7 @@ public class WorkerPoolCapacityService {
     }
 
     private int effectiveReplicas(RuleWorkerPool pool) {
-        if (!pool.isAutoScaleEnabled()) return pool.getDesiredReplicas();
-        long backlog = queueDepth(pool);
-        long calculated = backlog == 0 ? pool.getMinReplicas()
-                : (backlog + pool.getPendingJobsPerWorker() - 1) / pool.getPendingJobsPerWorker();
-        return (int) Math.clamp(calculated, pool.getMinReplicas(), pool.getMaxReplicas());
+        return allocation.targets().getOrDefault(pool.getName(),0);
     }
 
     private long queueDepth(RuleWorkerPool pool) {

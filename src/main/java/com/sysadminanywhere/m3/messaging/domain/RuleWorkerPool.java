@@ -31,6 +31,9 @@ public class RuleWorkerPool {
 
     @Column(name = "max_replicas", nullable = false)
     private int maxReplicas = 4;
+    @Column(name="capacity_priority",nullable=false,columnDefinition="integer not null default 100") private int capacityPriority=100;
+    public int getCapacityPriority() { return capacityPriority; }
+    public void setCapacityPriority(int value) { if(value<0||value>10000) throw new IllegalArgumentException("Capacity priority must be between 0 and 10000");capacityPriority=value; }
 
     @Column(name = "auto_scale_enabled", nullable = false, columnDefinition = "boolean not null default false")
     private boolean autoScaleEnabled;
