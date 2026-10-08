@@ -1,431 +1,390 @@
-# M3 - Messaging Middleware Platform
+# M3 — Messaging Middleware
 
-## Licensing
+M3 receives messages, stores their original contents, applies configurable rules, and delivers results to other systems. Its web interface lets you configure connections, build message pipelines, inspect payloads, and investigate failed deliveries.
 
-The [licensing notice](LICENSE.md) describes the first-publication model:
-free Community for internal business use without
-code modification or redistribution of customer builds, and commercial Scale for
-additional execution capacity, multiple pools, autoscaling and external authentication.
-This proposed model is source-available rather than open source. The
-[Community and Scale draft agreements](docs/licenses/README.md) identify the remaining
-release and rights-holder fields. Third-party components retain their own licenses.
-The official full Docker image may be downloaded and used for free in Community
-mode with paid features disabled. A purchased signed entitlement activates Scale
-within the order's agreed limits. After expiration and grace, the same image may
-continue running in Community mode. The Scale agreement grants free distribution
-use separately from paid activation; its order fields apply only to paid activation.
-External authentication currently has a signed entitlement check; Keycloak/AD
-connectors will be implemented separately.
+Use it to move files between directories or servers, connect Kafka and RabbitMQ to other endpoints, transform messages, or hand stored data to external business services through an HTTP API.
 
-M3 is a lightweight, extensible messaging middleware platform built with Spring Boot and Vaadin. It provides a visual interface for configuring message channels, defining routing rules, and monitoring message flows across various protocols.
+This repository builds **M3 Community**. It is a standalone Java application; the separate `m3-scale` repository is not required.
 
-## Features
+## Contents
 
-### Durable ingestion and receipt notifications
+- [What M3 does](#what-m3-does)
+- [How it works](#how-it-works)
+- [Quick start with Docker](#quick-start-with-docker)
+- [Run locally for development](#run-locally-for-development)
+- [Your first message flow](#your-first-message-flow)
+- [Rules and processing](#rules-and-processing)
+- [HTTP API](#http-api)
+- [Configuration and access](#configuration-and-access)
+- [Troubleshooting](#troubleshooting)
+- [Development and tests](#development-and-tests)
+- [Detailed documentation](#detailed-documentation)
+- [Community, Scale, and licensing](#community-scale-and-licensing)
 
-Channels describe endpoints; enabled INBOUND rules manage loading in their assigned worker pools. Messages and metadata are saved before receipt notifications are published to RabbitMQ. A transactional outbox retries failures. External services fetch data using `GET /api/v1/messages/{id}`; source adapters submit a loading `ruleId` through `POST /api/v1/channels/{channelId}/messages`. See [the ingestion contract and API](docs/message-ingestion.md).
+## What M3 does
 
-### Durable outgoing delivery
+| Capability | Description |
+| --- | --- |
+| Receive and send | Built-in DIRECTORY, FTP, SFTP, Kafka, and RabbitMQ transports. External adapters can submit messages through the API. |
+| Store reliably | Persist payloads, metadata, and execution jobs in PostgreSQL before acknowledging reception. |
+| Configure visually | Connect a source, conditions, filters, transformations, metadata additions, and a destination in the rule editor. |
+| Track execution | Inspect jobs, attempts, errors, message history, original/copy links, and delivery status. |
+| Integrate business services | Publish receipt events to RabbitMQ; services fetch messages and report processing status through the API. |
+| Operate the installation | Monitor queues, worker availability, overdue processing, storage pressure, and audit records. |
+| Control payload access | Mask sensitive fields by default and restrict access to original bytes. Optional S3/MinIO archival keeps the message catalog available. |
 
-Submit a payload and metadata with `ruleId` to `POST /api/v1/messages/outbound`. M3 stores the message and delivery job atomically, then workers apply the selected rule and deliver to DIRECTORY, FTP, SFTP, Kafka or RabbitMQ. Delivery status, retries and submission deduplication are available through the API. See [outgoing messages](docs/outbound-messages.md).
+The interface supports English, Russian, German, French, Italian, and Portuguese. Choose a language at the bottom of the navigation rail; save open forms before changing it.
 
-### Channel Management
-- **Multi-Protocol Support**: Configure channels for FTP, SFTP, Kafka, RabbitMQ, and local directories
-- **Inbound/Outbound Channels**: Support for both incoming and outgoing message flows
-- **Dynamic Configuration**: Endpoint changes without restart; loading is enabled and disabled through rules
+## How it works
 
-### Message Routing & Processing
-- **Visual Rule Engine**: Define message processing rules through an intuitive UI
-- **Conditions**: Match messages based on header values, payload content, or metadata
-- **Actions**: Route, transform, filter, or enrich messages as they flow through the system
-- **Explicit Rule Selection**: Each submission or source receiver uses its selected rule; condition groups use AND before OR
+Three concepts explain most of the application:
 
-### Message Tracking
-- **Complete Audit Trail**: Track all messages with timestamps, status, and metadata
-- **Status Monitoring**: Inbound messages start as loaded (configurable per rule); external services report processing/results through the API. Routing jobs have independent status; outbound deliveries use pending/sent/failed.
-- **Detailed Inspection**: Drill down into message payloads and headers
+- **Channel:** an endpoint, such as a directory, an SFTP server, a Kafka topic, or a RabbitMQ queue. It owns connection settings and has an inbound or outbound direction.
+- **Rule:** a pipeline that selects a source or destination and defines loading, conditions, and processing steps. Each rule belongs to a worker pool.
+- **Worker:** a separate process that loads data from native sources, executes rule jobs, and sends messages. The web application manages configuration and exposes the API.
 
-Message details show execution jobs, retry controls, the payload and metadata together, offer a charset selector for byte-payload previews, and download the complete stored payload. See [message preview and encoding options](docs/message-encodings.md).
+**Creating a channel does not start reception.** Enable an INBOUND rule for that channel and run a worker in the rule's pool.
 
-## Project Structure
-
-Community is a standalone Spring Boot project with one `pom.xml` and a standard `src/` tree. Scale is a separate standalone project that reuses Community source at build time. See [build and distribution instructions](docs/code-distribution.md).
-
-The application entry point is `src/main/java/com/sysadminanywhere/m3/Application.java`. Shared code follows a **feature-based package structure**:
-
-```
-src/main/java/com/sysadminanywhere/m3/
-в”њв”Ђв”Ђ Application.java                    # Application entry point
-в”њв”Ђв”Ђ base/                               # Shared UI components
-в”‚   в””в”Ђв”Ђ ui/
-в”‚       в””в”Ђв”Ђ MainLayout.java
-в””в”Ђв”Ђ messaging/                          # Core messaging feature
-    в”њв”Ђв”Ђ domain/                         # Domain entities & enums
-    в”‚   в”њв”Ђв”Ђ Message.java                  # Message entity
-    в”‚   в”њв”Ђв”Ђ ChannelSettings.java          # Channel configuration
-    в”‚   в”њв”Ђв”Ђ Rule.java                     # Routing rule
-    в”‚   в”њв”Ђв”Ђ RuleCondition.java            # Condition for rule evaluation
-    в”‚   в”њв”Ђв”Ђ RuleAction.java               # Action to execute on match
-    в”‚   в””в”Ђв”Ђ [Enums: ChannelType, ActionType, ConditionOperator, etc.]
-    в”њв”Ђв”Ђ repository/                     # Data access layer
-    в”‚   в”њв”Ђв”Ђ MessageRepository.java
-    в”‚   в”њв”Ђв”Ђ ChannelSettingsRepository.java
-    в”‚   в””в”Ђв”Ђ RuleRepository.java
-    в”њв”Ђв”Ђ service/                        # Business logic
-    в”‚   в”њв”Ђв”Ђ MessageService.java           # Message CRUD operations
-    в”‚   в”њв”Ђв”Ђ ChannelSettingsService.java   # Channel management
-    в”‚   в”њв”Ђв”Ђ RuleService.java              # Rule management
-    в”‚   в””в”Ђв”Ђ RuleEngine.java               # Rule evaluation engine
-    в”њв”Ђв”Ђ ui/                             # Vaadin UI views
-    в”‚   в”њв”Ђв”Ђ ChannelListView.java          # Channel management UI
-    в”‚   в”њв”Ђв”Ђ ChannelDetailView.java
-    в”‚   в”њв”Ђв”Ђ RuleListView.java             # Rule management UI
-    в”‚   в”њв”Ђв”Ђ RuleDetailView.java
-    в”‚   в”њв”Ђв”Ђ InboundMessagesView.java      # Message monitoring
-    в”‚   в””в”Ђв”Ђ OutboundMessagesView.java
-    в”њв”Ђв”Ђ source/                         # Rule-owned source receivers
-    в”њв”Ђв”Ђ outbound/                       # Durable delivery workers and transports
-    в”њв”Ђв”Ђ broker/                         # Transactional receipt publication
-    в””в”Ђв”Ђ integration/                    # Shared JSON configuration and rule gateway
+```mermaid
+flowchart LR
+    Source[Directory / FTP / SFTP / Kafka / RabbitMQ] --> Worker[Worker: receive, process, deliver]
+    Client[External adapter] --> API[Web application and HTTP API]
+    API --> DB[(PostgreSQL: messages and jobs)]
+    Worker <--> DB
+    Worker --> Target[Destination endpoint]
+    DB --> Outbox[Receipt outbox dispatcher]
+    Outbox --> Broker[RabbitMQ events]
+    Broker --> Service[External business service]
+    Service <--> API
 ```
 
-## Technology Stack
+PostgreSQL stores the durable job queue. RabbitMQ carries receipt and business-processing events. Receipt events contain a message ID and API path; a consumer fetches the stored message separately.
 
-- **Backend**: Spring Boot 4.0.6, Spring Integration 7.0.4
-- **Frontend**: Vaadin 25.1.3 (Java-based web UI)
-- **Database**: PostgreSQL, Spring Data JPA and Liquibase migrations
-- **Build**: Maven
-- **Java**: JDK 21
+The UI and worker use the same JAR or Docker image, with different Spring profiles. Workers continue running when the UI stops, although the HTTP API is unavailable until the UI returns.
 
-## Quick Start
+## Quick start with Docker
 
-### Prerequisites
-- Java 21 or later
-- Maven 3.9+ (or use the included `./mvnw` wrapper)
-- PostgreSQL database
+You need Docker Engine with Docker Compose and Linux container support. On Windows, use Docker Desktop in Linux container mode. Run commands from the repository root. The examples below use **PowerShell 7** (`pwsh`).
 
-### Worker runtime
+### 1. Create private configuration
 
-The Vaadin application stores incoming messages and creates durable per-rule jobs in PostgreSQL. Rule execution runs in separate headless containers built from the same image. On startup the control plane creates the default worker pool and reconciles its configured replica count through the restricted Docker API proxy.
+For a **new installation**, generate an admin password and an encryption key in `.env`:
 
-Open **Administration в†’ Workers** to create pools, set target/minimum/maximum container counts, and optionally auto-scale from pending plus processing jobs with a per-worker threshold. The UI samples CPU and memory utilization for each pool every 30 seconds and shows current, peak, and 30-day average values. Open a rule and choose its worker pool to move it; unfinished jobs follow the new assignment after any active claim transaction completes.
-
-`docker compose up --build -d` starts PostgreSQL, RabbitMQ, the Docker socket proxy, and the Vaadin app. The proxy needs access to the local Docker socket and is kept on the internal Compose network. Worker containers are created by the app and are not exposed on a host port. Each pool consumes its own jobs using PostgreSQL row locks, so replicas in that pool can process concurrently. Workers continue running when the UI stops, including receipt publication. Pool reconciliation replaces containers when the image or worker configuration changes. Managed workers must be stopped before removing their Docker network.
-
-### Configuration
-
-Database migrations run automatically in the UI application before Hibernate validates the schema. Worker containers validate the shared schema and do not run migrations. Existing compatible Hibernate databases can be adopted without recreating tables. See [Database migrations](docs/database-migrations.md) for the changelog, upgrade procedure, Maven commands and integration tests.
-
-Create or update `application.properties`:
-
-```properties
-spring.datasource.url=${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/m3}
-spring.datasource.username=${SPRING_DATASOURCE_USERNAME:postgres}
-spring.datasource.password=${SPRING_DATASOURCE_PASSWORD:password}
-spring.liquibase.change-log=classpath:db/changelog/db.changelog-master.xml
-spring.jpa.hibernate.ddl-auto=validate
+```powershell
+if (Test-Path -LiteralPath .env) { throw '.env already exists; use its saved settings.' }
+$adminPassword = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
+$secretKey = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+@("M3_ADMIN_PASSWORD=$adminPassword", "M3_SECRET_KEY=$secretKey") |
+    Set-Content -LiteralPath .env -Encoding utf8
 ```
 
-### Run in Development Mode
+The username is `admin`; its password is the `M3_ADMIN_PASSWORD` value in `.env`. Keep this file private. It is excluded from Git.
 
-Start PostgreSQL and the receipt-notification broker in the background first:
+**Back up `M3_SECRET_KEY` alongside your installation backups.** It encrypts connection settings and job snapshots. An existing database requires its original key; generating a replacement prevents reading encrypted data.
 
-```bash
+Compose requires these variables even when starting only database and broker services. The `.m3/local-security.properties` file used by local Java runs does not populate Compose variables.
+
+### 2. Build and start
+
+```powershell
+docker compose up --build -d
+docker compose ps
+docker compose logs --tail 100 app
+```
+
+Open [M3 at localhost:8080](http://localhost:8080) and sign in as `admin`.
+
+Compose starts PostgreSQL, RabbitMQ, a restricted Docker API proxy, and the web application. The application applies database migrations, creates the `default` pool, and manages its worker container through the proxy. Worker containers are created dynamically and are not separate Compose services. Check **Administration → Workers** for availability.
+
+The first build downloads Maven dependencies and builds the Vaadin frontend, so it may take several minutes.
+
+| Service | Default address | Local development credentials |
+| --- | --- | --- |
+| M3 | [localhost:8080](http://localhost:8080) | `admin` / generated password |
+| PostgreSQL | `localhost:5432`, database `m3` | `postgres` / `password` |
+| RabbitMQ AMQP | `localhost:5672` | `m3` / `m3` |
+| RabbitMQ management | [localhost:15672](http://localhost:15672) | `m3` / `m3` |
+
+The database and broker credentials above are development defaults. Set `POSTGRES_PASSWORD` and `RABBITMQ_PASSWORD` in `.env` before a production installation, and serve M3 through HTTPS.
+
+### 3. Stop or update
+
+Managed workers can outlive the web application. Before shutting down the complete installation, set the pool's target container count to **0** in **Administration → Workers**, wait for the workers to stop, then run:
+
+```powershell
+docker compose down
+```
+
+Normal shutdown preserves the `postgres_data`, `rabbitmq_data`, and `message_files` volumes. `docker compose down --volumes` deletes these volumes, including stored messages and files.
+
+For an update, back up first, stop old workers, then rebuild and start the upgraded application with `docker compose up --build -d`. It applies migrations before upgraded workers use the schema. Restore the pool target afterward. See [database migrations](docs/database-migrations.md) and [backup and restore](docs/backup-restore.md).
+
+## Run locally for development
+
+You need **JDK 21**, PowerShell 7 for the scripts, and PostgreSQL and RabbitMQ. The Maven wrapper is included; no separate Maven installation is required. Docker is useful for dependencies and integration tests.
+
+The following is an alternative to the complete Docker stack for a **new local installation**. Do not run its UI alongside a Compose UI on the same port. If reusing an existing database, preserve its encryption key and credentials rather than initializing new ones.
+
+### 1. Initialize credentials and start dependencies
+
+```powershell
+pwsh -File scripts/Initialize-LocalSecurity.ps1
+$localSecurity = Get-Content -Raw .m3/local-security.properties | ConvertFrom-StringData
+$env:M3_ADMIN_PASSWORD = $localSecurity['m3.security.admin-password']
+$env:M3_SECRET_KEY = $localSecurity['m3.secret-key']
 docker compose up -d db rabbitmq
 ```
 
-Then build the selected edition and start the application from the repository root:
+The initialization script creates private credentials for `admin`, `operator`, and `viewer` and does not overwrite an existing file. The two environment assignments satisfy Compose's required settings. Local Java processes read `.m3/local-security.properties` from the repository root.
 
-Using Maven wrapper:
-```bash
-./mvnw package
-java -jar target/m3-community.jar
-```
+### 2. Build and start the web application
 
-Or on Windows:
 ```powershell
 .\mvnw.cmd package
 .\scripts\run-app.ps1
 ```
 
-The UI alone does not execute rules or load files. For a local Windows run, start a separate worker in another terminal after the UI has completed database migrations:
+Open [localhost:8080](http://localhost:8080). Passwords are stored in `.m3/local-security.properties`.
+
+The build produces `target/m3-community.jar`. To build without running tests, use `.\mvnw.cmd package -DskipTests`.
+
+### 3. Start a worker in another terminal
+
+After the UI finishes its database migrations, open another terminal at the repository root:
 
 ```powershell
 .\scripts\run-worker.ps1 -Pool default
 ```
 
-The pool must match the rule's **Worker Pool**. Set the same datasource and receipt broker environment variables in both processes. Keep the worker running; stopping the UI does not stop it. For another pool, start another worker with that pool's name. The **Receiver** column shows `NO_WORKER` until a worker reports its heartbeat, with a tooltip explaining how to start it.
+Keep both processes running. The worker's pool name must match the rule's **Worker Pool**. The local UI does not create Docker workers unless Docker management is explicitly configured.
 
-Local Windows workers use Windows endpoint paths directly. Docker workers use Linux paths: mount files into the shared `/data` volume and configure endpoints such as `/data/in` and `/data/out`. A Windows `D:\...` path is not a usable Linux container path. An inbound directory must already exist and be readable in the worker filesystem. For directory delivery, output names are `message-<id>-<original-name>` to avoid replacing existing files. Enabling `deleteAfterProcessing` in the loading rule removes the input file only after its bytes, metadata and job commit to the database; otherwise the input file stays in place.
-
-The local app defaults to the same database name and credentials as the Compose database. If you change the Compose credentials, also set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the IDE run configuration.
-
-Local runs use RabbitMQ at `localhost:5672`. If you change the broker port or credentials, set `M3_BROKER_RABBIT_PORT`, `M3_BROKER_RABBIT_USERNAME` and `M3_BROKER_RABBIT_PASSWORD` in the IDE as well. When the broker is unavailable, messages remain saved and receipt notifications wait in the outbox until the connection is restored.
-
-### Build for Production
+On Linux/macOS, initialize equivalent credentials through environment variables or the local properties file, then use:
 
 ```bash
 ./mvnw package
+java -jar target/m3-community.jar --vaadin.launch-browser=false
+# In a second terminal, after migrations finish:
+java -jar target/m3-community.jar --spring.profiles.active=worker --m3.worker.pool=default
 ```
 
-### Docker Build
+For IDE development, import `pom.xml`, select JDK 21, and run `com.sysadminanywhere.m3.Application` with the repository root as the working directory. Run a separate worker process as above.
 
-Start the application and PostgreSQL with Docker Compose:
+## Your first message flow
 
-```bash
-docker compose up --build
+Start with a directory-to-directory flow to verify loading, rule execution, and delivery without configuring another remote system.
+
+1. **Create two directories in the worker's filesystem.** For a local Windows worker, use folders such as `D:\m3-data\in` and `D:\m3-data\out`. For Docker, use `/data/in` and `/data/out` in the shared `message_files` volume. After the Compose application starts, create them with:
+
+   ```powershell
+   docker compose exec app mkdir -p /data/in /data/out
+   ```
+
+2. **Create an inbound channel** under **Settings → Channels**. Name it `files-in`, select DIRECTORY and INBOUND, and set `directoryPath` to the input folder. Set the source charset to `UTF-8` for this text example.
+3. **Create an outbound channel** named `files-out`, with DIRECTORY and OUTBOUND, pointing to the output folder.
+4. **Create an INBOUND rule** under **Settings → Rules**. Choose `files-in` as the source, `files-out` as the destination, message body as the delivery format, and `default` as the worker pool. Leave conditions and transformations empty. Set the loading file pattern to `*.txt`, enable the rule, and save.
+5. **Put a completed text file into the input folder.** For a local worker, create `hello.txt` containing `Hello from M3`. For Docker, the following creates it inside the mounted volume:
+
+   ```powershell
+   docker compose exec app sh -c 'printf "Hello from M3\n" > /data/in/.hello.tmp && mv /data/in/.hello.tmp /data/in/hello.txt'
+   ```
+
+6. **Inspect the result.** After a polling interval, the inbound list should contain the stored original and the outbound list should show its delivered copy as `SENT`. The output file is named `message-<id>-hello.txt`, where `<id>` is the outbound copy's ID.
+
+The original inbound business status normally remains `LOADED`; successful routing does not mean an external service has processed it.
+
+Directory polling defaults to five seconds and skips very recent or changing files. Keep source deletion disabled for the first test. M3 deduplicates retained files, so leaving the same file in place does not continually create new messages for the same rule.
+
+**Paths belong to the worker.** A Docker worker cannot use a Windows `D:\...` path. Mount files and SFTP key/known-host files into containers and use their Linux paths. Input directories must already exist and be readable.
+
+## Rules and processing
+
+An INBOUND rule owns loading settings, including polling interval, file pattern, file deletion, Kafka consumer group, and initial message status. An OUTBOUND rule accepts explicitly submitted or forwarded messages and defines delivery. Each submission uses its selected `ruleId`; M3 does not automatically execute every rule for the channel.
+
+The visual pipeline supports:
+
+- Conditions on metadata, a top-level JSON field, or the whole body. AND takes precedence over OR in creation order.
+- Filtering before transformations. If several filters exist, only the first configured filter is active.
+- JSON field extraction, trim, uppercase/lowercase, literal replacement, prefix/suffix, and JSON serialization.
+- Metadata additions and a destination receiving either the message body or its ID.
+
+Transformations and metadata additions run in their saved order. Text transformations require a known source charset. For a JSON object, extract a string field before applying text operations. Original stored bytes are preserved.
+
+**Preview entire rule** evaluates the saved pipeline against example text and metadata without storing messages or contacting endpoints. Canvas steps save immediately; channel, loading, and worker settings require **Save** on the rule.
+
+There are separate kinds of status:
+
+| Status | Meaning |
+| --- | --- |
+| Inbound business status | `LOADED`, `PROCESSING`, `PROCESSED`, or `PROCESSING_FAILED`; tracks work by business recipients. |
+| Rule execution job | Tracks pipeline execution, attempts, scheduling, and errors independently of business processing. |
+| Outbound message status | `PENDING`, `SENT`, or `FAILED`; tracks delivery to the destination. |
+
+New jobs store an encrypted snapshot of rule steps and connection settings when accepted. Later edits affect new jobs; retries keep their original snapshot. Resubmit or forward a new copy to use updated configuration. Disabling a channel stops sending, and worker pool assignment remains operational.
+
+**Uncertain delivery** means the receiver may have accepted a send before M3 could record its outcome. Automatic retries stop at this boundary. Check the receiver before acknowledging a manual retry; duplicate delivery remains possible. Kafka/RabbitMQ consumers should deduplicate using the stable `m3DeliveryId` header. See [outbound messages](docs/outbound-messages.md).
+
+## HTTP API
+
+API calls use **HTTP Basic authentication**. Every mutating request also needs **`X-M3-Request: 1`**. Browser session cookies do not authorize API calls.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/sources` | List inbound endpoints and availability. |
+| `GET /api/v1/loading-rules` | Inspect loading rules and receiver states. |
+| `POST /api/v1/channels/{channelId}/messages` | Store an inbound message using an enabled INBOUND `ruleId`. |
+| `GET /api/v1/rules/outbound` | Find outbound rule IDs and pool assignments. |
+| `POST /api/v1/messages/outbound` | Store a message and queue delivery through an OUTBOUND rule. |
+| `GET /api/v1/messages/{id}` | Read message details and metadata. |
+| `GET /api/v1/messages/{id}/payload` | Download the payload; masked by default. |
+| `GET /api/v1/messages/{id}/jobs` | Inspect rule execution jobs. |
+| `GET /api/v1/messages/{id}/delivery` | Inspect outbound delivery attempts. |
+| `POST /api/v1/messages/{id}/retry` | Retry failed jobs; uncertain delivery requires explicit acknowledgement. |
+| `POST /api/v1/messages/{id}/forward` | Create a copy for an outbound rule. |
+| `GET /api/v1/messages/{id}/processing` | Read recipient processing attempts and versions. |
+| `PATCH /api/v1/messages/{id}/processing/{recipient}/status` | Report business-processing progress with attempt/version checks. |
+
+### Example: submit an outbound message
+
+First create and enable an OUTBOUND rule with a destination and the `default` pool. Find its ID through the UI or `GET /api/v1/rules/outbound`. Save this as `outbound.json`, replacing `12` with that rule's ID:
+
+```json
+{
+  "ruleId": 12,
+  "payload": "Hello from the API",
+  "payloadType": "text/plain",
+  "charset": "UTF-8",
+  "metadata": {
+    "fileName": "hello.txt",
+    "externalId": "demo-001"
+  }
+}
 ```
 
-Open [http://localhost:8080](http://localhost:8080). The database is exposed on port 5432 and stored in the `postgres_data` volume.
+In PowerShell, run the following; curl prompts for the admin password:
 
-The default database credentials are for local development. Set `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, or `M3_PORT` in a `.env` file to change the defaults.
-
-Stop the services with:
-
-```bash
-docker compose down
+```powershell
+curl.exe --user admin --header "X-M3-Request: 1" --header "Content-Type: application/json" --header "Idempotency-Key: demo-001" --data-binary "@outbound.json" http://localhost:8080/api/v1/messages/outbound
 ```
 
-To remove the database volume as well, use `docker compose down --volumes`.
+On Linux/macOS, use `curl` instead of `curl.exe`. A `202 Accepted` response means the payload and job have been committed, with the stored ID in the response. Delivery happens asynchronously. Read `GET /api/v1/messages/{id}/delivery` to check its outcome.
 
-To build the image without starting the services:
+Repeating an identical submission with the same `Idempotency-Key` returns the original message ID. Reusing the key for different request data returns `409 Conflict`. Use a new key for a new message.
 
-```bash
-docker build -t m3:latest .
+Original-byte reads require original-payload permission and `?original=true`, for example `/api/v1/messages/{id}/payload?original=true`. By default, only `admin` has this access.
+
+For receipt subscriptions, inbound submission, binary payloads, and versioned business callbacks, see the [ingestion API](docs/message-ingestion.md), [outbound API](docs/outbound-messages.md), and [external processing contract](docs/external-processing-operations.md).
+
+## Configuration and access
+
+Java defaults are in [`application.properties`](src/main/resources/application.properties); worker overrides are in [`application-worker.properties`](src/main/resources/application-worker.properties). Local scripts run from the repository root so the private security file is found. Docker reads configuration through [`compose.yaml`](compose.yaml) and `.env`.
+
+| Setting | Purpose |
+| --- | --- |
+| `M3_ADMIN_PASSWORD` | Required admin password, 16–72 UTF-8 bytes. |
+| `M3_OPERATOR_PASSWORD`, `M3_VIEWER_PASSWORD` | Optional passwords enabling those accounts, with the same length requirement. |
+| `M3_SECRET_KEY` | Persistent Base64 encoding of 32 random bytes for AES-256-GCM encryption. |
+| `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | Database connection for local Java processes. |
+| `M3_BROKER_RABBIT_HOST`, `M3_BROKER_RABBIT_PORT`, `M3_BROKER_RABBIT_USERNAME`, `M3_BROKER_RABBIT_PASSWORD` | Event broker connection for Java processes. |
+| `M3_WORKER_POOL` | Standalone worker's pool; default `default`. |
+| `M3_OUTBOUND_MAX_ATTEMPTS` | Delivery attempt limit; default `20`. |
+| `M3_STORAGE_MODE` | Default `KEEP`; optional `ARCHIVE` or `DELETE` policies require deliberate configuration. |
+| `M3_RETENTION_MESSAGES_DAYS`, `M3_RETENTION_IDEMPOTENCY_DAYS` | Default `0`, retaining business messages and deduplication keys indefinitely. |
+| `M3_RETENTION_RECEIPTS_DAYS`, `M3_RETENTION_AUDIT_DAYS` | Published receipt retention defaults to `30` days; audit retention to `365`. |
+
+Compose uses `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_PORT` for PostgreSQL; `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, and `RABBITMQ_PORT` for RabbitMQ; and `M3_PORT` for the web port. These are mapped to the application's container settings. If local Java processes connect to changed Compose ports or credentials, set the corresponding datasource/broker variables in **both** UI and worker terminals or IDE configurations.
+
+| Account | Access |
+| --- | --- |
+| `admin` | Configuration, worker management, message operations, audit, and original payload access by default. |
+| `operator` | Submit, forward, retry, and delete eligible messages; report business status. |
+| `viewer` | Read messages and monitoring. |
+
+Blank secret fields in channel forms retain the saved value. Removing an extra-property row removes that property. Audit records store actors and operations without payloads or credentials. External services can use scoped machine accounts; see [processing and operations](docs/external-processing-operations.md).
+
+Automatic cleanup preserves active work and unpublished events. Configure archival, deletion, masking, and quotas using [storage and troubleshooting documentation](docs/troubleshooting-storage-scale.md), and use the [consistent backup procedure](docs/backup-restore.md) before upgrades.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Compose reports a missing admin password or encryption key | Create `.env` with `M3_ADMIN_PASSWORD` and `M3_SECRET_KEY`, or provide them in the current environment. |
+| UI is available but no files are loaded | Enable an INBOUND rule, save its pool assignment, and start a worker in that pool. A channel alone is idle. |
+| Receiver shows `NO_WORKER` or `STALE` | Check **Administration → Workers**, the worker process/container, and its database connection. Heartbeats prove process liveness, not transport health. |
+| Files are invisible to a Docker worker | Use mounted Linux paths such as `/data/in`, and check directory permissions, file pattern, and minimum file age. |
+| Message is saved but receipt events are pending | Check RabbitMQ connectivity. The transactional outbox retains events and retries publication. |
+| Inbound status remains `LOADED` after delivery | This is business-processing status. Inspect rule jobs and the outbound copy; external services report processing separately. |
+| API returns `401` or `403` | Supply Basic credentials, an authorized role, and `X-M3-Request: 1` for mutations. |
+| Text transformation fails | Declare the source charset. Extract a string field before text transformations on JSON objects. |
+| Retry still uses old settings | Accepted jobs keep their snapshots. Create a new submission or forward a copy to apply current settings. |
+| Delivery is uncertain | Check the receiving system before acknowledging a retry. |
+| Startup cannot decrypt settings | Restore the installation's original encryption key. |
+
+For Docker logs, use `docker compose logs --tail 100 app` and inspect the managed worker container shown on the Workers page with `docker logs <container-name>`.
+
+## Development and tests
+
+Stack: **Java 21**, **Spring Boot 4.0.6**, **Spring Integration 7.0.4**, **Vaadin 25.1.3**, **PostgreSQL**, **Liquibase**, and **Maven**.
+
+```text
+src/main/java/com/sysadminanywhere/m3/
+  Application.java       Application entry point
+  base/                  Shared UI, security, persistence, and translations
+  community/             Fixed Community execution policy and API boundary
+  extensions/            Shared extension contracts
+  messaging/
+    api/                 HTTP endpoints
+    domain/              Messages, channels, rules, jobs, and enums
+    repository/          JPA repositories
+    service/             Rule engine, storage, processing, and operations
+    source/              Native inbound receivers
+    outbound/            Durable delivery workers and transports
+    broker/              Receipt and processing-event publication
+    worker/              Scheduling, leases, execution slots, and heartbeats
+    ui/                  Vaadin views and pipeline editor
+    integration/         Shared JSON configuration and message gateway
+src/main/resources/      Application settings, translations, and migrations
+src/test/                Java and JavaScript tests
+browser-tests/           Browser regression checks
+scripts/                 Local launch, backup, restore, and distribution tools
+docs/                    Detailed contracts and operational guides
 ```
 
-## Core Concepts
+Run Java and JavaScript checks from the repository root:
 
-### Channels
-Channels define endpoints for message exchange. Each channel has:
-- **Type**: Protocol (FTP, SFTP, Kafka, RabbitMQ, Directory)
-- **Direction**: Inbound (receiving) or Outbound (sending)
-- **Properties**: Protocol-specific settings (host, port, credentials, etc.)
-
-### Rules
-Rules define how messages are processed:
-- **Source Channel**: Where the rule applies
-- **Conditions**: Criteria that must match (e.g., `header.contentType equals application/json`)
-- **Actions**: Operations to perform (route to channel, transform payload, filter, enrich headers)
-- **Priority**: Evaluation order (lower = earlier)
-
-### Rule Engine
-The `RuleEngine` evaluates rules against incoming messages:
-1. Finds all enabled rules for the source channel
-2. Evaluates conditions using AND/OR logic
-3. Applies actions in priority order
-4. Supports field access: `header.<name>`, `payload.<field>`, `payload`
-
-## API & Usage
-
-### Creating a Channel
-
-```java
-ChannelSettings channel = channelSettingsService.createChannel(
-    "ftp-inbound",
-    ChannelType.FTP,
-    ChannelDirection.INBOUND,
-    "FTP input channel",
-    Map.of(
-        "host", "ftp.example.com",
-        "port", "21",
-        "username", "user",
-        "password", "pass",
-        "remoteDirectory", "/incoming",
-        "filePattern", "*.xml"
-    )
-);
+```powershell
+.\mvnw.cmd test
+node --test src/test/js/*.test.cjs
 ```
 
-### Creating a Routing Rule
+Java integration tests use isolated PostgreSQL, RabbitMQ, and Kafka containers and embedded file-transfer servers. Run with Docker available for integration coverage; container-based tests can be skipped when Docker is unavailable.
 
-```java
-// Create rule
-Rule rule = ruleService.createRule(
-    "xml-to-kafka",
-    RuleType.ROUTING,
-    sourceChannelId,
-    10  // priority
-);
+Browser checks need Chrome and a running test instance:
 
-// Add condition: payload type is XML
-ruleService.addCondition(
-    rule.getId(),
-    "header.fileExtension",
-    ConditionOperator.EQUALS,
-    "xml",
-    LogicalOperator.AND
-);
-
-// Add action: route to Kafka
-RuleAction action = ruleService.addAction(rule.getId(), ActionType.ROUTE);
-action.setTargetChannel("kafka-outbound");
+```powershell
+npm --prefix browser-tests ci
+npm --prefix browser-tests test
 ```
 
-## Testing
+Set `M3_TEST_URL` for a separate instance. Test credentials come from environment variables or the ignored local credentials file. Use isolated installations for tests that mutate configuration or perform transport I/O. See [distribution checks](docs/code-distribution.md) for package verification and clean source export.
 
-Run unit tests:
-```bash
-./mvnw test
-```
+## Detailed documentation
 
-## Architecture
+| Guide | Covers |
+| --- | --- |
+| [Message ingestion](docs/message-ingestion.md) | Receivers, loading settings, acknowledgement, deduplication, HTTP submission, and receipt events. |
+| [Outbound messages](docs/outbound-messages.md) | Destinations, delivery jobs, payload modes, retries, and forwarding. |
+| [Payload encodings](docs/message-encodings.md) | Original bytes, charsets, Base64 requests, previews, and transformations. |
+| [External processing and operations](docs/external-processing-operations.md) | Recipient attempts, callback versions, replay, deadlines, events, and quotas. |
+| [Troubleshooting, storage, and Scale](docs/troubleshooting-storage-scale.md) | Search, masking, history, S3/MinIO, storage policies, and full-distribution features. |
+| [Database migrations](docs/database-migrations.md) | Liquibase, upgrade order, adopting compatible existing schemas, and migration tests. |
+| [Backup and restore](docs/backup-restore.md) | Consistent database, payload, and encryption-key backups. |
+| [Build and distribution](docs/code-distribution.md) | Independent Community/Scale builds, IDE setup, packaging, and source export. |
+| [Licensing documents](docs/licenses/README.md) | Draft agreements and distribution terms. |
 
-M3 uses **Spring Integration** for message flow orchestration:
-- **Inbound Adapters**: Poll external systems (FTP, directory, etc.)
-- **Message Handlers**: Process messages through the rule engine
-- **Outbound Adapters**: Send messages to target systems
+## Community, Scale, and licensing
 
-The **Vaadin** UI provides a reactive, component-based interface for managing the system without page reloads.
+Community supports **one worker pool and one execution slot**, with no autoscaling. It contains no Scale license verifier or activation API. Its output is `target/m3-community.jar`, and its Docker image is `m3:community`.
 
-## Next Steps
+Scale is built separately from `m3-scale` using matching Community source. Its full distribution can run in Community mode; a signed entitlement enables purchased capacity, multiple pools, and autoscaling. External-authentication entitlement checks exist in the full distribution, while Keycloak/AD connectors are a separate implementation stage. See [build and distribution](docs/code-distribution.md).
 
-- [Vaadin Documentation](https://vaadin.com/docs/v25)
-- [Spring Integration Reference](https://docs.spring.io/spring-integration/reference/)
-- [Building Apps Guide](https://vaadin.com/docs/v25/building-apps)
-
-
-## Visual rule configuration
-
-Open a rule and use **Add Condition** or **Add Action**. Existing entries have an **Edit** button.
-The message flow cards show the selected source, conditions, first filter, ordered transformations/metadata additions, and destination.
-Conditions compare metadata, a top-level JSON field, or the whole body. AND takes precedence over OR in creation order.
-
-Body transformations are selected from a list: extract a JSON field, trim whitespace, uppercase/lowercase,
-replace literal text, add a prefix/suffix, or serialize as JSON text. Each transformation has a live preview
-for a text or JSON example. This preview evaluates only the selected operation in memory; it does not run
-previous actions, write messages, or contact channels. For a chain, use the previous operation's result as the next example.
-
-Execution order controls transformations and metadata additions (lower numbers first, ties by creation order).
-Filtering runs before transformations; when several filters exist, only the first configured filter is used.
-The metadata action can set `outputCharset` (for example `UTF-8` or `windows-1251`).
-Text operations require a known source charset; JSON extraction requires a JSON object, and text operations
-on JSON require extracting a string field first. Original stored message bytes are retained.
-
-The editor and workers share the same transformation implementation. Existing `$.field` transformations
-remain compatible. New operation configurations use the existing `transformation_script` column;
-no additional database migration is needed. Deploy the updated UI and workers together.
-
-
-## Interface languages
-
-The UI supports English, Russian, German, French, Italian and Portuguese. Use the language selector
-at the bottom of the left navigation rail. The initial language follows the browser language when
-supported, otherwise English. Selection reloads the current page (save open forms first) and is stored
-in the `m3-language` browser cookie for one year. Other browsers/users have independent preferences.
-
-UTF-8 catalogs are in `src/main/resources/i18n/ui_<language>.json`; English text is the translation key.
-Add the same key to all six catalogs when adding interface text, and call `Translations.t(key)`.
-Parameterized text uses `{0}`, `{1}`, etc. The Vaadin `I18NProvider` is registered as a Spring bean;
-page titles, labels, enum display names and dates use the selected locale. Protocol identifiers,
-channel/rule names, metadata keys, message bodies and stored database values remain unchanged.
-Diagnostic details without a translation retain their original text.
-
-
-## Rule diagrams and interactive pipeline editor
-
-**Rules** opens a paged diagram of source channels в†’ rules в†’ destination channels with worker assignments.
-Select a rule block to open its pipeline; the **Table** display mode keeps the tabular overview available.
-
-The rule editor uses a connected canvas as its main workspace. Source/destination selectors, loading settings,
-and the worker pool (in the rule details view) are inside the relevant blocks. Conditions and filters can be added,
-edited and removed directly on the canvas. Transformation/metadata blocks have edit/delete and up/down controls.
-Changing their order persists the same order used by workers. Filters always run before transformations;
-additional filters are marked inactive. A discard filter marks subsequent stages as skipped.
-
-**Preview entire rule** accepts a text/JSON example and manually entered metadata. It evaluates the saved
-conditions, filter, and all transformations/metadata additions with the worker's `RuleEngine`, showing the
-result body and metadata. The preview does not perform channel I/O or store messages. It starts from decoded
-example text; it does not simulate transport, charset detection or final byte encoding.
-Canvas actions/conditions are saved immediately. Channel/loading/worker settings require **Save** on the rule.
-
-
-## Message search, overview and unsaved changes
-
-Message troubleshooting now adds a masked payload-fragment search, correlation IDs, routing/attempt history, original/copy links and prepared delivery snapshots. Optional S3/MinIO tiering moves completed bodies out of PostgreSQL after seven days. Community executes one worker slot; signed offline Scale licenses enable shared capacity, multiple pools and autoscaling. See [troubleshooting, storage and Scale](docs/troubleshooting-storage-scale.md) for configuration, original-access permissions, API changes and upgrade requirements.
-
-Inbound and outbound lists filter by message ID, status, source, target and calendar dates.
-Source/target search is case insensitive and treats `%`, `_` and backslashes literally. Dates
-use the displayed server time zone and include the entire final day. **Apply filters** updates
-the URL (`id`, `status`, `source`, `target`, `from`, `to`); links can be shared and browser Back
-restores filters. Invalid links show an error and no results. Reset clears all filters.
-
-**Overview** is the start page. Queue counts, failed messages and unpublished receipts refresh
-every 15 seconds, with a manual refresh button. Failed message cards open the filtered list.
-Availability counts worker processes reporting in the last 35 seconds; idle and outbound-only
-workers report every 10 seconds. Heartbeats prove process liveness, not transport health.
-Deploy the UI first to apply migration 020, then restart workers with the updated version.
-Older workers do not report heartbeats. Records older than a day are removed by workers.
-
-Channel, rule, condition, action and worker pool forms show **Unsaved changes**. Navigating
-away, Cancel, Escape or clicking outside a dialog offers discard/continue. Browser reload
-and closing the tab use the browser's native warning. Reverting editable fields clears the
-indicator; successful Save establishes the new baseline. Preview inputs and immediately
-saved rule steps do not mark the parent form dirty.
-
-## Access, encrypted configuration and deployment
-
-Initialize local credentials with `pwsh -File scripts/Initialize-LocalSecurity.ps1` before starting.
-The script creates `.m3/local-security.properties`, excluded from Git and restricted to the current user.
-It never overwrites an existing key. Accounts are `admin`, `operator` and `viewer`; their generated
-passwords are in that file. Admin manages configuration, operator submits/forwards/retries/deletes messages,
-and viewer reads messages and monitoring. Use **Sign out** to end a browser session.
-Admin can inspect successful configuration and message operations in **Administration в†’ Audit log**.
-Audit records contain actor, operation, entity ID and time, without payloads or credentials.
-
-For Docker set `M3_ADMIN_PASSWORD` (16вЂ“72 UTF-8 bytes) and `M3_SECRET_KEY` (32 random bytes in Base64).
-Optional `M3_OPERATOR_PASSWORD` and `M3_VIEWER_PASSWORD` enable those accounts. Serve production through HTTPS.
-The control plane forwards the same encryption key to managed workers. Preserve and back up the key
-separately from the database: changing or losing it prevents reading existing configuration.
-Start the upgraded control plane to apply migration 021 before starting upgraded workers; stop old
-control planes/workers before this upgrade. Existing channel properties are encrypted at startup with
-AES-256-GCM, and existing secrets are never populated into browser fields. Blank secret fields keep the
-saved value; removing an extra-property row removes that property. Migration 021 installs `pg_trgm` in
-the public schema, so the migration account needs permission to install that extension.
-
-API calls require HTTP Basic credentials. Mutating calls also require `X-M3-Request: 1`.
-Browser session cookies do not authorize the API. For example, use `curl -u admin -H "X-M3-Request: 1"`
-with the existing POST examples; curl prompts for the password. Payload download links also require
-authorization. Avoid putting credentials in URLs or committed scripts.
-
-New jobs save an encrypted snapshot of rule steps and channel settings in their acceptance transaction.
-Later edits affect new jobs; retries preserve their original snapshot. Resubmit or forward a new copy to
-use updated rules. Pool assignment remains operational, and disabling a channel stops sending.
-Legacy queued jobs without a snapshot adopt the configuration when first processed.
-Concurrent edits use version checks and report a conflict instead of silently overwriting changes.
-
-Outbound transports persist the start of an irreversible send. A failure or expired worker claim after
-that boundary becomes **uncertain delivery**, with automatic retries stopped. Verify the receiver first;
-the UI then allows an explicitly acknowledged retry. API retries need `acknowledgeUncertain=true`.
-Receivers should deduplicate the stable `m3DeliveryId` header. Arbitrary external systems cannot provide
-an exactly-once guarantee; an acknowledged manual retry can still create a duplicate.
-
-Condition regular expressions use RE2J to avoid catastrophic backtracking. Backreferences and lookaround
-are unsupported; update existing expressions using those constructs before upgrading. Unsupported
-expressions fail the job visibly instead of silently treating a matching message as a non-match.
-
-## Retention and regression checks
-
-Message troubleshooting provides masked payload inspection, routing history, Retry and Redirect.
-Incoming business processing is tracked separately per recipient, with versioned callbacks, replay,
-deadlines and durable RabbitMQ events. **Operations** shows overdue processing, backlog and storage pressure.
-See [processing and operations](docs/external-processing-operations.md),
-[storage, masking and Scale](docs/troubleshooting-storage-scale.md),
-[consistent backup and restore](docs/backup-restore.md), and
-[Community and full build instructions](docs/code-distribution.md).
-
-Business messages and deduplication keys are retained indefinitely by default. Set
-`M3_RETENTION_MESSAGES_DAYS` or `M3_RETENTION_IDEMPOTENCY_DAYS` to a positive number to enable deletion.
-Only completed messages are removed; pending/running/failed jobs, unpublished receipts and originals
-referenced by copies are preserved. Idempotency expiry defines the window for rejecting repeated requests.
-Published notification rows default to 30 days; audit rows default to 365 days. Override with
-`M3_RETENTION_RECEIPTS_DAYS` and `M3_RETENTION_AUDIT_DAYS`; zero disables deletion.
-Cleanup runs every six hours in bounded batches of 500 rows.
-
-Run Java checks with `./mvnw test` and JavaScript checks with `node --test src/test/js/*.test.cjs`.
-Browser regression checks require Chrome and a running test instance:
-`npm --prefix browser-tests ci`, then `npm --prefix browser-tests test`.
-They check authentication, roles, audit, logout, URL filters and unsaved dialog changes without saving
-configuration. Set `M3_TEST_URL` to target a separate instance; passwords come from the environment
-or the ignored local credentials file. Use isolated instances for mutation/transport integration tests;
-the Java integration suite creates its own PostgreSQL, RabbitMQ and Kafka containers.
+The proposed licensing model allows free Community installation and internal business use, with restrictions on code modification and redistribution of customer builds. **The agreements are drafts for first publication** and still require rights-holder and release details. This README summarizes that proposed model; [LICENSE.md](LICENSE.md) and the [license agreements](docs/licenses/README.md) describe its status and terms. Third-party components retain their own licenses.
