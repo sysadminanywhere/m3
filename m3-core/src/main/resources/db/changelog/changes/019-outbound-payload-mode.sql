@@ -1,0 +1,2 @@
+ALTER TABLE rule
+    ADD COLUMN outbound_payload_mode VARCHAR(20) NOT NULL DEFAULT 'BODY';

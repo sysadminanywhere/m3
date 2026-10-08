@@ -1,0 +1,11 @@
+CREATE INDEX IF NOT EXISTS idx_rule_job_pool_status_created ON rule_execution_job (worker_pool_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_rule_job_pool_claim ON rule_execution_job (worker_pool_id, status, claimed_at);
+CREATE INDEX IF NOT EXISTS idx_rule_job_message ON rule_execution_job (message_id);
+CREATE INDEX IF NOT EXISTS idx_rule_job_rule ON rule_execution_job (rule_id);
+CREATE INDEX IF NOT EXISTS idx_worker_pool_metric_sample_time ON worker_pool_metric_sample (worker_pool_id, sampled_at);
+CREATE INDEX IF NOT EXISTS idx_message_direction_created ON message (direction, created_at);
+CREATE INDEX IF NOT EXISTS idx_message_metadata_message ON message_metadata (message_id);
+CREATE INDEX IF NOT EXISTS idx_rule_source_enabled_priority ON rule (source_channel_id, enabled, priority);
+CREATE INDEX IF NOT EXISTS idx_rule_worker_pool ON rule (worker_pool_id);
+CREATE INDEX IF NOT EXISTS idx_rule_condition_rule ON rule_condition (rule_id);
+CREATE INDEX IF NOT EXISTS idx_rule_action_rule_priority ON rule_action (rule_id, priority);

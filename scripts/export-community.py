@@ -1,0 +1,34 @@
+"""Export current Community source only; never includes Git history or private sibling code."""
+import argparse
+from pathlib import Path
+from zipfile import ZipFile, ZIP_DEFLATED
+
+ROOT = Path(__file__).resolve().parents[1]
+TOP_FILES = ['pom.xml', 'mvnw', 'mvnw.cmd', 'README.md', 'LICENSE.md', 'Dockerfile',
+             'compose.yaml', '.gitignore', '.dockerignore']
+MODULES = ['m3-extension-api', 'm3-core', 'm3-community', 'm3-app']
+EXCLUDED = {'target', 'node_modules', 'generated', '__pycache__', '.git', '.m3'}
+
+def sources():
+    for name in TOP_FILES:
+        yield ROOT / name
+    for module in MODULES:
+        yield ROOT / module / 'pom.xml'
+        for path in (ROOT / module / 'src').rglob('*'):
+            if path.is_file() and not (set(path.relative_to(ROOT).parts) & EXCLUDED):
+                if path.name != 'index.html':
+                    yield path
+    for folder in ['docs', 'scripts', '.mvn', 'browser-tests']:
+        for path in (ROOT / folder).rglob('*'):
+            if path.is_file() and not (set(path.relative_to(ROOT).parts) & EXCLUDED):
+                yield path
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output', type=Path)
+    args = parser.parse_args()
+    files = sorted(set(sources()))
+    with ZipFile(args.output, 'x', compression=ZIP_DEFLATED) as archive:
+        for path in files:
+            archive.write(path, Path('m3') / path.relative_to(ROOT))
+    print(f'Exported {len(files)} Community source files to {args.output}')
