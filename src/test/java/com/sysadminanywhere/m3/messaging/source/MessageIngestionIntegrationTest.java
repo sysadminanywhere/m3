@@ -72,6 +72,8 @@ class MessageIngestionIntegrationTest {
     @AfterAll static void stopApplication() { if (receiverWorker != null) receiverWorker.close(); if (app != null) app.close(); }
     private static ConfigurableApplicationContext start() {
         return new SpringApplicationBuilder(Application.class).run(
+                "--m3.security.services.erp.username=erp-service", "--m3.security.services.erp.password-hash={bcrypt}"+new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("test-erp-password-123456"),
+                "--m3.security.services.erp.channels=1", "--m3.security.services.erp.recipients=erp", "--m3.security.services.erp.status=true", "--m3.security.services.erp.original=true", "--m3.security.services.erp.replay=false",
                 "--m3.security.admin-password=test-admin-password-123456", "--m3.security.viewer-password=test-viewer-password-123456", "--m3.security.operator-password=test-operator-password-123456", "--m3.secret-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "--m3.security.vaadin-ui=false", "--server.port=0", "--vaadin.launch-browser=false", "--spring.jpa.show-sql=false",
                 "--spring.datasource.url=" + DB.getJdbcUrl(), "--spring.datasource.username=" + DB.getUsername(),
                 "--spring.datasource.password=" + DB.getPassword(), "--m3.docker.api-url=",
@@ -529,7 +531,7 @@ class MessageIngestionIntegrationTest {
         assertThat(input).doesNotExist();
         assertThat(Files.readAllBytes(outputDirectory.resolve("message-" + copy + "-payload.bin"))).isEqualTo(binary());
         assertThat(jdbc().queryForObject("SELECT payload_bytes FROM message WHERE message_id=?", byte[].class, original)).isEqualTo(binary());
-        assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, original)).isEqualTo("PROCESSED");
+        assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, original)).isEqualTo("LOADED");
         assertThat(jdbc().queryForObject("SELECT value FROM message_metadata WHERE message_id=? AND key='sourceMessageId'", String.class, copy))
                 .isEqualTo(Long.toString(original));
         assertThat(jdbc().queryForObject("SELECT count(*) FROM rule_execution_job WHERE message_id=? AND status='COMPLETED'", Long.class, copy)).isEqualTo(1);
@@ -543,7 +545,7 @@ class MessageIngestionIntegrationTest {
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(messageCount(source.getName())).isEqualTo(1));
         long original = jdbc().queryForObject("SELECT message_id FROM message WHERE source_system=?", Long.class, source.getName());
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?",
-                String.class, original)).isEqualTo("PROCESSED"));
+                String.class, original)).isEqualTo("LOADED"));
         Path outputDirectory = temp.resolve("forward-out");
         var target = channels().createChannel("forward-file-output", ChannelType.DIRECTORY, ChannelDirection.OUTBOUND, null,
                 Map.of("directoryPath", outputDirectory.toString()));
@@ -583,6 +585,90 @@ class MessageIngestionIntegrationTest {
         assertThat(jdbc().queryForObject("SELECT count(*) FROM configuration_audit WHERE operation='authorize' AND entity_id=?",Long.class,id)).isPositive();
         assertThat(jdbc().queryForObject("SELECT convert_from(payload_bytes,'UTF8') FROM message WHERE message_id=?",String.class,id)).isEqualTo(payload);
     }
+    private static HttpResponse<String> changeStatus(long id, String body, String username) throws Exception {
+        var data=(com.fasterxml.jackson.databind.node.ObjectNode)json().readTree(body);
+        var attempts=jdbc().queryForList("SELECT attempt_id,version FROM message_processing WHERE message_id=? AND recipient='external' AND is_current",id);
+        data.put("callbackId",UUID.randomUUID().toString());data.put("processingAttemptId",attempts.isEmpty()?UUID.randomUUID().toString():attempts.getFirst().get("attempt_id").toString());
+        data.put("expectedVersion",attempts.isEmpty()?0:((Number)attempts.getFirst().get("version")).longValue());body=json().writeValueAsString(data);
+        return HttpClient.newHttpClient().send(HttpRequest.newBuilder(api("/api/v1/messages/" + id + "/status"))
+                .header("X-M3-Request", "1").header("Content-Type", "application/json")
+                .header("Authorization", "Basic " + Base64.getEncoder().encodeToString((username + ":test-" + username + "-password-123456").getBytes(StandardCharsets.UTF_8)))
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test @Order(16)
+    void externalServiceOwnsProcessingStatusAndRoutingPreservesCallbacks() throws Exception {
+        var source = source("external-status-input", ChannelType.DIRECTORY,
+                Map.of("directoryPath", Files.createDirectories(temp.resolve("status-in")).toString()));
+        receiverWorker.close();
+        try {
+            long ruleId = loadingRuleId(source);
+            var sourceRule = app.getBean(RuleService.class).findById(ruleId);
+            var saved = app.getBean(com.sysadminanywhere.m3.messaging.service.SourceDeliveryService.class).receive(
+                    InboundSourceSpec.fromRule(sourceRule), "business payload", "text/plain", Map.of(), null);
+            assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, saved)).isEqualTo("LOADED");
+            assertThat(changeStatus(saved, "{\"status\":\"PROCESSED\"}", "viewer").statusCode()).isEqualTo(403);
+            assertThat(changeStatus(saved, "{\"status\":\"SENT\"}", "operator").statusCode()).isEqualTo(400);
+            assertThat(changeStatus(Long.MAX_VALUE, "{\"status\":\"PROCESSED\"}", "operator").statusCode()).isEqualTo(404);
+            assertThat(changeStatus(saved, "{\"status\":\"PROCESSING\",\"expectedStatus\":\"LOADED\"}", "operator").statusCode()).isEqualTo(200);
+            assertThat(changeStatus(saved, "{\"status\":\"PROCESSED\",\"expectedStatus\":\"LOADED\"}", "operator").statusCode()).isEqualTo(409);
+            var callback = changeStatus(saved, "{\"status\":\"PROCESSING_FAILED\",\"expectedStatus\":\"PROCESSING\",\"detail\":\"Receiver rejected password=private\"}", "operator");
+            assertThat(callback.statusCode()).as(callback.body()).isEqualTo(200);
+            assertThat(json().readTree(callback.body()).path("processedAt").isNull()).isFalse();
+            assertThat(changeStatus(saved, "{\"status\":\"PROCESSING_FAILED\"}", "operator").body()).isEqualTo(callback.body());
+            assertThat(jdbc().queryForObject("SELECT count(*) FROM message_event WHERE message_id=? AND kind='EXTERNAL_STATUS_CHANGED'", Long.class, saved)).isEqualTo(2);
+            assertThat(jdbc().queryForObject("SELECT count(*) FROM configuration_audit WHERE operation='callback' AND entity_id=?", Long.class, saved)).isPositive();
+            assertThat(HttpClient.newHttpClient().send(authorizedRequest(api("/api/v1/messages/" + saved + "/history")).GET().build(), HttpResponse.BodyHandlers.ofString()).body()).doesNotContain("password=private");
+            try (var processing = worker("default")) {
+                await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?", String.class, saved)).isEqualTo("COMPLETED"));
+            }
+            assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, saved)).isEqualTo("PROCESSING_FAILED");
+            assertThat(changeStatus(saved, "{\"status\":\"PROCESSED\",\"expectedStatus\":\"PROCESSING_FAILED\"}", "operator").statusCode()).isEqualTo(409);
+            assertThat(changeStatus(saved, "{\"status\":\"LOADED\"}", "operator").statusCode()).isEqualTo(409);
+            assertThat(jdbc().queryForObject("SELECT processed_at FROM message WHERE message_id=?", java.sql.Timestamp.class, saved)).isNotNull();
+            var configured = app.getBean(RuleService.class).saveConfiguration(ruleId, sourceRule.getName(), null, RuleType.INBOUND,
+                    source.getId(), 0, true, sourceRule.getWorkerPool().getId(), null, Map.of("initialStatus", "PROCESSING"));
+            long configuredMessage = app.getBean(com.sysadminanywhere.m3.messaging.service.SourceDeliveryService.class).receive(
+                    InboundSourceSpec.fromRule(configured), "another payload", "text/plain", Map.of(), null);
+            assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, configuredMessage)).isEqualTo("PROCESSING");
+            app.getBean(RuleService.class).addCondition(ruleId, "payload", ConditionOperator.CONTAINS, "ok", LogicalOperator.AND);
+            long broken = app.getBean(com.sysadminanywhere.m3.messaging.service.SourceDeliveryService.class).receive(
+                    InboundSourceSpec.fromRule(app.getBean(RuleService.class).findById(ruleId)), "invalid JSON", "application/json", Map.of(), null);
+            try (var processing = worker("default")) {
+                await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(jdbc().queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?", String.class, broken)).isEqualTo("FAILED"));
+            }
+            assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, broken)).isEqualTo("PROCESSING");
+            assertThat(HttpClient.newHttpClient().send(authorizedRequest(api("/api/v1/messages/" + broken + "/retry"))
+                    .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(202);
+            assertThat(jdbc().queryForObject("SELECT status FROM message WHERE message_id=?", String.class, broken)).isEqualTo("PROCESSING");
+            assertThat(jdbc().queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?", String.class, broken)).isEqualTo("PENDING");
+            var outbound = channels().createChannel("external-status-output", ChannelType.DIRECTORY, ChannelDirection.OUTBOUND, null, Map.of("directoryPath", temp.resolve("status-out").toString()));
+            long outboundId = json().readTree(submit(outboundRule(outbound), "data", "text/plain", Map.of(), null).body()).path("id").asLong();
+            assertThat(changeStatus(outboundId, "{\"status\":\"PROCESSED\"}", "operator").statusCode()).isEqualTo(409);
+        } finally { receiverWorker = worker("default"); }
+    }
+
+    @Test @Order(17)
+    void machineCredentialsAreScopedAtTheHttpBoundary()throws Exception {
+        var source=source("machine-account-input",ChannelType.DIRECTORY,Map.of("directoryPath",Files.createDirectories(temp.resolve("machine-in")).toString()));
+        var rule=app.getBean(RuleService.class).findById(loadingRuleId(source));
+        rule=app.getBean(RuleService.class).saveConfiguration(rule.getId(),rule.getName(),null,RuleType.INBOUND,source.getId(),0,true,rule.getWorkerPool().getId(),null,Map.of("processingRecipients","erp,billing?"));
+        long id=app.getBean(com.sysadminanywhere.m3.messaging.service.SourceDeliveryService.class).receive(InboundSourceSpec.fromRule(rule),"{\"password\":\"machine-secret\"}","application/json",Map.of(),null);
+        var account=app.getBean(com.sysadminanywhere.m3.base.security.MachineAccounts.class).getServices().get("erp");account.setChannels(Set.of(source.getId()));
+        var client=HttpClient.newHttpClient();String authorization="Basic "+Base64.getEncoder().encodeToString("erp-service:test-erp-password-123456".getBytes(StandardCharsets.UTF_8));
+        java.util.function.Function<String,HttpRequest.Builder> request=path->HttpRequest.newBuilder(api(path)).header("Authorization",authorization).header("X-M3-Request","1");
+        var masked=client.send(request.apply("/api/v1/messages/"+id).GET().build(),HttpResponse.BodyHandlers.ofString());assertThat(masked.statusCode()).isEqualTo(200);assertThat(masked.body()).doesNotContain("machine-secret");
+        var original=client.send(request.apply("/api/v1/messages/"+id+"/payload?original=true").GET().build(),HttpResponse.BodyHandlers.ofString());assertThat(original.statusCode()).isEqualTo(200);assertThat(original.body()).contains("machine-secret");
+        var list=client.send(request.apply("/api/v1/messages/"+id+"/processing").GET().build(),HttpResponse.BodyHandlers.ofString());assertThat(list.statusCode()).isEqualTo(200);assertThat(json().readTree(list.body())).hasSize(1);
+        var attempt=json().readTree(list.body()).get(0);assertThat(attempt.path("recipient").asText()).isEqualTo("erp");
+        var body=json().writeValueAsString(Map.of("callbackId",UUID.randomUUID(),"processingAttemptId",attempt.path("attemptId").asText(),"expectedVersion",attempt.path("version").asLong(),"status","PROCESSED"));
+        var forbidden=client.send(request.apply("/api/v1/messages/"+id+"/processing/billing/status").header("Content-Type","application/json").method("PATCH",HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());assertThat(forbidden.statusCode()).isEqualTo(403);
+        var accepted=client.send(request.apply("/api/v1/messages/"+id+"/processing/erp/status").header("Content-Type","application/json").method("PATCH",HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(200);
+        assertThat(client.send(request.apply("/api/v1/operations").GET().build(),HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(403);
+        assertThat(client.send(request.apply("/api/v1/messages/"+id+"/retry").POST(HttpRequest.BodyPublishers.noBody()).build(),HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(403);
+        account.setChannels(Set.of(Long.MAX_VALUE));assertThat(client.send(request.apply("/api/v1/messages/"+id+"/payload?original=true").GET().build(),HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(403);
+    }
+
     @Test @Order(14)
     void requiresAuthenticationRolesAndExplicitMutationHeaderAndEncryptsStoredConfiguration() throws Exception {
         var client=HttpClient.newHttpClient();

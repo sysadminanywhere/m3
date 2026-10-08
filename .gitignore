@@ -26,3 +26,6 @@ vite.generated.ts
 /.m3/
 /playwright-report/
 /test-results/
+
+# Python issuer script caches
+__pycache__/

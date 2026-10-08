@@ -6,6 +6,12 @@ import java.util.List;
 public final class LoadingPolicy {
     private LoadingPolicy() { }
     public static void validate(Rule rule, List<Rule> rules) {
+        if (rule.getRuleType() == RuleType.INBOUND) rule.getInitialMessageStatus();
+        if (rule.getRuleType() == RuleType.INBOUND) {
+            com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.recipients(rule);
+            com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.timeout(rule,"loadedTimeoutSeconds",86400);
+            com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.timeout(rule,"processingTimeoutSeconds",3600);
+        }
         if (rule.getRuleType() != RuleType.INBOUND || !Boolean.TRUE.equals(rule.getEnabled())) return;
         boolean file = switch (rule.getSourceChannel().getChannelType()) {
             case DIRECTORY, FTP, SFTP -> true;

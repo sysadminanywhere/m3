@@ -46,4 +46,10 @@ public class RabbitReceiptConfiguration {
         var queue = new Queue(queueName, true);
         return new Declarables(exchange, queue, BindingBuilder.bind(queue).to(exchange).with("message.received"));
     }
+    @Bean public Declarables processingTopology(@Value("${m3.broker.rabbit.exchange:m3.events}") String exchangeName,
+            @Value("${m3.processing.events-queue:m3.processing.events}") String queueName,@Value("${m3.processing.events-ttl-ms:604800000}") long ttl) {
+        if(ttl<1)throw new IllegalArgumentException("Processing event TTL must be positive");
+        var exchange=new TopicExchange(exchangeName,true,false);var queue=new Queue(queueName,true,false,false,java.util.Map.of("x-message-ttl",ttl));
+        return new Declarables(queue,BindingBuilder.bind(queue).to(exchange).with("processing.#"));
+    }
 }

@@ -7,7 +7,7 @@ import java.util.Map;
 public record InboundSourceSpec(long id, String name, ChannelType type, Map<String, String> properties, Long ruleId) {
     public InboundSourceSpec(long id, String name, ChannelType type, Map<String, String> properties) { this(id, name, type, properties, null); }
     public static final java.util.Set<String> LOADING_KEYS = java.util.Set.of("pollingInterval", "filePattern", "recursive", "minFileAgeMs",
-            "deleteAfterProcessing", "deleteRemoteFiles", "groupId", "autoOffsetReset");
+            "deleteAfterProcessing", "deleteRemoteFiles", "groupId", "autoOffsetReset", "initialStatus", "processingRecipients", "loadedTimeoutSeconds", "processingTimeoutSeconds");
     public static InboundSourceSpec fromRule(com.sysadminanywhere.m3.messaging.domain.Rule rule) {
         var channel = rule.getSourceChannel();
         var settings = new java.util.HashMap<>(channel.getProperties());

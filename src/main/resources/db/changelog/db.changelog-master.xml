@@ -78,4 +78,13 @@
     <changeSet id="023-scale-license" author="m3">
         <sqlFile path="changes/023-scale-license.sql" relativeToChangelogFile="true" />
     </changeSet>
+    <changeSet id="024-external-processing-status" author="m3">
+        <sqlFile path="changes/024-external-processing-status.sql" relativeToChangelogFile="true" />
+    </changeSet>
+    <changeSet id="025-processing-lifecycle" author="m3">
+        <sqlFile path="changes/025-processing-lifecycle.sql" relativeToChangelogFile="true" splitStatements="false" />
+    </changeSet>
+    <changeSet id="026-storage-quotas" author="m3">
+        <sqlFile path="changes/026-storage-quotas.sql" relativeToChangelogFile="true" splitStatements="false" />
+    </changeSet>
 </databaseChangeLog>

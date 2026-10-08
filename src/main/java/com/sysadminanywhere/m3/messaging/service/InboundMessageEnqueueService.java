@@ -14,6 +14,8 @@ import java.util.Map;
 @Service
 public class InboundMessageEnqueueService {
     @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.JobConfiguration configurations;
+    @org.springframework.beans.factory.annotation.Autowired private ExternalProcessingService processing;
+    @org.springframework.beans.factory.annotation.Autowired private StorageAdmission admission;
     private final MessageRepository messageRepository;
     private final RuleRepository ruleRepository;
     private final RuleExecutionJobRepository jobRepository;
@@ -77,15 +79,19 @@ public class InboundMessageEnqueueService {
             });
         }
         if (payload instanceof byte[]) addMetadata(stored, "encoding", "base64");
-        messageRepository.save(stored);
-        receipts.record(stored.getId());
-
         long selected=((Number)headers.get("loadingRuleId")).longValue();
         var rule=ruleRepository.findById(selected).orElseThrow(() -> new IllegalArgumentException("Loading rule was deleted"));
         if (!Boolean.TRUE.equals(rule.getEnabled()) || rule.getRuleType()!=RuleType.INBOUND || rule.getWorkerPool()==null
                 || !(headers.get("sourceChannelId") instanceof Number channelId)
                 || rule.getSourceChannel().getId().longValue()!=channelId.longValue())
             throw new IllegalArgumentException("Use an active loading rule for the selected source channel");
+        stored.setStatus(rule.getInitialMessageStatus());
+        stored.setSourceChannelId(rule.getSourceChannel().getId());
+        admission.check(stored.getPayloadSize());
+        if (stored.getStatus().isProcessingComplete()) stored.setProcessedAt(java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+        messageRepository.save(stored);
+        receipts.record(stored.getId());
+        processing.initialize(stored,rule);
         var job=new RuleExecutionJob(stored,rule,rule.getWorkerPool()); configurations.freeze(job); jobRepository.save(job);
         return stored;
     }

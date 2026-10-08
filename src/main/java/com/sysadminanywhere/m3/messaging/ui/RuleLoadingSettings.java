@@ -15,6 +15,10 @@ import com.vaadin.flow.component.textfield.TextField;
 import java.util.*;
 
 final class RuleLoadingSettings extends VerticalLayout {
+    private final ComboBox<com.sysadminanywhere.m3.messaging.domain.MessageStatus> initialStatus = new ComboBox<>(t("Initial message status"));
+    private final TextField recipients=new TextField(t("Processing recipients"));
+    private final IntegerField loadedTimeout=positiveField(t("Loaded timeout (seconds)"),86400);
+    private final IntegerField processingTimeout=positiveField(t("Processing timeout (seconds)"),3600);
     private final IntegerField polling = positiveField(t("Polling interval (ms)"), 5000);
     private final IntegerField minimumAge = positiveField(t("Minimum file age (ms)"), 1000);
     private final TextField pattern = new TextField(t("File name pattern"));
@@ -43,7 +47,16 @@ final class RuleLoadingSettings extends VerticalLayout {
         offset.setRequired(true);
         offset.setHelperText(t("Used when the group has no committed offset"));
         kafka.setWrap(true); kafka.setWidthFull();
-        add(new Span(t("Loading settings")), files, kafka, brokerHint);
+        initialStatus.setItems(java.util.Arrays.stream(com.sysadminanywhere.m3.messaging.domain.MessageStatus.values()).filter(com.sysadminanywhere.m3.messaging.domain.MessageStatus::isInboundProcessingStatus).toList());
+        initialStatus.setItemLabelGenerator(Translations::enumLabel);
+        initialStatus.setValue(com.sysadminanywhere.m3.messaging.domain.MessageStatus.LOADED);
+        initialStatus.setRequired(true);
+        initialStatus.setWidth("320px");
+        initialStatus.setMaxWidth("100%");
+        initialStatus.setHelperText(t("Routing does not complete external processing. The external service updates the message status through the API."));
+        recipients.setValue("external");recipients.setWidthFull();recipients.setHelperText(t("Comma-separated recipient keys; append ? for an optional recipient. All required recipients must succeed."));
+        var deadlines=new HorizontalLayout(loadedTimeout,processingTimeout);deadlines.setWrap(true);deadlines.setWidthFull();
+        add(new Span(t("Loading settings")), initialStatus,recipients,deadlines, files, kafka, brokerHint);
         setChannelType(null);
     }
     private static IntegerField positiveField(String label, int defaultValue) {
@@ -64,6 +77,8 @@ final class RuleLoadingSettings extends VerticalLayout {
         brokerHint.setVisible(type == ChannelType.RABBITMQ);
     }
     void load(Map<String,String> values) {
+        initialStatus.setValue(com.sysadminanywhere.m3.messaging.domain.MessageStatus.valueOf(values.getOrDefault("initialStatus", "LOADED")));
+        recipients.setValue(values.getOrDefault("processingRecipients","external"));loadNumber(loadedTimeout,values.getOrDefault("loadedTimeoutSeconds","86400"));loadNumber(processingTimeout,values.getOrDefault("processingTimeoutSeconds","3600"));
         loadNumber(polling, values.getOrDefault("pollingInterval", "5000"));
         loadNumber(minimumAge, values.getOrDefault("minFileAgeMs", "1000"));
         pattern.setValue(values.getOrDefault("filePattern", "*"));
@@ -88,6 +103,9 @@ final class RuleLoadingSettings extends VerticalLayout {
     Map<String,String> settings() {
         if (!isVisible()) return Map.of();
         var result = new HashMap<String,String>();
+        if (initialStatus.getValue() == null) throw new IllegalArgumentException(t("Select an initial message status"));
+        result.put("initialStatus", initialStatus.getValue().name());
+        result.put("processingRecipients",recipients.getValue().trim());result.put("loadedTimeoutSeconds",number(loadedTimeout));result.put("processingTimeoutSeconds",number(processingTimeout));
         if (files.isVisible()) {
             result.put("pollingInterval", number(polling));
             result.put("minFileAgeMs", number(minimumAge));

@@ -74,6 +74,12 @@ public class Rule {
 
     public java.util.Map<String, String> getLoadingProperties() { return loadingProperties; }
 
+    public MessageStatus getInitialMessageStatus() {
+        var status = MessageStatus.valueOf(loadingProperties.getOrDefault("initialStatus", "LOADED"));
+        if (!status.isInboundProcessingStatus()) throw new IllegalArgumentException("Invalid initial inbound processing status");
+        return status;
+    }
+
     public static Rule snapshot(Long id, String name, RuleType type, ChannelSettings source) { var item=new Rule(name,type,source); item.id=id; return item; }
 
     protected Rule() {

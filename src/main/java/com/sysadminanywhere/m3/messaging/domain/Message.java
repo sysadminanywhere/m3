@@ -30,6 +30,10 @@ public class Message {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private MessageStatus status = MessageStatus.PENDING;
+    @Column(name="source_channel_id")
+    private Long sourceChannelId;
+    public Long getSourceChannelId(){return sourceChannelId;}
+    public void setSourceChannelId(Long id){sourceChannelId=id;}
 
     @Column(name = "payload_bytes", columnDefinition = "bytea")
     private byte[] payloadBytes;
@@ -81,6 +85,7 @@ public class Message {
 
     public Message(MessageDirection direction, String payload, String payloadType) {
         setDirection(direction);
+        this.status = direction == MessageDirection.INBOUND ? MessageStatus.LOADED : MessageStatus.PENDING;
         setPayloadType(payloadType);
         setPayload(payload);
         this.createdAt = Instant.now();

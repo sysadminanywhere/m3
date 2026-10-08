@@ -17,6 +17,8 @@ import java.util.List;
 public class MessageService {
     @org.springframework.beans.factory.annotation.Autowired private MessageInspectionService inspection;
     @org.springframework.beans.factory.annotation.Autowired private MessageHistoryService history;
+    @org.springframework.beans.factory.annotation.Autowired private ExternalProcessingService processing;
+    public ExternalProcessingService processing(){return processing;}
     public MessageInspectionService inspection() { return inspection; }
     public MessageHistoryService history() { return history; }
 
@@ -105,7 +107,8 @@ public class MessageService {
     @com.sysadminanywhere.m3.base.persistence.AuditChange
     public void retry(Long id,boolean acknowledgeUncertain) {
         var message = lockMessageAndJobs(id);
-        if (message.getStatus() != MessageStatus.FAILED) throw new IllegalArgumentException("Only failed messages can be retried");
+        if (message.getDirection() == MessageDirection.OUTBOUND && message.getStatus() != MessageStatus.FAILED)
+            throw new IllegalArgumentException("Only failed outbound messages can be retried");
         var items = jobs.findByMessage_IdOrderByRule_PriorityAsc(id);
         var failed = items.stream().filter(job -> job.getStatus() == com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.FAILED).toList();
         if (failed.isEmpty()) throw new IllegalArgumentException("Message has no failed execution job; resubmit with an explicit ruleId");
@@ -118,10 +121,14 @@ public class MessageService {
             job.reassignPool(job.getRule().getWorkerPool());
             job.retryNow();
         }
-        message.setStatus(MessageStatus.PENDING);
-        message.setProcessedAt(null);
+        if (message.getDirection() == MessageDirection.OUTBOUND) {
+            message.setStatus(MessageStatus.PENDING);
+            message.setProcessedAt(null);
+        }
         history.action(id,"RETRY_REQUESTED",null);
     }
+
+    public record ProcessingStatus(Long id, MessageStatus status, Instant processedAt) { }
 
     @Transactional
     @org.springframework.security.access.prepost.PreAuthorize("@serviceAccess.operate()")
@@ -134,6 +141,8 @@ public class MessageService {
             throw new IllegalArgumentException("Message still has pending or running jobs");
         Long unpublished = jdbc.queryForObject("SELECT count(*) FROM message_receipt_outbox WHERE message_id=? AND published_at IS NULL",Long.class,id);
         if (unpublished != null && unpublished > 0) throw new IllegalArgumentException("Wait for receipt notification publication before deleting the message");
+        Long external=jdbc.queryForObject("SELECT (SELECT count(*) FROM message_processing WHERE message_id=? AND is_current AND status IN ('LOADED','PROCESSING'))+(SELECT count(*) FROM processing_event_outbox WHERE message_id=? AND published_at IS NULL)",Long.class,id,id);
+        if(external!=null && external>0)throw new IllegalArgumentException("Wait for external processing and event publication before deleting the message");
         jobs.deleteAll(items);
         jobs.flush();
         messageRepository.delete(message);

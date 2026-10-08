@@ -29,6 +29,7 @@ import java.util.Map;
 @RequestMapping("/api/v1")
 @Profile("!worker")
 public class MessageApi {
+    @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.ExternalProcessingService processing;
     @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageInspectionService inspection;
     @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageHistoryService history;
     private final MessageRepository messages;
@@ -66,6 +67,34 @@ public class MessageApi {
         try { messageService.retry(id,acknowledgeUncertain); }
         catch (IllegalArgumentException invalid) { throw new ResponseStatusException(HttpStatus.CONFLICT,invalid.getMessage()); }
         return ResponseEntity.accepted().build();
+    }
+
+    @PatchMapping("/messages/{id}/status")
+    public com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.Result updateStatus(
+            @PathVariable long id, @Valid @RequestBody ProcessingStatusUpdate request) {
+        var result=processing.callback(id,"external",new com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.Callback(
+                request.callbackId(),request.processingAttemptId(),request.expectedVersion(),request.status(),request.expectedStatus(),request.detail()));
+        return result;
+    }
+    public record ProcessingStatusUpdate(@jakarta.validation.constraints.NotNull MessageStatus status,
+            MessageStatus expectedStatus, @Size(max = 2000) String detail,
+            @jakarta.validation.constraints.NotNull java.util.UUID callbackId,
+            @jakarta.validation.constraints.NotNull java.util.UUID processingAttemptId,
+            @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.PositiveOrZero Long expectedVersion) { }
+
+    @GetMapping("/messages/{id}/processing")
+    public List<com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.Attempt> processing(@PathVariable long id,@RequestParam(defaultValue="false") boolean history) {
+        return processing.attempts(id,history);
+    }
+    @PatchMapping("/messages/{id}/processing/{recipient}/status")
+    public com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.Result callback(@PathVariable long id,@PathVariable String recipient,
+            @RequestBody com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.Callback request) {
+        return processing.callback(id,recipient,request);
+    }
+    @PostMapping("/messages/{id}/processing/{recipient}/replay")
+    public com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.Result replay(@PathVariable long id,@PathVariable String recipient,
+            @RequestBody com.sysadminanywhere.m3.messaging.service.ExternalProcessingService.Replay request) {
+        return processing.replay(id,recipient,request);
     }
 
     @GetMapping("/messages/{id}/payload")

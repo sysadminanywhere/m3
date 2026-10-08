@@ -182,6 +182,11 @@ public class DockerWorkerScaler {
             String value=environment.getProperty("m3.broker.rabbit."+key);
             if (value!=null) env.add("M3_BROKER_RABBIT_"+key.toUpperCase(Locale.ROOT).replace('-','_')+"="+value);
         }
+        for (var setting : Map.of("events-queue","M3_PROCESSING_EVENTS_QUEUE", "events-ttl-ms","M3_PROCESSING_EVENTS_TTL_MS",
+                "loaded-timeout-seconds","M3_PROCESSING_LOADED_TIMEOUT_SECONDS", "processing-timeout-seconds","M3_PROCESSING_TIMEOUT_SECONDS").entrySet().stream().sorted(Map.Entry.comparingByKey()).toList()) {
+            String value=environment.getProperty("m3.processing."+setting.getKey());
+            if (value!=null) env.add(setting.getValue()+"="+value);
+        }
         return env;
     }
     private String revision(RuleWorkerPool pool,int index,String imageId) throws Exception {

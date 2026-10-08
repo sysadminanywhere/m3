@@ -34,8 +34,9 @@ public class OutboundChannelSender {
         if(transport==null) throw new IllegalArgumentException("No outbound transport for " + channel.getChannelType());
         var metadata=new java.util.TreeMap<>(delivery.metadata());
         metadata.put("m3DeliveryId","m3:"+messageId); metadata.put("m3MessageId",Long.toString(messageId));
+        var lease=com.sysadminanywhere.m3.messaging.worker.ExecutionLease.token();if(lease!=null)metadata.put("m3ExecutionLease",lease);
         var plan=new PreparedOutboundDelivery(delivery.channelId(),delivery.body(),delivery.payloadType(),metadata);
-        DeliveryAttempt.run(started,()->transport.send(channel,messageId,plan));
+        DeliveryAttempt.run(()->{com.sysadminanywhere.m3.messaging.worker.ExecutionLease.assertOwned();started.run();},()->{com.sysadminanywhere.m3.messaging.worker.ExecutionLease.assertOwned();transport.send(channel,messageId,plan);});
     }
 
     static String fileName(long id, PreparedOutboundDelivery delivery) {

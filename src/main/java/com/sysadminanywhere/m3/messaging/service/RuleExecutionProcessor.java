@@ -16,6 +16,7 @@ import java.util.*;
 @Service
 public class RuleExecutionProcessor {
     @org.springframework.beans.factory.annotation.Autowired private MessageHistoryService history;
+    @org.springframework.beans.factory.annotation.Autowired private MessageArchiveService archive;
     @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.JobConfiguration configurations;
     private final RuleExecutionJobRepository jobs;
     private final MessageRepository messages;
@@ -66,6 +67,9 @@ public class RuleExecutionProcessor {
         job.reassignPool(job.getRule().getWorkerPool());
         job.claim(workerId);
         var message = job.getMessage();
+        // Serialize catalog changes with external callbacks before using the loaded entity.
+        entityManager.refresh(message, LockModeType.PESSIMISTIC_WRITE);
+        archive.hydrate(message);
         try {
             execute(job, message);
             job.complete();
@@ -82,10 +86,10 @@ public class RuleExecutionProcessor {
                 try { finishMessage(message); }
                 catch (Exception e) {
                     job.fail(e);
-                    setFinalStatus(message, MessageStatus.FAILED);
                 }
-            } else setFinalStatus(message, MessageStatus.FAILED);
+            }
         }
+        com.sysadminanywhere.m3.messaging.worker.ExecutionLease.assertOwned();
         return true;
     }
 
@@ -98,7 +102,7 @@ public class RuleExecutionProcessor {
                     WHERE status='PROCESSING' AND delivery_started=true
                         AND worker_pool_id=(SELECT worker_pool_id FROM rule_worker_pool WHERE name=:pool)
                         AND claimed_at < now()-(:lease * interval '1 second') RETURNING message_id
-                ) UPDATE message SET status='FAILED',processed_at=now() WHERE message_id IN (SELECT message_id FROM expired)
+                ) UPDATE message SET status='FAILED',processed_at=now() WHERE direction='OUTBOUND' AND message_id IN (SELECT message_id FROM expired)
                 """).setParameter("pool",poolName).setParameter("lease",claimLeaseSeconds).executeUpdate();
         return uncertain+jobs.releaseExpiredClaims(poolName, claimLeaseSeconds);
     }
@@ -128,14 +132,12 @@ public class RuleExecutionProcessor {
                 .toList();
         if (matchedRules.isEmpty()) {
             history.action(stored.getId(),"NO_MATCH",null);
-            setFinalStatus(stored, MessageStatus.PROCESSED);
             return;
         }
 
         var input = createInput(stored, matchedRules);
         if (ruleEngine.shouldFilter(input, matchedRules)) {
             history.action(stored.getId(),"FILTERED",null);
-            setFinalStatus(stored, MessageStatus.PROCESSED);
             return;
         }
 
@@ -192,14 +194,6 @@ public class RuleExecutionProcessor {
             history.action(outbound.getId(),"COPY_CREATED",stored.getId());
             stored.setTargetSystem(destination.getName());
         }
-        setFinalStatus(stored, MessageStatus.PROCESSED);
-    }
-
-
-    private void setFinalStatus(Message message, MessageStatus status) {
-        message.setStatus(status);
-        message.setProcessedAt(java.time.Instant.now());
-        messages.save(message);
     }
 
     private org.springframework.messaging.Message<Object> createInput(Message stored, List<Rule> rules) throws Exception {

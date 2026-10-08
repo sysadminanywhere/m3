@@ -45,6 +45,34 @@ Original payload bytes are stored as PostgreSQL `bytea`, together with optional 
 - `GET /api/v1/sources`: list inbound endpoint ID, name, type and availability flag. Runtime ownership is `RULE_MANAGED`; Channels no longer report a locally running receiver, since loading happens in worker containers.
 - `POST /api/v1/channels/{channelId}/messages`: submit with required `ruleId` for an active INBOUND rule using that source; returns `201`, `Location` and the saved message ID. This explicitly selected rule receives the job.
 - `GET /api/v1/messages/{messageId}`: return payload, metadata, source/target, timestamps, direction and current status; returns `404` for an unknown or deleted message.
+- `GET /api/v1/messages/{messageId}/processing`: read current recipient attempts (add `history=true` for previous attempts).
+- `PATCH /api/v1/messages/{messageId}/processing/{recipient}/status`: apply an external callback. Requires a scoped service account or admin/operator credentials and `X-M3-Request: 1`.
+- `PATCH /api/v1/messages/{messageId}/status`: the same callback contract for the default `external` recipient.
+- `POST /api/v1/messages/{messageId}/processing/{recipient}/replay`: create a new business-processing attempt; routing Retry remains a separate operation.
+
+Inbound messages start as **LOADED**. The INBOUND rule's **Initial message status** setting (`initialStatus` in its loading properties) can explicitly select LOADED, PROCESSING, PROCESSED or PROCESSING_FAILED. Successful routing, filtering and a rule with no match leave this business status unchanged. Routing failures remain visible in execution jobs and history; Retry requeues failed jobs without resetting the inbound business status. Outbound messages retain PENDING/SENT/FAILED delivery statuses.
+
+External callback example:
+
+```http
+PATCH /api/v1/messages/123/status
+Authorization: Basic <operator credentials>
+X-M3-Request: 1
+Content-Type: application/json
+
+{
+  "callbackId":"de5d2d0e-4b3d-4a42-b55a-d8214bb7f140",
+  "processingAttemptId":"687acaf7-7e7f-4925-9441-664e99a0c235",
+  "expectedVersion":1,
+  "status":"PROCESSING_FAILED",
+  "expectedStatus":"PROCESSING",
+  "detail":"Business validation failed"
+}
+```
+
+`callbackId`, `processingAttemptId`, `expectedVersion` and `status` are required. Obtain the attempt ID and version from the processing API or event; the example values above are illustrative. `expectedStatus` and `detail` (up to 2,000 characters) are optional. Reusing the same callback ID and identical request returns its saved response; changing that request returns `409`. A superseded attempt, stale version or mismatched expected status returns `409` without changes. Responses include the updated attempt/version and aggregate `messageStatus`/`processedAt`. Terminal attempts cannot reopen through callbacks: use Replay to obtain a new attempt ID. Repeating the current status with a fresh callback ID preserves its timestamp and version. Unknown message IDs return `404`, outbound messages return `409`, invalid status values return `400`, and viewer accounts cannot mutate statuses. External changes record the authenticated actor in message history and the audit log; diagnostic details are masked by default. Callbacks and worker catalog changes serialize under a database row lock so routing cannot overwrite a callback.
+
+Successfully processed messages become eligible for configured archival/deletion only after routing jobs, required recipient processing and event publication complete. Active attempts are preserved; failed attempts are retained unless a separate error-retention policy is explicitly enabled. Replay can read an archived body. Migrations 024–026 add business statuses, recipient attempts and storage quotas. Stop old UI/workers, apply migrations through the upgraded control plane and start upgraded workers. Update every callback client to the mandatory identity/version contract. See [external processing and operations](external-processing-operations.md) for aggregation, deadlines, service scopes, durable events and retention.
 
 Example ingestion request:
 

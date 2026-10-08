@@ -43,6 +43,7 @@ public class MessageDetailDialog extends Dialog {
     private final com.sysadminanywhere.m3.messaging.outbound.OutboundSubmissionService submissions;
     private Message currentMessage;
     private final Grid<MessageService.JobInfo> jobsGrid = new Grid<>();
+    private final ExternalProcessingPanel externalProcessing;
     private final Grid<com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Event> historyGrid=new Grid<>();
     private final VerticalLayout relatedMessages=new VerticalLayout();
     private final ComboBox<com.sysadminanywhere.m3.messaging.service.MessageInspectionService.BodyVersion> bodyVersion=new ComboBox<>(t("Payload version"));
@@ -75,6 +76,7 @@ public class MessageDetailDialog extends Dialog {
         this.messageService = messageService;
         this.metadataRepository = metadataRepository;
         this.submissions = submissions;
+        externalProcessing=new ExternalProcessingPanel(messageService.processing());
 
         addClassName("message-detail-dialog");
         setHeaderTitle(t("Message Details"));
@@ -127,7 +129,7 @@ public class MessageDetailDialog extends Dialog {
             if (job.error() != null) error.getElement().setAttribute("title", job.error());
             return error;
         }).setHeader(t("Error")).setFlexGrow(2);
-        jobsGrid.setHeightFull(); jobsGrid.setWidthFull();
+        jobsGrid.setHeight("320px"); jobsGrid.setWidthFull();jobsGrid.getStyle().set("flex-shrink","0");
         retryButton.addClickListener(event -> {
             boolean uncertain=messageService.executionJobs(currentMessage.getId()).stream().anyMatch(MessageService.JobInfo::uncertain);
             if(!uncertain) retry(false);
@@ -149,8 +151,9 @@ public class MessageDetailDialog extends Dialog {
         detailsContent.setPadding(false); detailsContent.setWidthFull();
         var metadataContent = new VerticalLayout(metadataGrid);
         metadataContent.setPadding(false); metadataContent.setSizeFull();
-        var processingContent = new VerticalLayout(jobsGrid);
+        var processingContent = new VerticalLayout(externalProcessing,jobsGrid);
         processingContent.setPadding(false); processingContent.setSizeFull();
+        processingContent.getStyle().set("overflow","auto");
         var controls=new HorizontalLayout(bodyVersion,charsetSelector);controls.setWidthFull();controls.setFlexGrow(1,bodyVersion);
         controls.getStyle().set("flex-wrap","wrap").set("align-items","end");
         var payloadContent = new VerticalLayout(controls,revealOriginal, previewHint, payloadArea);
@@ -165,6 +168,7 @@ public class MessageDetailDialog extends Dialog {
         tabs.add(t("Processing"), processingContent);
         historyGrid.addColumn(row -> java.time.format.DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(Translations.locale()).withZone(ZoneId.systemDefault()).format(row.occurredAt())).setHeader(t("Time"));
         historyGrid.addColumn(row -> t(row.kind())).setHeader(t("Event"));
+        historyGrid.addColumn(com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Event::recipient).setHeader(t("Recipient"));
         historyGrid.addColumn(row -> row.ruleId()==null?"":row.ruleId()+" / "+row.pool()).setHeader(t("Rule / pool"));
         historyGrid.addColumn(row -> row.attempt()==0?"":row.attempt()).setHeader(t("Attempt"));
         historyGrid.addColumn(com.sysadminanywhere.m3.messaging.service.MessageHistoryService.Event::status).setHeader(t("Status"));
@@ -274,7 +278,9 @@ public class MessageDetailDialog extends Dialog {
             setHeaderTitle(t("Message #") + messageId);
             var jobs = messageService.executionJobs(messageId);
             jobsGrid.setItems(jobs);
-            retryButton.setVisible(new com.sysadminanywhere.m3.base.security.ServiceAccess().operate() && currentMessage.getStatus() == com.sysadminanywhere.m3.messaging.domain.MessageStatus.FAILED);
+            retryButton.setVisible(new com.sysadminanywhere.m3.base.security.ServiceAccess().operate() && jobs.stream().anyMatch(job -> job.status() == com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.FAILED));
+            externalProcessing.setVisible(currentMessage.getDirection()==com.sysadminanywhere.m3.messaging.domain.MessageDirection.INBOUND);
+            if(externalProcessing.isVisible())externalProcessing.load(messageId);
             retryButton.setEnabled(jobs.stream().anyMatch(job -> job.status() == com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.FAILED));
             var dateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(Translations.locale())
                     .withZone(ZoneId.systemDefault());

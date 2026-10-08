@@ -25,7 +25,7 @@ Submit a payload and metadata with `ruleId` to `POST /api/v1/messages/outbound`.
 
 ### Message Tracking
 - **Complete Audit Trail**: Track all messages with timestamps, status, and metadata
-- **Status Monitoring**: View messages by direction (inbound/outbound) and status (pending, processed, error, sent)
+- **Status Monitoring**: Inbound messages start as loaded (configurable per rule); external services report processing/results through the API. Routing jobs have independent status; outbound deliveries use pending/sent/failed.
 - **Detailed Inspection**: Drill down into message payloads and headers
 
 Message details show execution jobs, retry controls, the payload and metadata together, offer a charset selector for byte-payload previews, and download the complete stored payload. See [message preview and encoding options](docs/message-encodings.md).
@@ -384,6 +384,14 @@ are unsupported; update existing expressions using those constructs before upgra
 expressions fail the job visibly instead of silently treating a matching message as a non-match.
 
 ## Retention and regression checks
+
+Message troubleshooting provides masked payload inspection, routing history, Retry and Redirect.
+Incoming business processing is tracked separately per recipient, with versioned callbacks, replay,
+deadlines and durable RabbitMQ events. **Operations** shows overdue processing, backlog and storage pressure.
+See [processing and operations](docs/external-processing-operations.md),
+[storage, masking and Scale](docs/troubleshooting-storage-scale.md),
+[consistent backup and restore](docs/backup-restore.md), and
+[Scale issuer and commercial workflow](docs/scale-commercial-operations.md).
 
 Business messages and deduplication keys are retained indefinitely by default. Set
 `M3_RETENTION_MESSAGES_DAYS` or `M3_RETENTION_IDEMPOTENCY_DAYS` to a positive number to enable deletion.
