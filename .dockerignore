@@ -11,7 +11,7 @@ node_modules
 **/node_modules
 **/__pycache__
 **/generated
-m3-app/src/main/frontend/generated
+src/main/frontend/generated
 .m3
 .env
 .env.*

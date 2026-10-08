@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Community" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.sysadminanywhere.m3.Application" />
+    <module name="m3" />
+    <option name="PROGRAM_PARAMETERS" value="--vaadin.launch-browser=false" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2"><option name="Make" enabled="true" /></method>
+  </configuration>
+</component>

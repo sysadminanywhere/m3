@@ -20,11 +20,12 @@ def verify(path, edition):
     community = any(name.endswith('/CommunityExecutionPolicy.class') for name in classes)
     if edition == 'community':
         assert community and not paid, 'Community artifact contains paid code or lacks its fixed policy'
-        assert not any(name.startswith('m3-scale-') for name in libraries), 'Private library in Community artifact'
+        assert not any(name.endswith('/CommunityLicenseView.class') for name in classes), 'Community contains the obsolete upgrade page'
+        assert not any('/i18n/extra_ui_' in name for name in names), 'Community contains private UI translations'
     else:
         assert paid and not community, 'Full artifact lacks Scale or contains conflicting Community policy'
-        assert any(name.startswith('m3-scale-') for name in libraries), 'Missing private library'
-    assert any(name.startswith('m3-core-') for name in libraries), 'Missing shared core library'
+    assert not any(name.startswith(('m3-core-', 'm3-extension-api-', 'm3-community-', 'm3-scale-')) for name in libraries), 'Unexpected M3 module dependency'
+    assert any(name.endswith('/Application.class') and 'com/sysadminanywhere/m3/' in name for name in classes), 'Missing shared application entry point'
     print(f'{edition}: verified {len(classes)} classes and {len(libraries)} libraries')
 
 if __name__ == '__main__':

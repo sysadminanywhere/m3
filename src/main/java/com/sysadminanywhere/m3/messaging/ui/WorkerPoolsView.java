@@ -1,0 +1,300 @@
+package com.sysadminanywhere.m3.messaging.ui;
+
+import static com.sysadminanywhere.m3.base.i18n.Translations.t;
+import com.sysadminanywhere.m3.base.i18n.Translations;
+
+import com.sysadminanywhere.m3.base.ui.ResponsiveGrid;
+import com.sysadminanywhere.m3.base.ui.menu.MenuItem;
+import com.sysadminanywhere.m3.base.ui.menu.MenuSection;
+import com.sysadminanywhere.m3.messaging.domain.RuleWorkerPool;
+import com.sysadminanywhere.m3.messaging.service.RuleWorkerPoolService;
+import com.sysadminanywhere.m3.messaging.service.WorkerPoolCapacityService;
+import com.sysadminanywhere.m3.messaging.service.WorkerPoolMetricsService;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.details.Details;
+import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.IntegerField;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.router.HasDynamicTitle;
+import com.vaadin.flow.router.Route;
+
+@jakarta.annotation.security.RolesAllowed("ADMIN")
+@Route("workers")
+@MenuItem(title = "Workers", icon = "icons/worker.svg", order = 1, section = MenuSection.ADMINISTRATION)
+class WorkerPoolsView extends VerticalLayout implements HasDynamicTitle {
+    private final RuleWorkerPoolService service;
+    private final WorkerPoolCapacityService capacityService;
+    private final WorkerPoolMetricsService metricsService;
+    private final Grid<RuleWorkerPool> grid = new Grid<>();
+    private final com.sysadminanywhere.m3.extensions.ExecutionPolicy policy;
+    private final com.sysadminanywhere.m3.messaging.service.WorkerCapacityAllocation allocation;
+    private final Span capacitySummary=new Span();
+    private final Button create = new Button(t("Create Worker Pool"), event -> openCreateDialog());
+
+    WorkerPoolsView(RuleWorkerPoolService service, WorkerPoolCapacityService capacityService,
+                    WorkerPoolMetricsService metricsService,com.sysadminanywhere.m3.extensions.ExecutionPolicy policy,
+                    com.sysadminanywhere.m3.messaging.service.WorkerCapacityAllocation allocation) {
+        this.policy=policy;this.allocation=allocation;
+        this.service = service;
+        this.capacityService = capacityService;
+        this.metricsService = metricsService;
+        create.addThemeVariants(ButtonVariant.PRIMARY);
+        var toolbar = new HorizontalLayout(create,capacitySummary);
+        toolbar.addClassName("page-toolbar");
+        toolbar.setWidthFull();
+        var controllerStatus = new Span(capacityService.isConfigured()
+                ? t("Docker controller connected · capacity is reconciled automatically")
+                : t("Docker controller is not configured · desired capacity is saved but containers will not start"));
+        controllerStatus.getStyle().set("color", "var(--m3-muted)");
+        var dockerInstructions = new VerticalLayout(
+                new Span(t("Docker workers quick setup")),
+                new Span(t("Docker workers compose command")),
+                new Span(t("Docker workers manual setup")));
+        dockerInstructions.setPadding(false);
+        dockerInstructions.setSpacing(true);
+        var dockerHelp = new Details(t("How to enable Docker workers"), dockerInstructions);
+        dockerHelp.setOpened(false);
+        dockerHelp.setWidthFull();
+
+        grid.addComponentColumn(this::poolCell).setHeader(t("Pool")).setWidth("140px").setFlexGrow(1);
+        grid.addColumn(this::capacityLabel).setHeader(t("Count")).setWidth("110px").setFlexGrow(0);
+        grid.addColumn(pool -> capacityStatus(pool.getName())+(capacityService.limited(pool)?" · "+t("Capacity limited"):""))
+                .setHeader(t("Running")).setWidth("160px").setFlexGrow(0);
+        grid.addComponentColumn(pool -> {
+            var load = metricsService.summary(pool.getId());
+            var values = new VerticalLayout(
+                    loadLine(t("Now"), load.currentCpu(), load.currentMemory()),
+                    loadLine(t("Peak"), load.maximumCpu(), load.maximumMemory()),
+                    loadLine(t("Avg"), load.averageCpu(), load.averageMemory()));
+            values.setPadding(false);
+            values.setSpacing(false);
+            values.addClassName("worker-pool-load");
+            if (load.sampledAt() == null) values.getElement().setAttribute("title", t("Waiting for the first Docker metrics sample"));
+            else values.getElement().setAttribute("title", t("Last sample: ") + load.sampledAt());
+            return values;
+        }).setHeader(t("Load · CPU / RAM")).setWidth("255px").setFlexGrow(0);
+        grid.addComponentColumn(pool -> {
+            var edit = new Button(VaadinIcon.COG.create(), event -> openCapacityDialog(pool));
+            edit.setAriaLabel(t("Change capacity for ") + pool.getName());
+            edit.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            var metrics = new Button(VaadinIcon.CHART.create(), event -> openContainerMetrics(pool));
+            metrics.setAriaLabel(t("Container metrics for ") + pool.getName());
+            metrics.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+            var actions = new HorizontalLayout(edit, metrics);
+            actions.setPadding(false);
+            actions.setSpacing(false);
+            if ("default".equals(pool.getName())) return actions;
+            var delete = new Button(VaadinIcon.TRASH.create(), event -> deletePool(pool));
+            delete.setAriaLabel(t("Delete ") + pool.getName());
+            delete.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_ERROR);
+            delete.setEnabled(service.canDelete(pool.getId()));
+            actions.add(delete);
+            return actions;
+        }).setHeader(t("Actions")).setWidth("125px").setFlexGrow(0).setFrozenToEnd(true);
+        grid.setEmptyStateText(t("No worker pools configured"));
+        grid.setSizeFull();
+        ResponsiveGrid.configure(grid);
+        setSizeFull();
+        add(toolbar, controllerStatus, dockerHelp, grid);
+        refresh();
+        addAttachListener(event -> {
+            var ui = event.getUI();
+            ui.setPollInterval(15000);
+            var pollRegistration = ui.addPollListener(poll -> refresh());
+            addDetachListener(detach -> {
+                pollRegistration.remove();
+                ui.setPollInterval(-1);
+            });
+        });
+    }
+
+    private String capacityLabel(RuleWorkerPool pool) {
+        return pool.isAutoScaleEnabled() ? t("Auto {0}–{1}", pool.getMinReplicas(), pool.getMaxReplicas())
+                : Integer.toString(pool.getDesiredReplicas());
+    }
+    private String capacityStatus(String poolName) {
+        String status = capacityService.status(poolName);
+        var values = java.util.regex.Pattern.compile("(\\d+) / (\\d+) · (\\d+) jobs").matcher(status);
+        return values.matches() ? t("{0} / {1} · {2} jobs", values.group(1), values.group(2), values.group(3)) : t(status);
+    }
+
+    private Span loadLine(String label, double cpu, double memory) {
+        return new Span(t(label) + "  CPU " + percent(cpu) + "  RAM " + percent(memory));
+    }
+
+    private VerticalLayout poolCell(RuleWorkerPool pool) {
+        var name = new Span(pool.getName());
+        name.getStyle().set("overflow", "hidden").set("text-overflow", "ellipsis");
+        name.getElement().setAttribute("title", pool.getName());
+        var ruleCount = new Span(t("Rules: {0}", service.ruleCount(pool.getId())));
+        ruleCount.getStyle().set("color", "var(--m3-muted)").set("font-size", "var(--lumo-font-size-xs)");
+        var cell = new VerticalLayout(name, ruleCount);
+        Long age=capacityService.oldestQueuedSeconds(pool);
+        cell.add(new Span(age==null?t("No queued jobs"):t("Oldest queued job: {0} s",age)));
+        cell.setPadding(false);
+        cell.setSpacing(false);
+        return cell;
+    }
+
+    private String percent(double value) { return String.format(java.util.Locale.ROOT, "%.0f%%", value); }
+
+    private void openContainerMetrics(RuleWorkerPool pool) {
+        var dialog = new Dialog(); dialog.setHeaderTitle(t("Containers  ·  ") + pool.getName());
+        dialog.setWidth("900px"); dialog.setMaxWidth("calc(100vw - 32px)");
+        var table = new Grid<WorkerPoolMetricsService.ContainerSummary>();
+        table.addColumn(value -> value.name() + "  ·  " + value.id().substring(0,12)).setHeader(t("Container"));
+        table.addColumn(value -> value.load().sampledAt().isBefore(java.time.Instant.now().minusSeconds(90))
+                ? t("Stale / stopped") : t("Recent sample")).setHeader(t("State"));
+        table.addColumn(value -> percent(value.load().currentCpu()) + " / " + percent(value.load().currentMemory())).setHeader(t("Now CPU / RAM"));
+        table.addColumn(value -> percent(value.load().maximumCpu()) + " / " + percent(value.load().maximumMemory())).setHeader(t("Peak CPU / RAM"));
+        table.addColumn(value -> percent(value.load().averageCpu()) + " / " + percent(value.load().averageMemory())).setHeader(t("Avg CPU / RAM"));
+        table.addColumn(value -> value.load().sampledAt()).setHeader(t("Last sample"));
+        table.setEmptyStateText(t("Waiting for Docker samples"));
+        Runnable update = () -> table.setItems(metricsService.containers(pool.getId()));
+        update.run(); dialog.add(table);
+        dialog.getFooter().add(new Button(t("Refresh"),event -> update.run()),new Button(t("Close"),event -> dialog.close()));
+        dialog.open();
+    }
+
+    private void openCreateDialog() {
+        var dialog = new Dialog();
+        dialog.setWidth("600px");
+        dialog.setMaxWidth("calc(100vw - 32px)");
+        dialog.setHeaderTitle(t("Create worker pool"));
+        var name = new TextField(t("Pool name"));
+        name.setRequired(true);
+        name.setPlaceholder("transformers");
+        name.setHelperText(t("Lowercase letters, numbers and hyphens"));
+        var desired = numberField(t("Desired containers"), 1);
+        var min = numberField(t("Minimum"), 1);
+        var max = numberField(t("Maximum"), Math.min(4,policy.state().maxWorkers()));
+        var autoScale = new Checkbox(t("Auto-scale from queued jobs"));
+        autoScale.setVisible(policy.state().autoScale());
+        var jobsPerWorker = queueLimitField(50);
+        jobsPerWorker.setVisible(policy.state().autoScale());
+        var fields = new FormLayout(name, desired, min, max, autoScale, jobsPerWorker);
+        fields.addClassName("worker-pool-form");
+        fields.setWidthFull();
+        fields.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("520px", 2));
+        fields.setColspan(autoScale, 2);
+        fields.setColspan(jobsPerWorker, 2);
+        var guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(dialog, fields);
+        guard.markSaved();
+        var save = new Button(t("Create"), event -> {
+            try {
+                var pool = service.create(name.getValue().trim(), desired.getValue(), min.getValue(), max.getValue(),
+                        autoScale.getValue(), jobsPerWorker.getValue());
+                guard.markSaved();
+                dialog.close();
+                refresh();
+                reconcileAfterSave(pool);
+            } catch (RuntimeException e) { showError(e); }
+        });
+        save.addThemeVariants(ButtonVariant.PRIMARY);
+        var cancel = new Button(t("Cancel"), event -> guard.requestDiscard(dialog::close));
+        dialog.add(fields);
+        dialog.getFooter().add(guard.indicator(), cancel, save);
+        dialog.open();
+    }
+
+    private void openCapacityDialog(RuleWorkerPool pool) {
+        var dialog = new Dialog();
+        dialog.setWidth("520px");
+        dialog.setMaxWidth("calc(100vw - 32px)");
+        dialog.setHeaderTitle(t("Capacity · ") + pool.getName());
+        var desired = numberField(t("Desired containers"), Math.min(pool.getDesiredReplicas(),policy.state().maxWorkers()));
+        var min = numberField(t("Minimum"), Math.min(pool.getMinReplicas(),policy.state().maxWorkers()));
+        var max = numberField(t("Maximum"), Math.min(pool.getMaxReplicas(),policy.state().maxWorkers()));
+        var autoScale = new Checkbox(t("Auto-scale from queued jobs"), policy.state().autoScale() && pool.isAutoScaleEnabled());
+        autoScale.setVisible(policy.state().autoScale());
+        var jobsPerWorker = queueLimitField(pool.getPendingJobsPerWorker());
+        jobsPerWorker.setVisible(policy.state().autoScale());
+        var priority=new IntegerField(t("Capacity priority"));priority.setMin(0);priority.setMax(10000);priority.setValue(pool.getCapacityPriority());
+        priority.setHelperText(t("Lower values receive shared capacity first."));
+        priority.setVisible(policy.state().maxWorkers() > 1);
+        var fields = new FormLayout(desired, min, max, autoScale, jobsPerWorker,priority);
+        fields.addClassName("worker-pool-form");
+        fields.setWidthFull();
+        fields.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1),
+                new FormLayout.ResponsiveStep("460px", 2));
+        fields.setColspan(autoScale, 2);
+        fields.setColspan(jobsPerWorker, 2);
+        var guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(dialog, fields);
+        guard.markSaved();
+        var save = new Button(t("Save"), event -> {
+            try {
+                var updated = service.updateCapacity(pool.getId(), desired.getValue(), min.getValue(), max.getValue(),
+                        autoScale.getValue(), jobsPerWorker.getValue(), pool.getVersion(),priority.getValue());
+                guard.markSaved();
+                dialog.close();
+                refresh();
+                reconcileAfterSave(updated);
+            } catch (RuntimeException e) { showError(e); }
+        });
+        save.addThemeVariants(ButtonVariant.PRIMARY);
+        dialog.add(fields);
+        dialog.getFooter().add(guard.indicator(), new Button(t("Cancel"), e -> guard.requestDiscard(dialog::close)), save);
+        dialog.open();
+    }
+
+    private IntegerField numberField(String label, int value) {
+        var field = new IntegerField(t(label));
+        field.setValue(value);
+        field.setMin(1);
+        field.setMax(policy.state().maxWorkers());
+        field.setStepButtonsVisible(true);
+        field.setRequired(true);
+        field.setWidthFull();
+        return field;
+    }
+
+    private IntegerField queueLimitField(int value) {
+        var field = numberField(t("Pending jobs per worker"), value);
+        field.setMax(10000);
+        field.setHelperText(t("Autoscaling target based on pending + processing rule jobs"));
+        return field;
+    }
+
+    private void deletePool(RuleWorkerPool pool) {
+        try {
+            service.delete(pool.getId());
+            capacityService.removePool(pool.getName());
+            refresh();
+        } catch (RuntimeException e) { showError(e); }
+    }
+
+    private void refresh() {
+        var pools=service.findAll();
+        grid.setItems(pools);var state=policy.state();
+        create.setVisible(state.maxWorkers() > 1 || pools.isEmpty());
+        capacitySummary.setText(t("{0} / {1} worker slots",allocation.used(),state.maxWorkers()));
+    }
+
+    private void reconcileAfterSave(RuleWorkerPool pool) {
+        try {
+            capacityService.reconcile(pool.getId());
+            refresh();
+        } catch (RuntimeException e) {
+            Notification.show(t("Capacity saved; container reconciliation will retry: ") + com.sysadminanywhere.m3.base.ui.SaveErrors.message(e),
+                    6000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
+        }
+    }
+
+    private void showError(RuntimeException error) {
+        Notification.show(error.getMessage() == null ? t("Could not save worker pool") : com.sysadminanywhere.m3.base.ui.SaveErrors.message(error),
+                4000, Notification.Position.BOTTOM_END).addThemeVariants(NotificationVariant.LUMO_ERROR);
+    }
+    @Override public String getPageTitle() { return t("Rule Workers"); }
+}

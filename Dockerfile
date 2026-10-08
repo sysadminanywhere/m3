@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/root/.m2 \
     sh ./mvnw clean package -DskipTests -Dvaadin.proKey=${PRO_KEY} -Dvaadin.offlineKey=${OFFLINE_KEY}'
 
 FROM eclipse-temurin:21-jre-alpine
-COPY --from=build /workspace/m3/m3-app/target/m3-community.jar app.jar
+COPY --from=build /workspace/m3/target/m3-community.jar app.jar
 COPY LICENSE.md /licenses/LICENSE.md
 COPY docs/licenses/COMMUNITY-LICENSE.md /licenses/COMMUNITY-LICENSE.md
 ENTRYPOINT ["java", "-jar", "/app.jar"]

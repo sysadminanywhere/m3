@@ -5,17 +5,17 @@ modification or redistribution of customer builds; Scale adds licensed execution
 capacity, multiple pools, autoscaling and external authentication rights.
 This model is source-available, not OSI open source.
 
-The public distribution contains Community implementations. Private Scale modules
+The public distribution contains Community implementations. Private Scale components
 are supplied in the official full distribution. The same full Docker image operates
 for free in Community mode until paid features are activated by a valid entitlement.
 Presence of private code alone does not require purchase. Paid activation and the
 free right to run the image are separate grants. After the paid term and grace period,
 the free Community-mode grant continues with the same image and retained data.
 
-Community source and modules are governed by the Community agreement. Private Scale
-modules and free use of the full distribution are governed by the Scale agreement.
-The module boundary is implemented by separate Maven modules and the private sibling checkout. See [build instructions](../code-distribution.md).
-For each release, list the covered modules and versions. Include both agreements
+Community source and components are governed by the Community agreement. Private Scale
+components and free use of the full distribution are governed by the Scale agreement.
+The code boundary is implemented by separate standalone projects and source selection during the Scale build. See [build instructions](../../README.md).
+For each release, list the covered components and versions. Include both agreements
 and applicable third-party licenses/notices in the full image; include the Community
 agreement and applicable third-party notices in the public distribution. General
 distribution terms must be finalized before publication; customer order fields are

@@ -1,8 +1,7 @@
-param([ValidateSet('community', 'full')][string]$Edition = 'community')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$applicationJar = Join-Path $projectRoot "m3-app\target\m3-$Edition.jar"
-if (-not (Test-Path -LiteralPath $applicationJar)) { throw "Build the $Edition edition first; missing $applicationJar" }
+$applicationJar = Join-Path $projectRoot 'target\m3-community.jar'
+if (-not (Test-Path -LiteralPath $applicationJar)) { throw "Build Community first with .\mvnw.cmd package; missing $applicationJar" }
 Push-Location -LiteralPath $projectRoot
 try {
     & java -jar $applicationJar '--vaadin.launch-browser=false'

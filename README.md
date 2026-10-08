@@ -49,12 +49,12 @@ Message details show execution jobs, retry controls, the payload and metadata to
 
 ## Project Structure
 
-Community is split into `m3-extension-api`, `m3-core`, `m3-community` and `m3-app`. Private Scale code resides in the separate `m3-scale` sibling checkout. See [build and distribution instructions](docs/code-distribution.md).
+Community is a standalone Spring Boot project with one `pom.xml` and a standard `src/` tree. Scale is a separate standalone project that reuses Community source at build time. See [build and distribution instructions](docs/code-distribution.md).
 
-The application entry point is in `m3-app`. Shared code follows a **feature-based package structure**:
+The application entry point is `src/main/java/com/sysadminanywhere/m3/Application.java`. Shared code follows a **feature-based package structure**:
 
 ```
-m3-core/src/main/java/com/sysadminanywhere/m3/
+src/main/java/com/sysadminanywhere/m3/
 в”њв”Ђв”Ђ Application.java                    # Application entry point
 в”њв”Ђв”Ђ base/                               # Shared UI components
 в”‚   в””в”Ђв”Ђ ui/
@@ -139,7 +139,7 @@ Then build the selected edition and start the application from the repository ro
 Using Maven wrapper:
 ```bash
 ./mvnw package
-java -jar m3-app/target/m3-community.jar
+java -jar target/m3-community.jar
 ```
 
 Or on Windows:
@@ -314,7 +314,7 @@ at the bottom of the left navigation rail. The initial language follows the brow
 supported, otherwise English. Selection reloads the current page (save open forms first) and is stored
 in the `m3-language` browser cookie for one year. Other browsers/users have independent preferences.
 
-UTF-8 catalogs are in `m3-core/src/main/resources/i18n/ui_<language>.json`; English text is the translation key.
+UTF-8 catalogs are in `src/main/resources/i18n/ui_<language>.json`; English text is the translation key.
 Add the same key to all six catalogs when adding interface text, and call `Translations.t(key)`.
 Parameterized text uses `{0}`, `{1}`, etc. The Vaadin `I18NProvider` is registered as a Spring bean;
 page titles, labels, enum display names and dates use the selected locale. Protocol identifiers,
@@ -422,7 +422,7 @@ Published notification rows default to 30 days; audit rows default to 365 days. 
 `M3_RETENTION_RECEIPTS_DAYS` and `M3_RETENTION_AUDIT_DAYS`; zero disables deletion.
 Cleanup runs every six hours in bounded batches of 500 rows.
 
-Run Java checks with `./mvnw test` and JavaScript checks with `node --test m3-app/src/test/js/*.test.cjs`.
+Run Java checks with `./mvnw test` and JavaScript checks with `node --test src/test/js/*.test.cjs`.
 Browser regression checks require Chrome and a running test instance:
 `npm --prefix browser-tests ci`, then `npm --prefix browser-tests test`.
 They check authentication, roles, audit, logout, URL filters and unsaved dialog changes without saving

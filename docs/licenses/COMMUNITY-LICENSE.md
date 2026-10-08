@@ -6,18 +6,17 @@ This is a source-available license, not an open-source license.
 Rights holder: [RIGHTS HOLDER FULL NAME].
 Country and contact: [COUNTRY], [CONTACT].
 Release and effective date: [VERSION], [DATE].
-Covered materials: the publicly supplied M3 Community modules and documentation
-owned by, or properly licensed to, the rights holder and identified in
-`m3-extension-api`, `m3-core`, `m3-community` and `m3-app` for [VERSION]. Private Scale modules are covered by
+Covered materials: the publicly supplied M3 Community source, executable application and documentation
+owned by, or properly licensed to, the rights holder for [VERSION]. Private Scale code is covered by
 the [M3 Scale agreement](SCALE-LICENSE.md), including when supplied in the same
-official Docker image. Distribution format does not change a module's license.
+official Docker image. Distribution format does not change the license applicable to each component.
 
 1. **License grant.** The rights holder grants an individual or organization a
    nonexclusive, free-of-charge right to install and use the covered M3 Community
    materials for its own purposes, including commercial activities and internal
    company operations. This right has no fixed expiration date or installation
    count limit. The user retains all rights to its own data.
-   It applies to Community modules in both the standalone Community distribution
+   It applies to Community components in both the standalone Community distribution
    and the official full distribution. Running the full distribution in Community
    mode is additionally authorized by the Scale agreement's free distribution grant;
    it does not require a purchased Scale entitlement.
@@ -39,7 +38,7 @@ official Docker image. Distribution format does not change a module's license.
    delivery and troubleshooting features described for Community in the release
    documentation. Additional capacity, additional pools, autoscaling and external
    authentication, including Keycloak/OIDC, AD/LDAP and similar integrations,
-   implemented by the private Scale modules require a separate Scale entitlement.
+   implemented by the private Scale components require a separate Scale entitlement.
    The public Community distribution does not include those private implementations.
    Their presence in an official full image does not require payment while the
    installation operates in Community mode and paid features remain disabled.

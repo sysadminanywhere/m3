@@ -4,10 +4,10 @@ Rights holder / licensor: [FULL NAME], [COUNTRY], [DETAILS AND CONTACT].
 User: the individual or organization using the official full distribution.
 For a paid order, licensee: [ORGANIZATION / INDIVIDUAL NAME AND DETAILS].
 Paid order, if applicable: [NUMBER], [DATE].
-Covered materials: the private Scale modules and their documentation owned by,
+Covered materials: the private Scale components and their documentation owned by,
 or properly licensed to, the licensor and identified in `m3-scale` for [VERSION], including its licensing, capacity policy and activation components.
-The official full distribution combines Community and Scale modules, including
-in a Docker image. Community modules remain governed by the
+The official full distribution combines Community and Scale components, including
+in a Docker image. Community components remain governed by the
 [Community agreement](COMMUNITY-LICENSE.md); this agreement does not replace their
 independent free-use grant. Third-party components retain their respective licenses.
 
@@ -17,7 +17,7 @@ independent free-use grant. Third-party components retain their respective licen
    mode. Internal copies, including copies in private internal image registries,
    and backups are permitted. This free grant has no fixed expiration date or
    installation count limit. No purchase, paid order or signed entitlement is required
-   for Community mode. Private modules may remain installed, and license verification
+   for Community mode. Private components may remain installed, and license verification
    and activation components may run, while paid features are disabled. This is a free
    operating mode, not a time-limited trial. The mere presence of Scale code in an
    official image does not create a payment obligation.

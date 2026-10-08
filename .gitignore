@@ -18,14 +18,14 @@ target/
 
 # The following files are generated/updated by vaadin-maven-plugin
 node_modules/
-m3-app/src/main/frontend/generated/
-m3-app/src/main/frontend/index.html
+src/main/frontend/generated/
+src/main/frontend/index.html
 vite.generated.ts
-m3-app/package.json
-m3-app/package-lock.json
-m3-app/tsconfig.json
-m3-app/types.d.ts
-m3-app/vite.config.ts
+/package.json
+/package-lock.json
+/tsconfig.json
+/types.d.ts
+/vite.config.ts
 
 # Private local login credentials and AES key
 /.m3/
