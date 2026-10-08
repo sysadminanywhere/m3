@@ -49,7 +49,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   app:
-    image: m3:local
+    image: m3:community
     build:
       context: .
       dockerfile: Dockerfile
@@ -105,7 +105,7 @@ services:
       VAADIN_LAUNCH_BROWSER: "false"
       SPRING_PROFILES_ACTIVE: prod
       M3_DOCKER_API_URL: http://docker-api:2375
-      M3_WORKER_IMAGE: m3:local
+      M3_WORKER_IMAGE: m3:community
       M3_WORKER_NETWORK: ${COMPOSE_PROJECT_NAME:-m3}_default
       M3_WORKER_FILES_VOLUME: ${COMPOSE_PROJECT_NAME:-m3}_message_files
       M3_OUTBOUND_MAX_ATTEMPTS: ${M3_OUTBOUND_MAX_ATTEMPTS:-20}

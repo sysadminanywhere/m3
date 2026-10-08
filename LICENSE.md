@@ -1,9 +1,35 @@
-This is free and unencumbered software released into the public domain.
+# M3 Licensing
 
-Anyone is free to copy, modify, publish, use, compile, sell, or distribute this software, either in source code form or as a compiled binary, for any purpose, commercial or non-commercial, and by any means.
+Copyright (c) 2026 [RIGHTS HOLDER FULL NAME]. All rights reserved.
 
-In jurisdictions that recognize copyright laws, the author or authors of this software dedicate any and all copyright interest in the software to the public domain. We make this dedication for the benefit of the public at large and to the detriment of our heirs and successors. We intend this dedication to be an overt act of relinquishment in perpetuity of all present and future rights to this software under copyright law.
+M3 is prepared for its first publication under the following licensing model:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+- **Community:** free installation and internal use, including use by companies;
+  code modification and redistribution of customer builds are prohibited.
+- **Official full distribution:** free download, installation, internal copying,
+  backup and use in Community mode, including when supplied as a Docker image
+  containing private Scale modules. No paid order or signed entitlement is required
+  while paid features remain disabled.
+- **Scale activation:** separate commercial rights to additional execution capacity,
+  multiple worker pools, autoscaling and external authentication, as specified in a
+  customer order. After paid rights expire, the same full distribution may continue
+  operating in Community mode under the free grant.
 
-For more information, please refer to http://unlicense.org
+The agreements are written in English:
+
+- [M3 Community License Agreement](docs/licenses/COMMUNITY-LICENSE.md).
+- [M3 Scale Commercial License Agreement](docs/licenses/SCALE-LICENSE.md).
+
+**Status: draft for first publication.** Complete the rights-holder identity,
+release details and applicable-law fields before publishing. Complete each Scale
+order's price, term and supplied features before sale. This notice does not grant
+rights under an unfinished agreement or record acceptance by a customer.
+
+Third-party components remain subject to their respective licenses. These terms
+apply only to materials owned by, or properly licensed to, the M3 rights holder.
+Public Community modules are covered by the Community agreement; private Scale
+modules and free use of the official full distribution are covered by the Scale
+agreement. Both agreements and applicable third-party notices must accompany the
+full distribution. Each release must identify which modules each agreement covers.
+See [licensing documentation](docs/licenses/README.md) for the feature model and
+technical entitlement checks.

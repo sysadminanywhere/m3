@@ -3,11 +3,16 @@
 .vscode
 .mvn/wrapper/maven-wrapper.jar
 target
+**/target
 out
 output
 .playwright-cli
 node_modules
-src/main/frontend/generated
+**/node_modules
+**/__pycache__
+**/generated
+m3-app/src/main/frontend/generated
+.m3
 .env
 .env.*
 !.env.example

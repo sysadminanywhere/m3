@@ -1,5 +1,22 @@
 # M3 - Messaging Middleware Platform
 
+## Licensing
+
+The [licensing notice](LICENSE.md) describes the first-publication model:
+free Community for internal business use without
+code modification or redistribution of customer builds, and commercial Scale for
+additional execution capacity, multiple pools, autoscaling and external authentication.
+This proposed model is source-available rather than open source. The
+[Community and Scale draft agreements](docs/licenses/README.md) identify the remaining
+release and rights-holder fields. Third-party components retain their own licenses.
+The official full Docker image may be downloaded and used for free in Community
+mode with paid features disabled. A purchased signed entitlement activates Scale
+within the order's agreed limits. After expiration and grace, the same image may
+continue running in Community mode. The Scale agreement grants free distribution
+use separately from paid activation; its order fields apply only to paid activation.
+External authentication currently has a signed entitlement check; Keycloak/AD
+connectors will be implemented separately.
+
 M3 is a lightweight, extensible messaging middleware platform built with Spring Boot and Vaadin. It provides a visual interface for configuring message channels, defining routing rules, and monitoring message flows across various protocols.
 
 ## Features
@@ -32,42 +49,44 @@ Message details show execution jobs, retry controls, the payload and metadata to
 
 ## Project Structure
 
-The project follows a **feature-based package structure**:
+Community is split into `m3-extension-api`, `m3-core`, `m3-community` and `m3-app`. Private Scale code resides in the separate `m3-scale` sibling checkout. See [build and distribution instructions](docs/code-distribution.md).
+
+The application entry point is in `m3-app`. Shared code follows a **feature-based package structure**:
 
 ```
-src/main/java/com/sysadminanywhere/m3/
-├── Application.java                    # Application entry point
-├── base/                               # Shared UI components
-│   └── ui/
-│       └── MainLayout.java
-└── messaging/                          # Core messaging feature
-    ├── domain/                         # Domain entities & enums
-    │   ├── Message.java                  # Message entity
-    │   ├── ChannelSettings.java          # Channel configuration
-    │   ├── Rule.java                     # Routing rule
-    │   ├── RuleCondition.java            # Condition for rule evaluation
-    │   ├── RuleAction.java               # Action to execute on match
-    │   └── [Enums: ChannelType, ActionType, ConditionOperator, etc.]
-    ├── repository/                     # Data access layer
-    │   ├── MessageRepository.java
-    │   ├── ChannelSettingsRepository.java
-    │   └── RuleRepository.java
-    ├── service/                        # Business logic
-    │   ├── MessageService.java           # Message CRUD operations
-    │   ├── ChannelSettingsService.java   # Channel management
-    │   ├── RuleService.java              # Rule management
-    │   └── RuleEngine.java               # Rule evaluation engine
-    ├── ui/                             # Vaadin UI views
-    │   ├── ChannelListView.java          # Channel management UI
-    │   ├── ChannelDetailView.java
-    │   ├── RuleListView.java             # Rule management UI
-    │   ├── RuleDetailView.java
-    │   ├── InboundMessagesView.java      # Message monitoring
-    │   └── OutboundMessagesView.java
-    ├── source/                         # Rule-owned source receivers
-    ├── outbound/                       # Durable delivery workers and transports
-    ├── broker/                         # Transactional receipt publication
-    └── integration/                    # Shared JSON configuration and rule gateway
+m3-core/src/main/java/com/sysadminanywhere/m3/
+в”њв”Ђв”Ђ Application.java                    # Application entry point
+в”њв”Ђв”Ђ base/                               # Shared UI components
+в”‚   в””в”Ђв”Ђ ui/
+в”‚       в””в”Ђв”Ђ MainLayout.java
+в””в”Ђв”Ђ messaging/                          # Core messaging feature
+    в”њв”Ђв”Ђ domain/                         # Domain entities & enums
+    в”‚   в”њв”Ђв”Ђ Message.java                  # Message entity
+    в”‚   в”њв”Ђв”Ђ ChannelSettings.java          # Channel configuration
+    в”‚   в”њв”Ђв”Ђ Rule.java                     # Routing rule
+    в”‚   в”њв”Ђв”Ђ RuleCondition.java            # Condition for rule evaluation
+    в”‚   в”њв”Ђв”Ђ RuleAction.java               # Action to execute on match
+    в”‚   в””в”Ђв”Ђ [Enums: ChannelType, ActionType, ConditionOperator, etc.]
+    в”њв”Ђв”Ђ repository/                     # Data access layer
+    в”‚   в”њв”Ђв”Ђ MessageRepository.java
+    в”‚   в”њв”Ђв”Ђ ChannelSettingsRepository.java
+    в”‚   в””в”Ђв”Ђ RuleRepository.java
+    в”њв”Ђв”Ђ service/                        # Business logic
+    в”‚   в”њв”Ђв”Ђ MessageService.java           # Message CRUD operations
+    в”‚   в”њв”Ђв”Ђ ChannelSettingsService.java   # Channel management
+    в”‚   в”њв”Ђв”Ђ RuleService.java              # Rule management
+    в”‚   в””в”Ђв”Ђ RuleEngine.java               # Rule evaluation engine
+    в”њв”Ђв”Ђ ui/                             # Vaadin UI views
+    в”‚   в”њв”Ђв”Ђ ChannelListView.java          # Channel management UI
+    в”‚   в”њв”Ђв”Ђ ChannelDetailView.java
+    в”‚   в”њв”Ђв”Ђ RuleListView.java             # Rule management UI
+    в”‚   в”њв”Ђв”Ђ RuleDetailView.java
+    в”‚   в”њв”Ђв”Ђ InboundMessagesView.java      # Message monitoring
+    в”‚   в””в”Ђв”Ђ OutboundMessagesView.java
+    в”њв”Ђв”Ђ source/                         # Rule-owned source receivers
+    в”њв”Ђв”Ђ outbound/                       # Durable delivery workers and transports
+    в”њв”Ђв”Ђ broker/                         # Transactional receipt publication
+    в””в”Ђв”Ђ integration/                    # Shared JSON configuration and rule gateway
 ```
 
 ## Technology Stack
@@ -89,7 +108,7 @@ src/main/java/com/sysadminanywhere/m3/
 
 The Vaadin application stores incoming messages and creates durable per-rule jobs in PostgreSQL. Rule execution runs in separate headless containers built from the same image. On startup the control plane creates the default worker pool and reconciles its configured replica count through the restricted Docker API proxy.
 
-Open **Administration → Workers** to create pools, set target/minimum/maximum container counts, and optionally auto-scale from pending plus processing jobs with a per-worker threshold. The UI samples CPU and memory utilization for each pool every 30 seconds and shows current, peak, and 30-day average values. Open a rule and choose its worker pool to move it; unfinished jobs follow the new assignment after any active claim transaction completes.
+Open **Administration в†’ Workers** to create pools, set target/minimum/maximum container counts, and optionally auto-scale from pending plus processing jobs with a per-worker threshold. The UI samples CPU and memory utilization for each pool every 30 seconds and shows current, peak, and 30-day average values. Open a rule and choose its worker pool to move it; unfinished jobs follow the new assignment after any active claim transaction completes.
 
 `docker compose up --build -d` starts PostgreSQL, RabbitMQ, the Docker socket proxy, and the Vaadin app. The proxy needs access to the local Docker socket and is kept on the internal Compose network. Worker containers are created by the app and are not exposed on a host port. Each pool consumes its own jobs using PostgreSQL row locks, so replicas in that pool can process concurrently. Workers continue running when the UI stops, including receipt publication. Pool reconciliation replaces containers when the image or worker configuration changes. Managed workers must be stopped before removing their Docker network.
 
@@ -115,16 +134,18 @@ Start PostgreSQL and the receipt-notification broker in the background first:
 docker compose up -d db rabbitmq
 ```
 
-Then start the app from the IDE or with the Maven wrapper:
+Then build the selected edition and start the application from the repository root:
 
 Using Maven wrapper:
 ```bash
-./mvnw
+./mvnw package
+java -jar m3-app/target/m3-community.jar
 ```
 
 Or on Windows:
-```bash
-mvnw.cmd
+```powershell
+.\mvnw.cmd package
+.\scripts\run-app.ps1
 ```
 
 The UI alone does not execute rules or load files. For a local Windows run, start a separate worker in another terminal after the UI has completed database migrations:
@@ -293,7 +314,7 @@ at the bottom of the left navigation rail. The initial language follows the brow
 supported, otherwise English. Selection reloads the current page (save open forms first) and is stored
 in the `m3-language` browser cookie for one year. Other browsers/users have independent preferences.
 
-UTF-8 catalogs are in `src/main/resources/i18n/ui_<language>.json`; English text is the translation key.
+UTF-8 catalogs are in `m3-core/src/main/resources/i18n/ui_<language>.json`; English text is the translation key.
 Add the same key to all six catalogs when adding interface text, and call `Translations.t(key)`.
 Parameterized text uses `{0}`, `{1}`, etc. The Vaadin `I18NProvider` is registered as a Spring bean;
 page titles, labels, enum display names and dates use the selected locale. Protocol identifiers,
@@ -303,7 +324,7 @@ Diagnostic details without a translation retain their original text.
 
 ## Rule diagrams and interactive pipeline editor
 
-**Rules** opens a paged diagram of source channels → rules → destination channels with worker assignments.
+**Rules** opens a paged diagram of source channels в†’ rules в†’ destination channels with worker assignments.
 Select a rule block to open its pipeline; the **Table** display mode keeps the tabular overview available.
 
 The rule editor uses a connected canvas as its main workspace. Source/destination selectors, loading settings,
@@ -349,10 +370,10 @@ The script creates `.m3/local-security.properties`, excluded from Git and restri
 It never overwrites an existing key. Accounts are `admin`, `operator` and `viewer`; their generated
 passwords are in that file. Admin manages configuration, operator submits/forwards/retries/deletes messages,
 and viewer reads messages and monitoring. Use **Sign out** to end a browser session.
-Admin can inspect successful configuration and message operations in **Administration → Audit log**.
+Admin can inspect successful configuration and message operations in **Administration в†’ Audit log**.
 Audit records contain actor, operation, entity ID and time, without payloads or credentials.
 
-For Docker set `M3_ADMIN_PASSWORD` (16–72 UTF-8 bytes) and `M3_SECRET_KEY` (32 random bytes in Base64).
+For Docker set `M3_ADMIN_PASSWORD` (16вЂ“72 UTF-8 bytes) and `M3_SECRET_KEY` (32 random bytes in Base64).
 Optional `M3_OPERATOR_PASSWORD` and `M3_VIEWER_PASSWORD` enable those accounts. Serve production through HTTPS.
 The control plane forwards the same encryption key to managed workers. Preserve and back up the key
 separately from the database: changing or losing it prevents reading existing configuration.
@@ -391,7 +412,7 @@ deadlines and durable RabbitMQ events. **Operations** shows overdue processing, 
 See [processing and operations](docs/external-processing-operations.md),
 [storage, masking and Scale](docs/troubleshooting-storage-scale.md),
 [consistent backup and restore](docs/backup-restore.md), and
-[Scale issuer and commercial workflow](docs/scale-commercial-operations.md).
+[Community and full build instructions](docs/code-distribution.md).
 
 Business messages and deduplication keys are retained indefinitely by default. Set
 `M3_RETENTION_MESSAGES_DAYS` or `M3_RETENTION_IDEMPOTENCY_DAYS` to a positive number to enable deletion.
@@ -401,7 +422,7 @@ Published notification rows default to 30 days; audit rows default to 365 days. 
 `M3_RETENTION_RECEIPTS_DAYS` and `M3_RETENTION_AUDIT_DAYS`; zero disables deletion.
 Cleanup runs every six hours in bounded batches of 500 rows.
 
-Run Java checks with `./mvnw test` and JavaScript checks with `node --test src/test/js/*.test.cjs`.
+Run Java checks with `./mvnw test` and JavaScript checks with `node --test m3-app/src/test/js/*.test.cjs`.
 Browser regression checks require Chrome and a running test instance:
 `npm --prefix browser-tests ci`, then `npm --prefix browser-tests test`.
 They check authentication, roles, audit, logout, URL filters and unsaved dialog changes without saving

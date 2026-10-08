@@ -4,9 +4,9 @@ PostgreSQL schema changes are managed by Liquibase 5, using the version supplied
 
 ## Automatic startup
 
-Run the application normally with `./mvnw spring-boot:run`, or start the stack with `docker compose up --build -d`. Liquibase uses the same datasource credentials as the application. There is no separate migration container or manually ordered SQL import.
+Build with `./mvnw package` and run `java -jar m3-app/target/m3-community.jar` from the repository root, or start the stack with `docker compose up --build -d`. Liquibase uses the same datasource credentials as the application. There is no separate migration container or manually ordered SQL import.
 
-The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml`. It records eighteen changesets:
+The master changelog is `m3-core/src/main/resources/db/changelog/db.changelog-master.xml`. It records eighteen changesets:
 
 1. Channels, channel properties, messages, message metadata and the legacy task table.
 2. Rules, rule conditions and rule actions.
@@ -49,10 +49,10 @@ The Liquibase Maven plugin uses environment variables rather than credentials st
 $env:SPRING_DATASOURCE_URL = 'jdbc:postgresql://localhost:5432/m3'
 $env:SPRING_DATASOURCE_USERNAME = 'postgres'
 $env:SPRING_DATASOURCE_PASSWORD = '<database password>'
-./mvnw.cmd liquibase:validate
-./mvnw.cmd liquibase:status
-./mvnw.cmd liquibase:updateSQL
-./mvnw.cmd liquibase:update
+./mvnw.cmd -pl m3-core liquibase:validate
+./mvnw.cmd -pl m3-core liquibase:status
+./mvnw.cmd -pl m3-core liquibase:updateSQL
+./mvnw.cmd -pl m3-core liquibase:update
 ```
 
 On Linux/macOS, export the same variables and use `./mvnw`. Run `updateSQL` to inspect pending SQL before applying it. Routine startup already applies pending migrations; manual `update` is optional. The changelog's stable `logicalFilePath` makes Maven and Spring Boot share the same changeset identities.
