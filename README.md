@@ -379,7 +379,7 @@ Set `M3_TEST_URL` for a separate instance. Test credentials come from environmen
 | [Database migrations](docs/database-migrations.md) | Liquibase, upgrade order, adopting compatible existing schemas, and migration tests. |
 | [Backup and restore](docs/backup-restore.md) | Consistent database, payload, and encryption-key backups. |
 | [Build and distribution](docs/code-distribution.md) | Independent Community/Scale builds, IDE setup, packaging, and source export. |
-| [Licensing documents](docs/licenses/README.md) | Draft agreements and distribution terms. |
+| [Licensing documents](docs/licenses/README.md) | Community and Scale agreements and distribution terms. |
 
 ## Community, Scale, and licensing
 
@@ -387,4 +387,4 @@ Community supports **one worker pool and one execution slot**, with no autoscali
 
 Scale is built separately from `m3-scale` using matching Community source. Its full distribution can run in Community mode; a signed entitlement enables purchased capacity, multiple pools, and autoscaling. External-authentication entitlement checks exist in the full distribution, while Keycloak/AD connectors are a separate implementation stage. See [build and distribution](docs/code-distribution.md).
 
-The proposed licensing model allows free Community installation and internal business use, with restrictions on code modification and redistribution of customer builds. **The agreements are drafts for first publication** and still require rights-holder and release details. This README summarizes that proposed model; [LICENSE.md](LICENSE.md) and the [license agreements](docs/licenses/README.md) describe its status and terms. Third-party components retain their own licenses.
+The licensing model allows free Community installation and internal business use, including processing customers' data and providing services through the user's installation. Contractors may install and administer M3 on the user's behalf in the user's infrastructure. Code modification and redistribution of customer builds require separate written permission. [LICENSE.md](LICENSE.md) and the [license agreements](docs/licenses/README.md) describe the terms. The agreements take effect upon acceptance through installation, startup or use after the text has been provided with an opportunity to read it; no separate express confirmation is required. Paid Scale orders specify the purchased rights. Third-party components retain their own licenses.

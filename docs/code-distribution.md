@@ -104,5 +104,5 @@ python ../m3/scripts/verify-distribution.py target/m3-full.jar full
 Boundary checks verify policy selection and absence of private code in Community.
 The Community export includes current source without Git history, secrets, generated
 files or the private sibling. Earlier Git history may contain combined implementations;
-the export can be used for a clean first public release. Both draft agreements and
+the export can be used for a clean first public release. Both license agreements and
 applicable third-party notices must accompany the full distribution.
