@@ -209,6 +209,7 @@
   "Loading settings": "Ladeeinstellungen",
   "Loading": "Laden",
   "Managed by loading rules": "Durch Laderegeln verwaltet",
+  "Managed by rules": "Durch Regeln verwaltet",
   "Rule managed": "Regelgesteuert",
   "Source charset (blank = unknown)": "Quellzeichensatz (leer = unbekannt)",
   "Transformed output charset (optional)": "Ausgabezeichensatz nach Umwandlung (optional)",

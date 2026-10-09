@@ -40,7 +40,6 @@ final class MessageFilterBar extends Div {
         status.setClearButtonVisible(true);
         id.setMaxLength(19); id.setAllowedCharPattern("[0-9]"); id.setClearButtonVisible(true);
         for (var field : List.of(source, target,text,correlation)) { field.setMaxLength(200); field.setClearButtonVisible(true); }
-        text.setHelperText(t("Searches masked hot payloads; indexing is asynchronous."));
         from.setClearButtonVisible(true); to.setClearButtonVisible(true);
         from.setLocale(Translations.locale()); to.setLocale(Translations.locale());
         var fields = new Div(id, status, source, target,text,correlation, from, to);

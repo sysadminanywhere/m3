@@ -67,12 +67,12 @@ class ChannelListView extends VerticalLayout implements HasDynamicTitle {
                 .setWidth("160px").setFlexGrow(0);
         channelGrid.addComponentColumn(settings -> {
             boolean inbound = settings.getDirection() == ChannelDirection.INBOUND;
-            String label = inbound ? t("Rules") : settings.getEnabled() ? t("Enabled") : t("Disabled");
+            String label = inbound ? t("Managed by rules") : settings.getEnabled() ? t("Enabled") : t("Disabled");
             var status = new com.vaadin.flow.component.html.Span(label);
             status.addClassNames("status-badge", inbound ? "status-neutral" : settings.getEnabled() ? "status-success" : "status-neutral");
             if (inbound) status.getElement().setAttribute("title", t("Managed by loading rules"));
             return status;
-        }).setHeader(t("Status")).setWidth("130px").setFlexGrow(0);
+        }).setHeader(t("Status")).setWidth("240px").setFlexGrow(0);
         channelGrid.addColumn(ChannelSettings::getDescription).setHeader(t("Description"))
                 .setWidth("200px").setFlexGrow(1);
         channelGrid.addComponentColumn(this::createActionButtons).setHeader(t("Actions"))

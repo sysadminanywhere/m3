@@ -111,7 +111,6 @@ body { margin: 0; height: 100dvh; overflow: hidden; }
     padding: 22px 32px; border-bottom: 1px solid var(--m3-line); background: var(--m3-panel);
 }
 .app-page-title { margin: 0; color: var(--m3-ink); font: 650 25px/32px var(--vaadin-font-family); letter-spacing: -.7px; overflow-wrap: anywhere; }
-.workspace-brand { width: 47px; height: 32px; margin-left: auto; }
 .view-container { flex: 1; min-width: 0; min-height: 0; overflow: auto; container: workspace / inline-size; }
 .view-container > vaadin-vertical-layout:not(.settings-page) { padding: 24px 32px 32px; gap: 20px; box-sizing: border-box; }
 
@@ -425,7 +424,6 @@ html[theme~="dark"] .rule-branch-note { background: #403522; color: #efcc86; }
     .section-nav-link { min-height: 40px; padding: 8px 10px; font-size: 13px; gap: 8px; }
     .workspace-header { min-height: 74px; padding: 18px 16px; }
     .app-page-title { font-size: 21px; line-height: 28px; }
-    .workspace-brand { display: none; }
     .view-container > vaadin-vertical-layout:not(.settings-page) { padding: 16px; gap: 16px; }
     .page-toolbar { gap: 8px; }
     .page-toolbar vaadin-combo-box { min-width: 140px; max-width: 100%; flex: 1 1 140px; }
@@ -436,7 +434,7 @@ html[theme~="dark"] .rule-branch-note { background: #403522; color: #efcc86; }
 }
 
 .message-filters { width: 100%; flex: none; padding: 16px; box-sizing: border-box; background: var(--m3-soft); border: 1px solid var(--m3-line); border-radius: 14px; }
-.message-filter-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: end; gap: 12px; }
+.message-filter-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); align-items: start; gap: 12px; }
 .message-filter-fields > * { width: 100%; min-width: 0; }
 .message-filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .filter-timezone { margin-left: auto; font-size: 12px; color: var(--m3-muted); }

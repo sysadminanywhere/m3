@@ -209,6 +209,7 @@
   "Loading settings": "Paramètres de chargement",
   "Loading": "Chargement",
   "Managed by loading rules": "Géré par les règles de chargement",
+  "Managed by rules": "Géré par les règles",
   "Rule managed": "Géré par une règle",
   "Source charset (blank = unknown)": "Encodage source (vide = inconnu)",
   "Transformed output charset (optional)": "Encodage après transformation (facultatif)",

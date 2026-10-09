@@ -209,6 +209,7 @@
   "Loading settings": "Loading settings",
   "Loading": "Loading",
   "Managed by loading rules": "Managed by loading rules",
+  "Managed by rules": "Managed by rules",
   "Rule managed": "Rule managed",
   "Source charset (blank = unknown)": "Source charset (blank = unknown)",
   "Transformed output charset (optional)": "Transformed output charset (optional)",

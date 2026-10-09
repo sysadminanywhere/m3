@@ -236,6 +236,7 @@
   "Loading settings": "Настройки загрузки",
   "Loading": "Загрузка",
   "Managed by loading rules": "Управляется правилами загрузки",
+  "Managed by rules": "Управляется правилами",
   "Rule managed": "Управляется правилом",
   "Source charset (blank = unknown)": "Кодировка источника (пусто = неизвестна)",
   "Transformed output charset (optional)": "Кодировка преобразованного сообщения (необязательно)",

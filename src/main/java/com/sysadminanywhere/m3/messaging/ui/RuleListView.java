@@ -10,9 +10,7 @@ import com.sysadminanywhere.m3.messaging.service.ChannelSettingsService;
 import com.sysadminanywhere.m3.messaging.service.RuleService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
@@ -96,14 +94,9 @@ class RuleListView extends VerticalLayout implements HasDynamicTitle {
             return button;
         }).setHeader(t("Enabled")).setWidth("105px").setFlexGrow(0);
         ruleGrid.addComponentColumn(rule -> {
-            var editButton = new Button(new Icon(VaadinIcon.EDIT));
-            editButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
-            editButton.setTooltipText(t("Edit"));
-            editButton.setAriaLabel(t("Edit"));
-            editButton.addClickListener(event -> openEditDialog(rule));
             var configureButton = new Button(t("Configure"), event -> getUI().ifPresent(ui -> ui.navigate("rules/" + rule.getId())));
             configureButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
-            return new HorizontalLayout(editButton, configureButton);
+            return configureButton;
         }).setHeader(t("Actions")).setWidth("140px").setFlexGrow(0).setFrozenToEnd(true);
         ruleGrid.setEmptyStateText(t("No rules configured"));
         ruleGrid.setSizeFull();
@@ -122,11 +115,6 @@ class RuleListView extends VerticalLayout implements HasDynamicTitle {
 
     private void openCreateDialog() {
         var dialog = new RuleDialog(ruleService, channelSettingsService, v -> refreshGrid());
-        dialog.open();
-    }
-
-    private void openEditDialog(Rule rule) {
-        var dialog = new RuleDialog(ruleService, channelSettingsService, rule, v -> refreshGrid());
         dialog.open();
     }
 
