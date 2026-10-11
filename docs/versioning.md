@@ -21,6 +21,13 @@ Build either repository normally with `./mvnw package` or `.\mvnw.cmd package`.
 Scale needs its matching shared `../m3` checkout, including `build-config/`.
 No installation of the shared parent into the Maven repository is required.
 
+Both projects keep Maven HTTP transport settings in `.mvn/maven.config`: a
+60-second connection timeout and up to five request retries. For a transient
+repository timeout, rerun the same Maven command with `-U` to recheck dependencies
+instead of using a cached failed download. These settings do not resolve a
+persistent network, proxy or firewall outage. See the
+[Maven Resolver configuration](https://maven.apache.org/resolver/configuration.html).
+
 From the Community or Scale repository root, build the Docker image with:
 
 ```powershell
