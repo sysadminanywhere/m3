@@ -127,7 +127,7 @@ public class OutboundDeliveryTransactions {
         finish(job.getMessage(), MessageStatus.SENT);
         if (observations != null) job.getMessage().getMetadata().stream()
                 .filter(item -> item.getKey().equals("sourceMessageId") && item.getValue().matches("[0-9]{1,18}"))
-                .findFirst().ifPresent(item -> observations.publishEvent(new com.sysadminanywhere.m3.extensions.FileFlowEvents.Delivered(
+                .findFirst().ifPresent(item -> observations.publishEvent(new com.sysadminanywhere.m3.extensions.ExchangeMonitorEvents.Delivered(
                         Long.parseLong(item.getValue()), claim.messageId(), claim.delivery().channelId(), job.getMessage().getProcessedAt())));
     }
 

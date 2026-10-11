@@ -96,7 +96,7 @@ public class InboundMessageEnqueueService {
         processing.initialize(stored,rule);
         var job=new RuleExecutionJob(stored,rule,rule.getWorkerPool()); configurations.freeze(job); jobRepository.save(job);
         if (observations != null) stored.getMetadata().stream().filter(item -> item.getKey().equals("fileName"))
-                .findFirst().ifPresent(item -> observations.publishEvent(new com.sysadminanywhere.m3.extensions.FileFlowEvents.Received(
+                .findFirst().ifPresent(item -> observations.publishEvent(new com.sysadminanywhere.m3.extensions.ExchangeMonitorEvents.Received(
                         selected, stored.getId(), item.getValue(), stored.getPayloadSize(), stored.getCreatedAt())));
         return stored;
     }
