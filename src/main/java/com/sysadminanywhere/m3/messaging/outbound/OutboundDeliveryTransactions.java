@@ -15,6 +15,8 @@ import java.util.*;
 
 @Service
 public class OutboundDeliveryTransactions {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private org.springframework.context.ApplicationEventPublisher observations;
     @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.messaging.service.MessageHistoryService history;
     public record Claim(long jobId, long messageId, UUID token, PreparedOutboundDelivery delivery, com.sysadminanywhere.m3.messaging.service.JobConfiguration.Channel endpoint) {
         public Claim(long jobId,long messageId,UUID token,PreparedOutboundDelivery delivery) { this(jobId,messageId,token,delivery,null); }
@@ -123,6 +125,10 @@ public class OutboundDeliveryTransactions {
         if (job == null) return;
         job.complete();
         finish(job.getMessage(), MessageStatus.SENT);
+        if (observations != null) job.getMessage().getMetadata().stream()
+                .filter(item -> item.getKey().equals("sourceMessageId") && item.getValue().matches("[0-9]{1,18}"))
+                .findFirst().ifPresent(item -> observations.publishEvent(new com.sysadminanywhere.m3.extensions.FileFlowEvents.Delivered(
+                        Long.parseLong(item.getValue()), claim.messageId(), claim.delivery().channelId(), job.getMessage().getProcessedAt())));
     }
 
     @Transactional

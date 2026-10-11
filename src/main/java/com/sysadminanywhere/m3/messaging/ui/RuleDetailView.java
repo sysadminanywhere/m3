@@ -25,6 +25,9 @@ import com.vaadin.flow.router.HasDynamicTitle;
 @jakarta.annotation.security.RolesAllowed("ADMIN")
 @Route(value = "rules/:ruleId")
 class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasDynamicTitle {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private java.util.List<com.sysadminanywhere.m3.extensions.RuleFeature> features = java.util.List.of();
+    private final HorizontalLayout featureControls = new HorizontalLayout();
     private com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard guard;
 
     private final RuleService ruleService;
@@ -119,7 +122,7 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
         setSizeFull();
         loadingField.setVisible(false);
         stepsPanel.configure(ruleService, this::refreshSteps);
-        add(toolbar, form, loadingField, stepsPanel);
+        add(toolbar, featureControls, form, loadingField, stepsPanel);
         guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(this, form, loadingField);
         toolbar.add(guard.indicator());
         setHeightFull();
@@ -137,6 +140,11 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
 
     private void loadRule() {
         currentRule = ruleService.findById(ruleId);
+        featureControls.removeAll();
+        if (currentRule != null) features.forEach(feature -> {
+            var control = feature.control(currentRule);
+            if (control != null) featureControls.add(control);
+        });
         stepsPanel.show(currentRule);
         if (currentRule != null) {
             nameField.setValue(currentRule.getName());

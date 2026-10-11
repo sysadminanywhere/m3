@@ -87,4 +87,6 @@
     <changeSet id="026-storage-quotas" author="m3">
         <sqlFile path="changes/026-storage-quotas.sql" relativeToChangelogFile="true" splitStatements="false" />
     </changeSet>
+    <!-- Optional distribution migrations; Community remains independently buildable. -->
+    <include file="db/changelog/scale-flow-monitor.xml" errorIfMissing="false"/>
 </databaseChangeLog>
