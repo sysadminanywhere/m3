@@ -5,6 +5,10 @@ Community and Scale inherit this shared Maven parent, including Spring Boot buil
 metadata. Use `MAJOR.MINOR.PATCH` or a Docker-compatible prerelease such as
 `1.1.0-rc.1`. Do not override Maven's `revision` for release builds.
 
+Shared library versions (Vaadin, Spring Integration, MinIO, OkHttp and FTPServer)
+are also configured in this parent. Spring Boot manages the remaining platform
+dependencies. Update the common parent to keep Community and Scale aligned.
+
 The version is used in Maven artifact coordinates, the JAR manifest
 (`Implementation-Version`), `META-INF/build-info.properties`, Settings → About,
 Docker's `org.opencontainers.image.version` label and versioned image tags.

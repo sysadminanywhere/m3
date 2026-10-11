@@ -26,7 +26,7 @@ public class S3ColdPayloadStore implements ColdPayloadStore {
         if(client==null) throw new IllegalStateException("Archive storage is not configured");
         if(bytes.length>MAX_ARCHIVE_BYTES) throw new IllegalArgumentException("Archive envelope exceeds supported size");
         try { client.putObject(PutObjectArgs.builder().bucket(bucket).object(key)
-                .stream(new ByteArrayInputStream(bytes),(long)bytes.length,-1).contentType("application/json").build()); }
+                .stream(new ByteArrayInputStream(bytes),(long)bytes.length,-1L).contentType("application/json").build()); }
         catch(Exception error) { throw new IllegalStateException("Archive write failed",error); }
     }
     public byte[] get(String key) {

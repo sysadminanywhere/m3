@@ -323,7 +323,7 @@ For Docker logs, use `docker compose logs --tail 100 app` and inspect the manage
 
 ## Development and tests
 
-Stack: **Java 21**, **Spring Boot 4.0.6**, **Spring Integration 7.0.4**, **Vaadin 25.1.3**, **PostgreSQL**, **Liquibase**, and **Maven**.
+Stack: **Java 21**, **Spring Boot 4.1.1**, **Spring Integration 7.1.1**, **Vaadin 25.3.1**, **PostgreSQL**, **Liquibase**, and **Maven**. Shared dependency versions are configured in `build-config/pom.xml`.
 
 ```text
 src/main/java/com/sysadminanywhere/m3/

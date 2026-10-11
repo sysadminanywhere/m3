@@ -8,6 +8,8 @@ out
 output
 .playwright-cli
 node_modules
+.vaadin-node-tasks.lock
+src/main/bundles
 **/node_modules
 **/__pycache__
 **/generated

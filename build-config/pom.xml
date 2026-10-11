@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
+        <version>4.1.1</version>
         <relativePath />
     </parent>
     <groupId>com.sysadminanywhere</groupId>
@@ -13,8 +13,25 @@
     <packaging>pom</packaging>
     <properties>
         <!-- The single application version for Community, Scale, JARs and images. -->
-        <revision>1.0.0</revision>
+        <revision>1.0.1</revision>
+        <java.version>21</java.version>
+        <vaadin.version>25.3.1</vaadin.version>
+        <spring-integration.version>7.1.1</spring-integration.version>
+        <minio.version>9.0.3</minio.version>
+        <okhttp.version>5.5.0</okhttp.version>
+        <ftpserver.version>1.2.1</ftpserver.version>
     </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp-bom</artifactId>
+                <version>${okhttp.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     <build>
         <plugins>
             <plugin>

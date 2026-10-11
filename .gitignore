@@ -17,6 +17,8 @@ target/
 !.env.example
 
 # The following files are generated/updated by vaadin-maven-plugin
+/.vaadin-node-tasks.lock
+/src/main/bundles/
 node_modules/
 src/main/frontend/generated/
 src/main/frontend/index.html
