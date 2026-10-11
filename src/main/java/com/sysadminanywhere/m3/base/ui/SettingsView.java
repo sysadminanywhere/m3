@@ -14,6 +14,8 @@ import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.HasDynamicTitle;
 import com.vaadin.flow.router.Route;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.info.BuildProperties;
 
 import java.util.List;
 import java.util.Locale;
@@ -26,7 +28,7 @@ class SettingsView extends VerticalLayout implements HasDynamicTitle {
     private static final List<String> THEMES = List.of("light", "dark", "system");
     private final ComboBox<String> themeField;
 
-    SettingsView() {
+    SettingsView(ObjectProvider<BuildProperties> buildProperties) {
         addClassName("settings-page");
         setPadding(false);
         setSpacing(false);
@@ -72,6 +74,19 @@ class SettingsView extends VerticalLayout implements HasDynamicTitle {
         add(heading, intro,
                 settingCard("Language", "Choose the language used for menus and controls.", language),
                 settingCard("Theme", "Choose light or dark colors, or follow your device setting.", themeField));
+
+        var about = new Div();
+        about.addClassName("settings-card");
+        var aboutText = new Div();
+        aboutText.addClassName("settings-card-copy");
+        var aboutTitle = new Span(t("About"));
+        aboutTitle.addClassName("settings-card-title");
+        var build = buildProperties.getIfAvailable();
+        var version = new Span(t("Version: {0}", build == null ? t("Development build") : build.getVersion()));
+        version.addClassName("settings-card-description");
+        aboutText.add(aboutTitle, new Span("M3"), version);
+        about.add(aboutText);
+        add(about);
     }
 
     private Div settingCard(String title, String description, ComboBox<?> field) {

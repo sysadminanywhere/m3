@@ -3,7 +3,6 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.sysadminanywhere</groupId>
     <artifactId>m3</artifactId>
-    <version>1.0</version>
     <packaging>jar</packaging>
     <properties>
         <java.version>21</java.version>
@@ -11,10 +10,10 @@
         <spring-integration.version>7.0.4</spring-integration.version>
     </properties>
     <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
-        <relativePath />
+        <groupId>com.sysadminanywhere</groupId>
+        <artifactId>m3-build</artifactId>
+        <version>${revision}</version>
+        <relativePath>build-config/pom.xml</relativePath>
     </parent>
     <dependencyManagement>
         <dependencies>

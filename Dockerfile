@@ -1,6 +1,7 @@
 FROM ghcr.io/jqlang/jq:latest AS jq-stage
 
 FROM eclipse-temurin:21-jdk AS build
+ARG APP_VERSION
 COPY --from=jq-stage /jq /usr/bin/jq
 # Test that jq works after copying
 RUN jq --version
@@ -9,6 +10,7 @@ ENV HOME=/workspace/m3
 RUN mkdir -p $HOME
 WORKDIR $HOME
 COPY . $HOME
+RUN test -n "$APP_VERSION" && test "$APP_VERSION" = "$(sed -n 's/.*<revision>\([^<]*\)<\/revision>.*/\1/p' build-config/pom.xml)"
 
 # If you have a Vaadin Pro key, pass it as a secret with id "proKey":
 #
@@ -26,6 +28,8 @@ RUN --mount=type=cache,target=/root/.m2 \
     sh ./mvnw clean package -DskipTests -Dvaadin.proKey=${PRO_KEY} -Dvaadin.offlineKey=${OFFLINE_KEY}'
 
 FROM eclipse-temurin:21-jre-alpine
+ARG APP_VERSION
+LABEL org.opencontainers.image.version=$APP_VERSION
 COPY --from=build /workspace/m3/target/m3-community.jar app.jar
 COPY LICENSE.md /licenses/LICENSE.md
 COPY docs/licenses/COMMUNITY-LICENSE.md /licenses/COMMUNITY-LICENSE.md

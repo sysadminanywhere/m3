@@ -602,5 +602,8 @@
   "Capacity limited": "Ресурсы ограничены",
   "{0} / {1} worker slots": "{0} / {1} слотов воркеров",
   "Community supports one worker pool": "Community поддерживает один пул воркеров",
-  "Autoscaling is unavailable in Community": "Автомасштабирование недоступно в Community"
+  "Autoscaling is unavailable in Community": "Автомасштабирование недоступно в Community",
+  "About": "О программе",
+  "Version: {0}": "Версия: {0}",
+  "Development build": "Сборка для разработки"
 }

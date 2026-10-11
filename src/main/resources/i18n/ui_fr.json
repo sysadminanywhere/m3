@@ -597,5 +597,8 @@
   "Capacity limited": "Capacité limitée",
   "{0} / {1} worker slots": "{0} / {1} emplacements de workers",
   "Community supports one worker pool": "Community prend en charge un seul pool de workers",
-  "Autoscaling is unavailable in Community": "La mise à l’échelle automatique est indisponible dans Community"
+  "Autoscaling is unavailable in Community": "La mise à l’échelle automatique est indisponible dans Community",
+  "About": "À propos",
+  "Version: {0}": "Version : {0}",
+  "Development build": "Version de développement"
 }

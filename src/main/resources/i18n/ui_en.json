@@ -597,5 +597,8 @@
   "Capacity limited": "Capacity limited",
   "{0} / {1} worker slots": "{0} / {1} worker slots",
   "Community supports one worker pool": "Community supports one worker pool",
-  "Autoscaling is unavailable in Community": "Autoscaling is unavailable in Community"
+  "Autoscaling is unavailable in Community": "Autoscaling is unavailable in Community",
+  "About": "About",
+  "Version: {0}": "Version: {0}",
+  "Development build": "Development build"
 }

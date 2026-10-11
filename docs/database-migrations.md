@@ -4,7 +4,7 @@ PostgreSQL schema changes are managed by Liquibase 5, using the version supplied
 
 ## Automatic startup
 
-Build with `./mvnw package` and run `java -jar target/m3-community.jar` from the repository root, or start the stack with `docker compose up --build -d`. Liquibase uses the same datasource credentials as the application. There is no separate migration container or manually ordered SQL import.
+Build with `./mvnw package` and run `java -jar target/m3-community.jar` from the repository root, or start the stack with `sh scripts/docker.sh compose up --build -d` (or `.\scripts\docker.ps1 compose up --build -d` on Windows). Liquibase uses the same datasource credentials as the application. There is no separate migration container or manually ordered SQL import.
 
 The master changelog is `src/main/resources/db/changelog/db.changelog-master.xml`. It records eighteen changesets:
 

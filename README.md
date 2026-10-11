@@ -87,7 +87,7 @@ Compose requires these variables even when starting only database and broker ser
 ### 2. Build and start
 
 ```powershell
-docker compose up --build -d
+.\scripts\docker.ps1 compose up --build -d
 docker compose ps
 docker compose logs --tail 100 app
 ```
@@ -117,7 +117,7 @@ docker compose down
 
 Normal shutdown preserves the `postgres_data`, `rabbitmq_data`, and `message_files` volumes. `docker compose down --volumes` deletes these volumes, including stored messages and files.
 
-For an update, back up first, stop old workers, then rebuild and start the upgraded application with `docker compose up --build -d`. It applies migrations before upgraded workers use the schema. Restore the pool target afterward. See [database migrations](docs/database-migrations.md) and [backup and restore](docs/backup-restore.md).
+For an update, back up first, stop old workers, then rebuild and start the upgraded application with `sh scripts/docker.sh compose up --build -d`. It applies migrations before upgraded workers use the schema. Restore the pool target afterward. See [database migrations](docs/database-migrations.md) and [backup and restore](docs/backup-restore.md).
 
 ## Run locally for development
 
@@ -383,8 +383,16 @@ Set `M3_TEST_URL` for a separate instance. Test credentials come from environmen
 
 ## Community, Scale, and licensing
 
-Community supports **one worker pool and one execution slot**, with no autoscaling. It contains no Scale license verifier or activation API. Its output is `target/m3-community.jar`, and its Docker image is `m3:community`.
+Community supports **one worker pool and one execution slot**, with no autoscaling. It contains no Scale license verifier or activation API. Its output is `target/m3-community.jar`, and the version helper tags its Docker image `m3:community-<version>`.
 
 Scale is built separately from `m3-scale` using matching Community source. Its full distribution can run in Community mode; a signed entitlement enables purchased capacity, multiple pools, and autoscaling. External-authentication entitlement checks exist in the full distribution, while Keycloak/AD connectors are a separate implementation stage. See [build and distribution](docs/code-distribution.md).
 
 The licensing model allows free Community installation and internal business use, including processing customers' data and providing services through the user's installation. Contractors may install and administer M3 on the user's behalf in the user's infrastructure. Code modification and redistribution of customer builds require separate written permission. [LICENSE.md](LICENSE.md) and the [license agreements](docs/licenses/README.md) describe the terms. The agreements take effect upon acceptance through installation, startup or use after the text has been provided with an opportunity to read it; no separate express confirmation is required. Paid Scale orders specify the purchased rights. Third-party components retain their own licenses.
+
+## Application version
+
+The single version source for Community and Scale is `build-config/pom.xml` (`revision`).
+It supplies Settings → About, Maven/JAR metadata and Docker image versions.
+Use `.\scripts\docker.ps1 build` on Windows or `sh scripts/docker.sh build` on Linux/macOS.
+For local Compose builds use `.\scripts\docker.ps1 compose up --build -d` or
+`sh scripts/docker.sh compose up --build -d`. See [versioning](docs/versioning.md).

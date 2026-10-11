@@ -66,15 +66,15 @@ delegate IDEA build/run actions to Maven. Normal Maven builds refresh it automat
 
 ## Docker and licensing
 
-From either repository, `docker compose up --build -d` builds and starts its own
-stack. Community uses `m3:community`; Scale uses `m3:full` for UI and managed workers.
+From either repository, `sh scripts/docker.sh compose up --build -d` (Windows: `.\scripts\docker.ps1 compose up --build -d`) builds and starts its own
+stack. Community uses `m3:community-<version>`; Scale uses `m3:<version>` for UI and managed workers.
 Compose requires `M3_ADMIN_PASSWORD` and a persistent Base64 AES-256 `M3_SECRET_KEY`
 in the environment or a private `.env` file; the local Java credential file does
 not supply these Compose variables.
 Scale's Dockerfile reads shared source through the named `community` build context:
 
 ```powershell
-docker build --build-context community=../m3 -t m3:full .
+.\scripts\docker.ps1 build
 ```
 
 The full image starts in Community mode without a signed entitlement. A valid
