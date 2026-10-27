@@ -183,6 +183,10 @@
                 <groupId>com.vaadin</groupId>
                 <artifactId>vaadin-maven-plugin</artifactId>
                 <version>${vaadin.version}</version>
+                <configuration>
+                    <!-- New routes can require components absent from Vaadin's default bundle. -->
+                    <forceProductionBuild>true</forceProductionBuild>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

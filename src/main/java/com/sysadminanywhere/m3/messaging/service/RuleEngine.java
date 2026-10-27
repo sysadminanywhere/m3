@@ -117,6 +117,12 @@ public class RuleEngine {
     }
 
     public Message<?> applyTransformations(Message<?> springMessage, List<Rule> applicableRules) {
+        return applyTransformations(springMessage, applicableRules, null);
+    }
+
+    /** Observe each completed action using the same execution order as delivery. */
+    public Message<?> applyTransformations(Message<?> springMessage, List<Rule> applicableRules,
+            java.util.function.BiConsumer<RuleAction, Message<?>> observer) {
         Object payload = springMessage.getPayload();
         Map<String, Object> headers = new HashMap<>(springMessage.getHeaders());
 
@@ -124,9 +130,11 @@ public class RuleEngine {
             for (RuleAction action : orderedActions(rule)) {
                 if (action.getActionType() == ActionType.TRANSFORM && action.getTransformationScript() != null) {
                     payload = applyTransformation(payload, action.getTransformationScript());
+                    if (observer != null) observer.accept(action, new org.springframework.messaging.support.GenericMessage<>(payload, headers));
                 } else if (action.getActionType() == ActionType.ENRICH) {
                     if (action.getMetadataKey() != null && action.getMetadataValue() != null) {
                         headers.put(action.getMetadataKey(), action.getMetadataValue());
+                        if (observer != null) observer.accept(action, new org.springframework.messaging.support.GenericMessage<>(payload, headers));
                     }
                 }
             }
@@ -137,12 +145,19 @@ public class RuleEngine {
 
     /** Apply metadata actions while leaving the stored message body untouched. */
     public Message<?> applyMetadataActions(Message<?> springMessage, List<Rule> applicableRules) {
+        return applyMetadataActions(springMessage, applicableRules, null);
+    }
+
+    public Message<?> applyMetadataActions(Message<?> springMessage, List<Rule> applicableRules,
+            java.util.function.BiConsumer<RuleAction, Message<?>> observer) {
         Map<String, Object> headers = new HashMap<>(springMessage.getHeaders());
         for (Rule rule : applicableRules) {
             for (RuleAction action : orderedActions(rule)) {
                 if (action.getActionType() == ActionType.ENRICH
-                        && action.getMetadataKey() != null && action.getMetadataValue() != null)
+                        && action.getMetadataKey() != null && action.getMetadataValue() != null) {
                     headers.put(action.getMetadataKey(), action.getMetadataValue());
+                    if (observer != null) observer.accept(action, new org.springframework.messaging.support.GenericMessage<>(springMessage.getPayload(), headers));
+                }
             }
         }
         return new org.springframework.messaging.support.GenericMessage<>(springMessage.getPayload(), headers);

@@ -33,6 +33,25 @@ test('admin can open audit and sign out', async () => withPage(async page => {
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.getByRole('textbox', { name: 'Username', exact: true }).waitFor();
 }));
+test('admin can open the first-flow guide and local usage summary', async () => withPage(async page => {
+  await login(page,'admin');
+  await page.getByRole('button',{name:'Set up your first message flow',exact:true}).click();
+  await page.getByText('1. Create inbound and outbound directory channels.',{exact:false}).waitFor();
+  await page.getByRole('combobox',{name:'Source Channel',exact:true}).waitFor();
+  await page.getByRole('combobox',{name:'Destination Channel',exact:true}).waitFor();
+  await page.getByRole('combobox',{name:'Worker pool',exact:true}).waitFor();
+  await page.goto(`${baseURL}/settings`);
+  await page.getByRole('button',{name:'Local usage summary',exact:true}).click();
+  await page.getByText('Active message days (UTC):',{exact:false}).waitFor();
+  await page.getByText('Data stays on this installation.',{exact:false}).waitFor();
+}));
+test('viewer cannot open administrative usage and setup pages', async () => withPage(async page => {
+  await login(page,'viewer');
+  for (const route of ['local-usage','first-flow']) {
+    await page.goto(`${baseURL}/${route}`);
+    await page.getByText(`Could not navigate to '${route}'`,{exact:false}).waitFor();
+  }
+}));
 test('viewer sees messages but cannot administer or mutate the API', async () => withPage(async (page,context) => {
   await login(page,'viewer');
   assert.equal(await page.getByRole('button',{name:'Administration',exact:true}).count(),0);

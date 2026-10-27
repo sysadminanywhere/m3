@@ -33,6 +33,10 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
     private final RuleService ruleService;
     private final ChannelSettingsService channelSettingsService;
     private final RuleWorkerPoolService workerPoolService;
+    private final com.sysadminanywhere.m3.messaging.service.SystemOverviewCache overview;
+    private final com.sysadminanywhere.m3.messaging.source.SourceHealth sourceHealth;
+    private final com.vaadin.flow.component.html.Span readiness = new com.vaadin.flow.component.html.Span();
+    private final com.vaadin.flow.component.html.Span receiverStatus = new com.vaadin.flow.component.html.Span();
     private Long ruleId;
     private Rule currentRule;
     private final RuleStepsPanel stepsPanel = new RuleStepsPanel();
@@ -48,10 +52,14 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
     final ComboBox<com.sysadminanywhere.m3.messaging.domain.RuleWorkerPool> workerPoolField;
 
     RuleDetailView(RuleService ruleService, ChannelSettingsService channelSettingsService,
-                   RuleWorkerPoolService workerPoolService) {
+                   RuleWorkerPoolService workerPoolService,
+                   com.sysadminanywhere.m3.messaging.service.SystemOverviewCache overview,
+                   com.sysadminanywhere.m3.messaging.source.SourceHealth sourceHealth) {
         this.ruleService = ruleService;
         this.channelSettingsService = channelSettingsService;
         this.workerPoolService = workerPoolService;
+        this.overview = overview;
+        this.sourceHealth = sourceHealth;
 
         nameField = new TextField(t("Name"));
         nameField.setRequired(true);
@@ -122,7 +130,12 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
         setSizeFull();
         loadingField.setVisible(false);
         stepsPanel.configure(ruleService, this::refreshSteps);
-        add(toolbar, featureControls, form, loadingField, stepsPanel);
+        readiness.getElement().setAttribute("role", "status");
+        var refreshReadiness = new Button(t("Refresh"), event -> { overview.invalidate(); refreshReadiness(); });
+        receiverStatus.getElement().setAttribute("role", "status");
+        var readinessPanel = new VerticalLayout(new HorizontalLayout(readiness, refreshReadiness), receiverStatus);
+        readinessPanel.setPadding(false); readinessPanel.setSpacing(false); readinessPanel.setWidthFull();
+        add(toolbar, featureControls, readinessPanel, form, loadingField, stepsPanel);
         guard = new com.sysadminanywhere.m3.base.ui.UnsavedChangesGuard(this, form, loadingField);
         toolbar.add(guard.indicator());
         setHeightFull();
@@ -161,6 +174,43 @@ class RuleDetailView extends VerticalLayout implements BeforeEnterObserver, HasD
                     .filter(channel -> channel.getName().equals(currentRule.getDestinationChannelName())).findFirst().orElse(null));
         }
         guard.markSaved();
+        refreshReadiness();
+    }
+
+    private void refreshReadiness() {
+        try {
+            readiness.setText(t(readinessMessage(currentRule, () -> overview.snapshot().pools(),
+                    () -> channelSettingsService.findByDirection(ChannelDirection.OUTBOUND))));
+        } catch (RuntimeException unavailable) { readiness.setText(t("Rule readiness is unavailable.")); }
+        receiverStatus.setVisible(currentRule != null && currentRule.getRuleType() == RuleType.INBOUND
+                && Boolean.TRUE.equals(currentRule.getEnabled()));
+        if (receiverStatus.isVisible()) {
+            try {
+                var state = sourceHealth.get(currentRule.getId());
+                receiverStatus.setText(t("Receiver") + ": " + t(state.status())
+                        + (state.error() == null ? "" : " · " + t(state.error())));
+            } catch (RuntimeException unavailable) { receiverStatus.setText(t("Rule readiness is unavailable.")); }
+        }
+    }
+
+    static String readinessMessage(Rule rule, java.util.function.Supplier<java.util.List<com.sysadminanywhere.m3.messaging.service.SystemOverviewService.PoolStatus>> pools,
+            java.util.function.Supplier<java.util.List<ChannelSettings>> destinations) {
+        if (rule == null) return "Rule readiness is unavailable.";
+        if (!Boolean.TRUE.equals(rule.getEnabled())) return "Saved rule is disabled; it will not process messages.";
+        if (rule.getRuleType() == RuleType.INBOUND && (rule.getSourceChannel() == null
+                || !Boolean.TRUE.equals(rule.getSourceChannel().getEnabled())))
+            return "The saved source channel is disabled or missing.";
+        var target = rule.getDestinationChannelName();
+        if (target == null && rule.getRuleType() == RuleType.OUTBOUND)
+            return "The saved destination channel is disabled or missing.";
+        if (target != null && destinations.get().stream().noneMatch(channel -> target.equals(channel.getName())
+                && Boolean.TRUE.equals(channel.getEnabled())))
+            return "The saved destination channel is disabled or missing.";
+        if (rule.getWorkerPool() == null || rule.getWorkerPool().getId() == null) return "The saved rule has no worker pool.";
+        var pool = pools.get().stream().filter(item -> item.id() == rule.getWorkerPool().getId()).findFirst();
+        return pool.isPresent() && pool.get().activeWorkers() > 0
+                ? "Saved rule: a worker heartbeat is available. Check channel connectivity before sending."
+                : "Saved rule: no recent worker heartbeat in its pool. Start a worker and refresh.";
     }
 
     private void refreshSteps() {

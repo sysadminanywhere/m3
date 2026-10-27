@@ -89,6 +89,16 @@ class MessageObservabilityIntegrationTest {
         assertThat(jdbc.queryForList("SELECT message_id FROM message WHERE lower(search_text) LIKE ? ESCAPE '\\'",Long.class,MessageSearch.pattern("%_"))).containsExactly(id);
         assertThat(jdbc.queryForObject("SELECT correlation_id FROM message WHERE message_id=?",String.class,id)).isEqualTo("trace-42");
     }
+    @Test void nulInPayloadDoesNotBlockTheSearchBatchOrChangeOriginalBytes() {
+        byte[] original=new byte[]{'a',0,'b'};
+        long first=message("PROCESSED","placeholder");
+        jdbc.update("UPDATE message SET payload_bytes=?,payload_type='text/plain',stored_size=? WHERE message_id=?",original,original.length,first);
+        long second=message("PROCESSED","{\"note\":\"next\"}");
+        new MessageIndexService(jdbc,MASKING,manager).index();
+        assertThat(jdbc.queryForObject("SELECT search_text FROM message WHERE message_id=?",String.class,first)).isEqualTo("a b");
+        assertThat(jdbc.queryForObject("SELECT payload_bytes FROM message WHERE message_id=?",byte[].class,first)).isEqualTo(original);
+        assertThat(jdbc.queryForObject("SELECT search_version FROM message WHERE message_id=?",String.class,second)).isEqualTo(MASKING.version());
+    }
     @Test void archivesOriginalAndActualDeliveryBytesAndRestoresWithoutChangingCatalogue() {
         byte[] sent="actual transformed body".getBytes(StandardCharsets.UTF_8);
         long id=message("PROCESSED","{\"password\":\"secret-original\"}");long job=job(id,"COMPLETED");

@@ -106,23 +106,85 @@ class SystemOverviewIntegrationTest {
         assertThat(jdbc.queryForList("SELECT message_id FROM message ORDER BY message_id",Long.class)).containsExactly(failed,awaitingReceipt);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM message_receipt_outbox",Long.class)).isEqualTo(1);
     }
+    @Test void receiverHealthDistinguishesStaleReportsFromCurrentFailures() {
+        jdbc.update("INSERT INTO channel_settings(name,channel_type,direction,created_at) VALUES('source','DIRECTORY','INBOUND',now())");
+        jdbc.update("INSERT INTO rule(name,rule_type,source_channel_id,worker_pool_id,created_at) VALUES('load','INBOUND',1,1,now())");
+        var health=new com.sysadminanywhere.m3.messaging.source.SourceHealth(jdbc,new org.springframework.mock.env.MockEnvironment());
+        assertThat(health.get(1).status()).isEqualTo("NO_WORKER");
+        jdbc.update("INSERT INTO rule_source_health(rule_id,worker_id,status,checked_at,error_message) VALUES(1,'old','RUNNING',now()-interval '36 seconds',NULL)");
+        assertThat(health.get(1).status()).isEqualTo("STALE");
+        jdbc.update("INSERT INTO rule_source_health(rule_id,worker_id,status,checked_at,error_message) VALUES(1,'active','RUNNING',now(),NULL)");
+        assertThat(health.get(1).status()).isEqualTo("RUNNING");
+        jdbc.update("UPDATE rule_source_health SET status='RETRYING',error_message='Connection failed' WHERE worker_id='active'");
+        assertThat(health.get(1).status()).isEqualTo("RETRYING");
+        assertThat(health.get(1).error()).isEqualTo("Connection failed");
+        jdbc.update("UPDATE rule_source_health SET checked_at=now()-interval '36 seconds' WHERE worker_id='active'");
+        assertThat(health.get(1).status()).isEqualTo("STALE");
+    }
+    @Test void localUsageSummarizesOnlyRetainedRecentMessagesAndEnabledConfiguration() {
+        message("INBOUND","LOADED","private-source","private-target",Instant.now());
+        message("OUTBOUND","SENT","private-source","private-target",Instant.now());
+        message("OUTBOUND","FAILED","private-source","private-target",Instant.now().minusSeconds(86400));
+        message("OUTBOUND","SENT","private-source","private-target",Instant.now().minusSeconds(31L*86400));
+        jdbc.update("INSERT INTO channel_settings(name,channel_type,direction,enabled,created_at) VALUES('enabled','DIRECTORY','INBOUND',true,now()),('disabled','KAFKA','INBOUND',false,now())");
+        jdbc.update("INSERT INTO rule(name,rule_type,source_channel_id,worker_pool_id,enabled,created_at) VALUES('active','INBOUND',1,1,true,now()),('inactive','INBOUND',2,1,false,now())");
+        jdbc.update("INSERT INTO rule_action(rule_id,action_type,priority) VALUES(1,'FILTER',0),(2,'ENRICH',0)");
+        var summary=new LocalUsageService(jdbc).summary();
+        assertThat(summary.activeDays()).isEqualTo(2);
+        assertThat(summary.inbound()).isEqualTo(1);
+        assertThat(summary.outbound()).isEqualTo(2);
+        assertThat(summary.sent()).isEqualTo(1);
+        assertThat(summary.failed()).isEqualTo(1);
+        assertThat(summary.enabledRules()).isEqualTo(1);
+        assertThat(summary.channels()).containsExactly(new LocalUsageService.Count("DIRECTORY",1));
+        assertThat(summary.actions()).containsExactly(new LocalUsageService.Count("FILTER",1));
+        assertThat(summary.toString()).doesNotContain("private-source", "private-target");
+    }
+    @Test void receiptRetryWaitsUntilDueAndKeepsItsEventId() throws Exception {
+        long id=message("INBOUND","LOADED","s","t",Instant.now());
+        var eventId=java.util.UUID.randomUUID();
+        jdbc.update("INSERT INTO message_receipt_outbox(event_id,message_id) VALUES(?,?)",eventId,id);
+        var publisher=org.mockito.Mockito.mock(com.sysadminanywhere.m3.messaging.broker.MessageReceivedPublisher.class);
+        org.mockito.Mockito.doThrow(new java.io.IOException("broker unavailable"))
+                .doNothing().when(publisher).publish(org.mockito.ArgumentMatchers.any());
+        var dispatcher=new com.sysadminanywhere.m3.messaging.broker.MessageReceiptDispatcher(jdbc,publisher);
+        var transactions=new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource()));
+
+        transactions.executeWithoutResult(status -> dispatcher.dispatch());
+        assertThat(jdbc.queryForObject("SELECT attempts=1 AND published_at IS NULL AND next_attempt_at>now() FROM message_receipt_outbox WHERE event_id=?",Boolean.class,eventId)).isTrue();
+        transactions.executeWithoutResult(status -> dispatcher.dispatch());
+        org.mockito.Mockito.verify(publisher,org.mockito.Mockito.times(1)).publish(org.mockito.ArgumentMatchers.any());
+        jdbc.update("UPDATE message_receipt_outbox SET next_attempt_at=now()-interval '1 second' WHERE event_id=?",eventId);
+        transactions.executeWithoutResult(status -> dispatcher.dispatch());
+        assertThat(jdbc.queryForObject("SELECT attempts=2 AND published_at IS NOT NULL AND last_error IS NULL FROM message_receipt_outbox WHERE event_id=?",Boolean.class,eventId)).isTrue();
+        var events=org.mockito.ArgumentCaptor.forClass(com.sysadminanywhere.m3.messaging.broker.MessageReceivedEvent.class);
+        org.mockito.Mockito.verify(publisher,org.mockito.Mockito.times(2)).publish(events.capture());
+        assertThat(events.getAllValues()).extracting(com.sysadminanywhere.m3.messaging.broker.MessageReceivedEvent::eventId).containsExactly(eventId,eventId);
+    }
     @Test void expiredClaimAfterSendingIsFailedInsteadOfAutomaticallyReplayed() {
         long uncertain=message("OUTBOUND","PENDING","s","t",Instant.now());
         long safe=message("OUTBOUND","PENDING","s","t",Instant.now());
+        long fresh=message("OUTBOUND","PENDING","s","t",Instant.now());
+        long otherPool=message("OUTBOUND","PENDING","s","t",Instant.now());
         jdbc.update("INSERT INTO channel_settings(name,channel_type,direction,created_at) VALUES('test','DIRECTORY','OUTBOUND',now())");
         jdbc.update("INSERT INTO rule(name,rule_type,source_channel_id,worker_pool_id,created_at) VALUES('test','OUTBOUND',1,1,now())");
         jdbc.update("INSERT INTO rule_execution_job(message_id,rule_id,worker_pool_id,status,created_at,claimed_at,delivery_started,claim_token) VALUES(?,1,1,'PROCESSING',now(),now()-interval '10 minutes',true,gen_random_uuid()),(?,1,1,'PROCESSING',now(),now()-interval '10 minutes',false,gen_random_uuid())",uncertain,safe);
-        var jobs=org.mockito.Mockito.mock(com.sysadminanywhere.m3.messaging.repository.RuleExecutionJobRepository.class);
-        var processor=new RuleExecutionProcessor(jobs,null,null,null,null,"default","test-worker",300);
+        jdbc.update("INSERT INTO rule_execution_job(message_id,rule_id,worker_pool_id,status,created_at,claimed_at,delivery_started,claim_token) VALUES(?,1,1,'PROCESSING',now(),now(),false,gen_random_uuid()),(?,1,2,'PROCESSING',now(),now()-interval '10 minutes',false,gen_random_uuid())",fresh,otherPool);
         try(var session=factory.openSession()) {
             session.beginTransaction();
+            var jobs=new org.springframework.data.jpa.repository.support.JpaRepositoryFactory(session)
+                    .getRepository(com.sysadminanywhere.m3.messaging.repository.RuleExecutionJobRepository.class);
+            var processor=new RuleExecutionProcessor(jobs,null,null,null,null,"default","test-worker",300);
             org.springframework.test.util.ReflectionTestUtils.setField(processor,"entityManager",session);
-            assertThat(processor.reclaimExpired()).isEqualTo(1);
+            assertThat(processor.reclaimExpired()).isEqualTo(2);
             session.getTransaction().commit();
         }
         assertThat(jdbc.queryForObject("SELECT status FROM message WHERE message_id=?",String.class,uncertain)).isEqualTo("FAILED");
         assertThat(jdbc.queryForObject("SELECT delivery_uncertain FROM rule_execution_job WHERE message_id=?",Boolean.class,uncertain)).isTrue();
-        assertThat(jdbc.queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?",String.class,safe)).isEqualTo("PROCESSING");
-        org.mockito.Mockito.verify(jobs).releaseExpiredClaims("default",300);
+        assertThat(jdbc.queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?",String.class,safe)).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT claim_token FROM rule_execution_job WHERE message_id=?",java.util.UUID.class,safe)).isNull();
+        assertThat(jdbc.queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?",String.class,fresh)).isEqualTo("PROCESSING");
+        assertThat(jdbc.queryForObject("SELECT status FROM rule_execution_job WHERE message_id=?",String.class,otherPool)).isEqualTo("PROCESSING");
     }
 }

@@ -13,6 +13,12 @@ The restore destination must be an empty database and empty precreated bucket, i
 
 Test recovery regularly in an isolated environment and record measured recovery time/data-loss window. These scripts create a quiesced logical snapshot, not continuous PostgreSQL point-in-time recovery or a broker backup. Retain PostgreSQL WAL and object versions separately if your recovery objectives require them. Restore preserves installation UUID and its license; never activate the original and restored installation concurrently. Obtain an independent identity/entitlement for an independent clone. After restore, delayed callbacks from old attempts are rejected by the persisted attempt/version contract.
 
+## Isolated rehearsal, 2026-10-27
+
+On disposable PostgreSQL and MinIO containers, the backup and restore scripts copied a test object and catalog, verified their SHA-256 checksums and restored the installation ID. The backup stopped and restarted an M3 application container. After stopping the source application, a recovered application started against a second restored database with the separately supplied original key and displayed a previously encrypted channel setting. A separate run archived a real message through M3, restored the database and object to fresh targets, and read the original payload through the recovered application's API; the bytes matched. The rehearsal used the `mc` client from a container through a temporary Windows wrapper; it did not validate a native Windows `mc` installation.
+
+This was not a complete recovery acceptance: it did not verify masked archive reads, prepared delivery versions, business attempts or pending outbox delivery, measure recovery objectives, or exercise an upgrade across versions. Repeat those checks in the target environment before relying on a backup procedure.
+
 Failure recovery: leave an incomplete snapshot as evidence; rerun backup into a new directory. If restore fails, keep M3 stopped and provision fresh empty targets for the next attempt. No automatic destructive rollback is attempted.
 
 After restore, stale cold-cleanup tasks referring to live catalog objects are cancelled under a catalog row lock. Those objects remain available, and a later catalog deletion enqueues cleanup again. Cancelling stale tasks prevents them from blocking cleanup of unrelated orphan objects.

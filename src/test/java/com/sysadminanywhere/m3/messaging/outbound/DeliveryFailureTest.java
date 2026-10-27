@@ -11,6 +11,46 @@ import static org.mockito.Mockito.*;
 import static org.assertj.core.api.Assertions.*;
 
 class DeliveryFailureTest {
+    @Test void staleClaimCannotChangeANewerAttempt() {
+        var message=new Message(MessageDirection.OUTBOUND,"test","text/plain");
+        var channel=new ChannelSettings("target",ChannelType.DIRECTORY,ChannelDirection.OUTBOUND);
+        var rule=new Rule("send",RuleType.OUTBOUND,channel);
+        rule.setWorkerPool(new RuleWorkerPool("default",1,1,4));
+        var job=new RuleExecutionJob(message,rule,rule.getWorkerPool());
+        job.claim("old-worker");
+        var stale=new OutboundDeliveryTransactions.Claim(1,2,job.getClaimToken(),null);
+        job.claim("new-worker");
+        var currentToken=job.getClaimToken();
+        var em=mock(EntityManager.class);
+        when(em.find(eq(RuleExecutionJob.class),eq(1L),any(jakarta.persistence.LockModeType.class))).thenReturn(job);
+        var service=new OutboundDeliveryTransactions(mock(RuleExecutionJobRepository.class),mock(ChannelSettingsRepository.class),mock(RuleEngine.class),new ObjectMapper(),"default","worker",20);
+        ReflectionTestUtils.setField(service,"entityManager",em);
+
+        assertThatThrownBy(() -> service.started(stale)).isInstanceOf(IllegalStateException.class);
+        service.failed(stale,new java.io.IOException("late failure"));
+        service.succeeded(stale);
+        assertThat(job.getStatus()).isEqualTo(RuleJobStatus.PROCESSING);
+        assertThat(job.getClaimToken()).isEqualTo(currentToken);
+        assertThat(job.isDeliveryStarted()).isFalse();
+    }
+
+    @Test void exhaustedAttemptsFailInsteadOfSchedulingAnotherRetry() {
+        var message=new Message(MessageDirection.OUTBOUND,"test","text/plain");
+        var channel=new ChannelSettings("target",ChannelType.DIRECTORY,ChannelDirection.OUTBOUND);
+        var rule=new Rule("send",RuleType.OUTBOUND,channel);
+        rule.setWorkerPool(new RuleWorkerPool("default",1,1,4));
+        var job=new RuleExecutionJob(message,rule,rule.getWorkerPool());
+        job.claim("worker");
+        var em=mock(EntityManager.class);
+        when(em.find(eq(RuleExecutionJob.class),eq(1L),any(jakarta.persistence.LockModeType.class))).thenReturn(job);
+        var service=new OutboundDeliveryTransactions(mock(RuleExecutionJobRepository.class),mock(ChannelSettingsRepository.class),mock(RuleEngine.class),new ObjectMapper(),"default","worker",1);
+        ReflectionTestUtils.setField(service,"entityManager",em);
+
+        service.failed(new OutboundDeliveryTransactions.Claim(1,2,job.getClaimToken(),null),new java.io.IOException("Connection refused"));
+        assertThat(job.getStatus()).isEqualTo(RuleJobStatus.FAILED);
+        assertThat(message.getStatus()).isEqualTo(MessageStatus.FAILED);
+        assertThat(job.isDeliveryUncertain()).isFalse();
+    }
     @Test void retriesBeforeSendingButStopsWhenTheReceiverMayHaveAccepted() {
         var message=new Message(MessageDirection.OUTBOUND,"test","text/plain");
         var channel=new ChannelSettings("target",ChannelType.DIRECTORY,ChannelDirection.OUTBOUND);

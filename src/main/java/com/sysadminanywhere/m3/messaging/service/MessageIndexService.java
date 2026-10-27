@@ -23,12 +23,14 @@ public class MessageIndexService {
             var ids=jdbc.queryForList("SELECT message_id FROM message WHERE search_version IS DISTINCT FROM ? ORDER BY message_id LIMIT 100 FOR UPDATE SKIP LOCKED",Long.class,masking.version());
             for (Long id:ids) {
                 jdbc.query("SELECT payload_bytes,charset,payload_type FROM message WHERE message_id=?",rs -> {
-                    String text=rs.getBytes(1)==null?null:masking.payload(rs.getBytes(1),rs.getString(2),rs.getString(3));
+                    String text=rs.getBytes(1)==null?null:postgresText(masking.payload(rs.getBytes(1),rs.getString(2),rs.getString(3)));
                     var correlation=jdbc.query("SELECT key,value FROM message_metadata WHERE message_id=? AND key IN ('correlationId','correlation_id','requestId') ORDER BY key LIMIT 1",(row,index)->masking.metadata(row.getString(1),row.getString(2)),id);
+                    String safeCorrelation=correlation.isEmpty()?null:postgresText(masking.text(correlation.getFirst()));
                     jdbc.update("UPDATE message SET search_text=?,search_version=?,correlation_id=? WHERE message_id=?",text,masking.version(),
-                            correlation.isEmpty()?null:masking.text(correlation.getFirst()).substring(0,Math.min(200,masking.text(correlation.getFirst()).length())),id);
+                            safeCorrelation==null?null:safeCorrelation.substring(0,Math.min(200,safeCorrelation.length())),id);
                 },id);
             }
         });
     }
+    private static String postgresText(String text) { return text == null ? null : text.replace('\0', ' '); }
 }

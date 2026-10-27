@@ -41,6 +41,8 @@ class SystemOverviewView extends VerticalLayout implements HasDynamicTitle {
         this.service = service;
         addClassName("overview-page");
         var toolbar = new Div(new Button(t("Refresh"), event -> { service.invalidate(); refresh(); }), updated);
+        if (new com.sysadminanywhere.m3.base.security.ServiceAccess().configure())
+            toolbar.add(new Button(t("Set up your first message flow"), event -> getUI().ifPresent(ui -> ui.navigate("first-flow"))));
         toolbar.addClassName("overview-toolbar");
         cards.addClassName("overview-cards");
         for (String title : java.util.List.of("Pending jobs", "Processing jobs", "Failed inbound messages", "Failed outbound messages", "Pending receipts", "Retrying receipts")) {

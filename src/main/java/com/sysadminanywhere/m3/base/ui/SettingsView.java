@@ -87,6 +87,8 @@ class SettingsView extends VerticalLayout implements HasDynamicTitle {
         aboutText.add(aboutTitle, new Span("M3"), version);
         about.add(aboutText);
         add(about);
+        if (new com.sysadminanywhere.m3.base.security.ServiceAccess().configure())
+            add(new com.vaadin.flow.component.button.Button(t("Local usage summary"), event -> getUI().ifPresent(ui -> ui.navigate("local-usage"))));
     }
 
     private Div settingCard(String title, String description, ComboBox<?> field) {

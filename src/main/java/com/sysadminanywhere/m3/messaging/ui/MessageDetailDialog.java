@@ -120,10 +120,25 @@ public class MessageDetailDialog extends Dialog {
         metadataGrid.setWidthFull();
         metadataGrid.setHeightFull();
 
-        jobsGrid.addColumn(MessageService.JobInfo::ruleId).setHeader(t("Rule"));
+        jobsGrid.addComponentColumn(job -> {
+            if (job.ruleId() == null) return new Span("—");
+            if (!new com.sysadminanywhere.m3.base.security.ServiceAccess().configure())
+                return new Span(job.ruleId().toString());
+            var ruleLink = new Button(job.ruleId().toString(), event -> getUI().ifPresent(ui -> {
+                close(); ui.navigate("rules/" + job.ruleId());
+            }));
+            ruleLink.addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
+            return ruleLink;
+        }).setHeader(t("Rule"));
         jobsGrid.addColumn(MessageService.JobInfo::pool).setHeader(t("Worker pool"));
-        jobsGrid.addColumn(job -> Translations.enumLabel(job.status())).setHeader(t("Status"));
+        jobsGrid.addColumn(job -> Translations.enumLabel(job.status())
+                + (job.uncertain() ? " · " + t("Uncertain delivery") : "")).setHeader(t("Status"));
         jobsGrid.addColumn(MessageService.JobInfo::attempts).setHeader(t("Attempts"));
+        jobsGrid.addColumn(job -> job.status() == com.sysadminanywhere.m3.messaging.domain.RuleJobStatus.PENDING
+                && job.attempts() > 0 && job.nextAttemptAt() != null
+                ? DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(Translations.locale())
+                        .withZone(ZoneId.systemDefault()).format(job.nextAttemptAt()) : "")
+                .setHeader(t("Next retry"));
         jobsGrid.addComponentColumn(job -> {
             var error = new Span(job.error() == null ? "" : job.error());
             if (job.error() != null) error.getElement().setAttribute("title", job.error());

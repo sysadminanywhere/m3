@@ -41,13 +41,15 @@ Bodies are stored as original bytes with optional charset. Unchanged outgoing me
 
 ## Reliability and status
 
-Message storage and job creation share one transaction. A worker commits the prepared delivery plan before performing network or filesystem operations. Retries reuse that plan, preserving the destination ID, transformed bytes and headers across worker restarts. Channel connection settings are read at delivery time. Editing a rule affects messages whose plans have not yet been prepared.
+Message storage and job creation share one transaction. New jobs freeze an encrypted snapshot of the rule and its endpoint settings when accepted. A worker commits the prepared delivery plan before performing network or filesystem operations. Retries reuse the snapshot and plan, preserving the destination, connection settings, transformed bytes and headers across worker restarts. Editing a rule or connection affects new jobs; submit or forward a new copy to use the updated settings. Existing jobs created before snapshots were introduced are adopted on first use. The sender still checks that the destination channel exists and is enabled at delivery time; worker-pool assignment remains operational.
 
-Transient failures retry with delays of 2, 4, 8, 16 and then 32 seconds. `M3_OUTBOUND_MAX_ATTEMPTS` sets the attempt limit (default 20). Invalid configuration or exhausted attempts marks the message `FAILED`. Expired claims are reclaimed; claim tokens prevent a stale worker from changing the status of a newer attempt. Transport delivery is at least once: if a worker stops after the destination accepts a message but before the database records success, broker delivery may repeat. Consumers should deduplicate using `m3MessageId`.
+Failures before delivery starts retry with delays of 2, 4, 8, 16 and then 32 seconds. `M3_OUTBOUND_MAX_ATTEMPTS` sets the attempt limit (default 20). Invalid configuration or exhausted attempts marks the message `FAILED`. Expired claims that have not started delivery can be reclaimed; claim tokens prevent a stale worker from changing the status of a newer attempt.
+
+Once delivery has started, a failure or expired claim can leave the receiver's outcome unknown. M3 marks the job and message `FAILED` with an uncertain delivery instead of automatically repeating it. Check the receiver before manually retrying: it may already have accepted the message, so a retry can cause a duplicate. Consumers should deduplicate using `m3MessageId` where possible. The exact outcome also depends on the transport and receiver; successful acceptance does not prove downstream business processing completed.
 
 - `GET /api/v1/messages/{id}`: original message, metadata and status (`PENDING`, `SENT`, `FAILED`).
 - `GET /api/v1/messages/{id}/delivery`: job status, attempts, worker pool, next attempt and error.
-- `POST /api/v1/messages/{id}/retry`: retry a failed outgoing message after fixing configuration; returns `202`.
+- `POST /api/v1/messages/{id}/retry`: retry a failed outgoing message with its existing snapshot; returns `202`. Re-enable a disabled rule or destination before retrying. If the endpoint or rule settings themselves need changing, submit or forward a new copy instead. For an uncertain delivery, verify the receiver first and pass `?acknowledgeUncertain=true`; otherwise the API returns `409`.
 
 An optional `Idempotency-Key` deduplicates submissions within the selected rule. Repeating the same request returns the original message ID. Reusing the key with different payload, payload type or metadata returns `409 Conflict`. Incoming receipt notifications are not published for outgoing submissions.
 
@@ -69,7 +71,7 @@ The Workers page opens per-container metrics through its chart button: current, 
 
 Conditions follow creation order. Each connector joins its condition to the preceding expression; the first connector is ignored. AND binds more tightly than OR. Missing fields do not match, numeric comparisons use decimal numbers, and non-numeric fields do not satisfy GREATER/LESS. Invalid regular expressions and numeric comparison constants are rejected when saving a condition.
 
-The Docker controller inspects the configured image ID and replaces one outdated worker per pool reconciliation. New workers are pinned to that inspected image ID. The Docker API proxy needs `IMAGES=1` (included in Compose). Rebuild the image and recreate the proxy/UI services to enable this update behavior. A single-replica pool briefly stops during replacement; transport delivery retains its documented at-least-once behavior.
+The Docker controller inspects the configured image ID and replaces one outdated worker per pool reconciliation. New workers are pinned to that inspected image ID. The Docker API proxy needs `IMAGES=1` (included in Compose). Rebuild the image and recreate the proxy/UI services to enable this update behavior. A single-replica pool briefly stops during replacement; interrupted deliveries follow the recovery rules described above.
 
 Pools with rules or job history cannot be deleted. The UI validates deletion before stopping containers. Failed reconciliation of one pool does not stop reconciliation of the others; managed containers belonging to deleted pools are cleaned up on a later reconciliation.
 
