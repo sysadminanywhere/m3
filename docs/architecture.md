@@ -50,6 +50,7 @@ flowchart LR
 
 - Worker pools have desired replica count and scaling limits configured through the Vaadin UI.
 - The control plane reconciles desired and running containers through a Docker API proxy with only the container operations it needs enabled.
+- Worker names and management filters include the database installation ID. New workers use `m3.worker.scoped=true` rather than the old global `m3.worker.managed=true` marker, so an older controller does not select them. Old managed containers are not adopted or removed; a legacy container on the configured network blocks reconciliation until an operator removes it using the old installation's shutdown procedure.
 - The Docker socket is never mounted directly into the Vaadin application container.
 - Docker Compose starts the control plane, database, and restricted Docker API proxy. The control plane reconciles worker containers against the Docker Engine API; Compose itself is not treated as a runtime orchestration API.
 

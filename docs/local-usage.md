@@ -6,4 +6,4 @@ The message figures count records created in the last 30 days that are still ret
 
 Enabled rules, channel types and rule action types describe the current configuration, not activity during the period. The summary does not include payloads, metadata, channel names, addresses, user names or diagnostic text. An empty summary does not prove that an installation was never used.
 
-Remote GA4 reporting and its consent flow are not implemented. This local summary does not request consent or send events to Google.
+This local summary does not send events to Google or any other remote service.

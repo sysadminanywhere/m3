@@ -21,6 +21,7 @@ import java.util.*;
 public class DockerWorkerScaler {
     @org.springframework.beans.factory.annotation.Autowired private com.sysadminanywhere.m3.extensions.ExecutionPolicy policy;
     @org.springframework.beans.factory.annotation.Autowired private WorkerDrainService drains;
+    @org.springframework.beans.factory.annotation.Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
     private final String apiUrl;
     private final String image;
     private final String network;
@@ -32,6 +33,7 @@ public class DockerWorkerScaler {
     private final ObjectMapper mapper;
     private final org.springframework.core.env.Environment environment;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+    private volatile String installationId;
 
     public DockerWorkerScaler(@Value("${m3.docker.api-url:}") String apiUrl,
                               @Value("${m3.worker.image:m3:local}") String image,
@@ -101,6 +103,7 @@ public class DockerWorkerScaler {
     public synchronized void reconcile(RuleWorkerPool pool, int desiredReplicas) {
         if (!isConfigured()) return;
         try {
+            ensureNoLegacyWorkersOnNetwork();
             String imageId = mapper.readTree(request("GET", "/images/" + URLEncoder.encode(image, StandardCharsets.UTF_8)
                     + "/json", null, Set.of(200)).body()).path("Id").asText();
             if (imageId.isBlank()) throw new IllegalStateException("Worker image ID is unavailable");
@@ -144,7 +147,9 @@ public class DockerWorkerScaler {
 
     private Map<String, ContainerInfo> list(String pool) throws Exception {
         var labels = new ArrayList<String>();
-        labels.add("m3.worker.managed=true");
+        // Keep the new marker distinct: an old controller filters managed=true globally.
+        labels.add("m3.worker.scoped=true");
+        labels.add("m3.worker.installation=" + installationId());
         if (pool != null) labels.add("m3.worker.pool=" + pool);
         String filter = mapper.writeValueAsString(Map.of("label", labels));
         String path = "/containers/json?all=1&filters=" + URLEncoder.encode(filter, StandardCharsets.UTF_8);
@@ -160,6 +165,35 @@ public class DockerWorkerScaler {
             }
         }
         return result;
+    }
+
+    private String installationId() {
+        var cached=installationId;
+        if (cached != null) return cached;
+        String value=jdbc.queryForObject("SELECT installation_id::text FROM m3_installation WHERE singleton",String.class);
+        if (value == null) throw new IllegalStateException("Installation identity is unavailable");
+        value=UUID.fromString(value).toString();
+        installationId=value;
+        return value;
+    }
+
+    /** Older workers lack an ownership label. Never adopt or remove one based only on its pool name. */
+    private void ensureNoLegacyWorkersOnNetwork() throws Exception {
+        if (hasLegacyWorkersOnNetwork())
+            throw new IllegalStateException("Legacy managed workers exist on this network; stop and remove them before upgrading");
+    }
+
+    public boolean hasLegacyWorkersOnNetwork() throws Exception {
+        if (!isConfigured()) return false;
+        String filter=mapper.writeValueAsString(Map.of("label",List.of("m3.worker.managed=true")));
+        var rows=mapper.readTree(request("GET","/containers/json?all=1&filters=" + URLEncoder.encode(filter,StandardCharsets.UTF_8),null,Set.of(200)).body());
+        for (var row : rows) {
+            String id=row.path("Id").asText();
+            var info=mapper.readTree(request("GET","/containers/"+id+"/json",null,Set.of(200)).body());
+            if (network.equals(info.path("HostConfig").path("NetworkMode").asText()))
+                return true;
+        }
+        return false;
     }
 
     private List<String> workerEnvironment(RuleWorkerPool pool,int index) {
@@ -206,7 +240,7 @@ public class DockerWorkerScaler {
                 "Image", imageId,
                 "Cmd", List.of("--spring.profiles.active=worker"),
                 "Env", env,
-                "Labels", Map.of("m3.worker.pool", pool.getName(), "m3.worker.managed", "true", "m3.worker.config", revision(pool,index,imageId)),
+                "Labels", Map.of("m3.worker.pool", pool.getName(), "m3.worker.scoped", "true", "m3.worker.installation", installationId(), "m3.worker.config", revision(pool,index,imageId)),
                 "HostConfig", hostConfig
         );
         String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
@@ -245,7 +279,7 @@ public class DockerWorkerScaler {
         catch (RuntimeException ignored) { return Integer.MAX_VALUE; }
     }
 
-    private String containerName(String pool, int index) { return "m3-worker-" + pool + "-" + index; }
+    private String containerName(String pool, int index) { return "m3-" + installationId().replace("-", "") + "-worker-" + pool + "-" + index; }
     public record PoolLoad(double cpuPercent, double memoryPercent) {}
     private record ContainerInfo(String id, String name, String state, String imageId, String pool, String revision) {}
 }

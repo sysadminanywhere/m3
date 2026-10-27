@@ -42,6 +42,7 @@ public class WorkerPoolCapacityService {
     public String status(String poolName) {
         if (!scaler.isConfigured()) return "No Docker API";
         try {
+            if (scaler.hasLegacyWorkersOnNetwork()) return "Legacy workers require removal before reconciliation";
             var pool = pools.findByName(poolName).orElseThrow();
             long backlog = queueDepth(pool);
             int target=effectiveReplicas(pool);

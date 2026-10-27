@@ -229,6 +229,8 @@
   "Stored charset / origin": "Codifica salvata / origine",
   "Rule": "Regola",
   "Attempts": "Tentativi",
+  "Legacy workers require removal before reconciliation": "Rimuovere i vecchi esecutori prima della riconciliazione",
+  "Choose different source and destination directories to avoid a message loop.": "Scegli directory di origine e destinazione diverse per evitare un ciclo di messaggi.",
   "2. Choose the source, destination and worker pool for an inbound rule.": "2. Scegli sorgente, destinazione e gruppo di esecutori per una regola in ingresso.",
   "Create a disabled directory rule here, then review and enable it on the rule page.": "Crea qui una regola di directory disabilitata, quindi controllala e abilitala nella pagina della regola.",
   "Local usage summary": "Riepilogo dell'utilizzo locale",

@@ -229,6 +229,8 @@
   "Stored charset / origin": "Stored charset / origin",
   "Rule": "Rule",
   "Attempts": "Attempts",
+  "Legacy workers require removal before reconciliation": "Legacy workers require removal before reconciliation",
+  "Choose different source and destination directories to avoid a message loop.": "Choose different source and destination directories to avoid a message loop.",
   "2. Choose the source, destination and worker pool for an inbound rule.": "2. Choose the source, destination and worker pool for an inbound rule.",
   "Create a disabled directory rule here, then review and enable it on the rule page.": "Create a disabled directory rule here, then review and enable it on the rule page.",
   "Local usage summary": "Local usage summary",

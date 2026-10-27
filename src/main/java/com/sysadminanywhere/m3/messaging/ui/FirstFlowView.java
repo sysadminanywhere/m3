@@ -31,6 +31,10 @@ class FirstFlowView extends VerticalLayout implements HasDynamicTitle {
             if (name.getValue().isBlank() || source.getValue()==null || destination.getValue()==null || pool.getValue()==null) {
                 Notification.show(t("Please fill all required fields")); return;
             }
+            if (sameDirectory(source.getValue().getProperties().get("directoryPath"),
+                    destination.getValue().getProperties().get("directoryPath"))) {
+                Notification.show(t("Choose different source and destination directories to avoid a message loop.")); return;
+            }
             event.getSource().setEnabled(false);
             try {
                 var rule=rules.saveConfiguration(null,name.getValue(),null,RuleType.INBOUND,source.getValue().getId(),0,false,
@@ -56,6 +60,16 @@ class FirstFlowView extends VerticalLayout implements HasDynamicTitle {
     }
     private Button navigate(String label, String route) {
         return new Button(t(label), event -> getUI().ifPresent(ui -> ui.navigate(route)));
+    }
+    static boolean sameDirectory(String source, String target) {
+        if (source == null || target == null || source.isBlank() || target.isBlank()) return false;
+        boolean windowsPaths=source.matches("^[A-Za-z]:[\\\\/].*") && target.matches("^[A-Za-z]:[\\\\/].*");
+        return normalizeDirectory(source,windowsPaths).equals(normalizeDirectory(target,windowsPaths));
+    }
+    private static String normalizeDirectory(String path, boolean windowsPaths) {
+        var value=windowsPaths ? path.replace('\\','/') : path;
+        while (value.length()>1 && value.endsWith("/")) value=value.substring(0,value.length()-1);
+        return value;
     }
     @Override public String getPageTitle() { return t("Set up your first message flow"); }
 }

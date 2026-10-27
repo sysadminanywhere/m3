@@ -6,7 +6,7 @@ The goal is to make a first message flow easy to configure and dependable to ope
 
 - [ ] Exercise worker, PostgreSQL, broker and destination failures, including recovery and duplicate risks for each transport.
 - [ ] Document the actual delivery guarantees, uncertain outcomes and recovery procedures.
-- [ ] Cover expired and stale claims, retry limits and destination failures with meaningful tests.
+- [x] Cover expired and stale claims, retry limits and destination failures with meaningful tests.
 
 ## 2. Troubleshooting
 
@@ -16,7 +16,7 @@ The goal is to make a first message flow easy to configure and dependable to ope
 ## 3. First message flow
 
 - [ ] Design and implement a guided setup for a source, destination, rule and worker, with validation and a test message.
-- [ ] Verify the complete first-run experience on a clean installation.
+- [x] Verify the first directory flow on a clean isolated installation and smoke-test a clean Compose build. Managed-worker isolation was checked separately with two disposable Compose projects.
 
 ## 4. Rule editor
 
@@ -25,7 +25,7 @@ The goal is to make a first message flow easy to configure and dependable to ope
 
 ## 5. Operations and upgrades
 
-- [ ] Rehearse backup and restore, including the encryption key, on a clean installation.
+- [x] Rehearse backup and restore, including the encryption key, on a clean installation; record the remaining recovery checks in the runbook.
 - [ ] Verify schema upgrades and worker shutdown/restart; improve the runbooks and readiness checks.
 
 ## 6. Performance and scaling
@@ -35,19 +35,14 @@ The goal is to make a first message flow easy to configure and dependable to ope
 
 ## 7. Understand adoption and usage
 
-**Questions:** How many installations are active, which versions and capabilities are used, and where do users struggle to set up or operate a flow? Existing audit records and Prometheus operations metrics help an installation's operator, but do not by themselves tell the M3 maintainers about other installations.
+**Questions:** How is an individual installation used, which capabilities are configured, and where do users struggle to set up or operate a flow? Local metrics do not tell the M3 maintainers how many other installations exist.
 
-**Decision:** Use Google Analytics 4 (GA4) for product analytics. Ask the installation administrator whether to enable reporting; do not send usage data before an affirmative choice. GA4 reports represent only installations that opted in, not the entire user base.
+**Decision:** Do not connect Google Analytics. Keep the usage summary local. No remote reporting service or collection of installation data is currently planned; any future approach requires a separate decision.
 
 **Implementation:**
 
 - [ ] Extend the installation-local usage summary with first-flow progress and decide whether durable aggregates are needed beyond retained message history. The current summary is derived locally from retained records and current configuration; it does not use or modify security audit records.
-- [ ] Ask an administrator to enable or decline an optional, reviewable periodic report. Keep remote reporting disabled by default; explain exactly what is sent, its destination (M3's collection endpoint and Google Analytics), and frequency. Let administrators preview, enable, disable and delete pending reports. Local metrics must work without external connectivity.
-- [ ] For reporting, use a random, resettable installation identifier and coarse daily or weekly aggregates: application version and edition, active period, configured transport types, feature counts, message-volume buckets and aggregated error categories. Exclude payloads, message metadata, credentials, channel names, addresses, usernames and raw exception text. Define retention, access and deletion policies for both sender and receiver before launch.
-- [ ] Distinguish installations that have opted in and reported recently from all installations: opt-in counts are a lower bound, and active installations are not the same as active people or organizations. Account for restored or cloned installations when interpreting identifiers.
-- [ ] Evaluate a small M3 collection endpoint that validates and forwards reports to GA4 without embedding a GA4 Measurement Protocol secret in the distributed application. Verify GA4's server-only reporting limitations, event mapping, deduplication and operational costs before implementation.
-- [ ] Configure GA4 reports showing opted-in active installations over time, version distribution, feature adoption and setup drop-off. Add manual feedback or an optional survey for qualitative context; do not infer user intent from counters alone.
-- [ ] Define event names, aggregation windows and success criteria before implementation. Test consent changes, report contents, offline operation, retries, duplicate reports and deletion; document the data contract for self-hosted administrators.
+- [ ] Consider voluntary feedback for qualitative context. The local summary cannot measure installations owned by other users and must not imply that it can.
 
 ## Progress
 
@@ -62,11 +57,15 @@ The goal is to make a first message flow easy to configure and dependable to ope
 - Rule details also show the existing receiver health and diagnostic message for enabled inbound rules, separately from the worker heartbeat.
 - Message job details explicitly mark uncertain delivery and let administrators open the associated rule; other roles see its ID without an administration link.
 - PostgreSQL integration coverage checks absent, stale, running and retrying receiver reports, including stale reports alongside a current worker.
-- Added an administrator-only [local usage summary](local-usage.md) for retained message counts and current enabled configuration. It sends no data; GA4 reporting and consent are not implemented.
+- Added an administrator-only [local usage summary](local-usage.md) for retained message counts and current enabled configuration. It sends no data.
 - On a temporary clean database, browser checks covered the guide, local summary, receiver readiness and step preview; regression tests verify admin access and viewer denial for the two new pages. End-to-end guided setup and test-message delivery remain open.
-- Documented the proposed [opt-in reporting contract](telemetry-design.md), including its boundaries and the still-unconfigured GA4 collector.
 - Corrected the outbound recovery guide: retries use frozen rule and endpoint configuration, while a new submission is needed to apply changed settings.
 - Fixed search indexing of decoded text containing NUL: the projection replaces NUL with a space, preserving original bytes and allowing the rest of the batch to complete.
 - The first-flow guide can create a disabled inbound directory rule from existing channels and a pool, then opens it for review. Browser verification confirmed the saved rule is disabled; creating channels and sending a test file are still manual.
+- The first-flow guide rejects obvious identical source and destination paths to reduce accidental message loops; filesystem aliases still require operator verification.
+- A fresh database, RabbitMQ, application and worker were started in disposable containers. An administrator created both directory channels and a rule in the UI, enabled it, placed a test file in the worker mount, and verified the inbound `LOADED` and outbound `SENT` records and matching output file.
+- A separate clean Compose build started PostgreSQL, RabbitMQ and the application, applied 26 migrations and passed the administrator's browser smoke test. Worker reconciliation was disabled in this run to isolate other M3 containers on the shared Docker engine.
+- Docker worker management scopes names, listing and cleanup to the database installation ID and uses a new marker that older controllers do not select. Legacy workers on the configured network block reconciliation rather than being adopted or removed. A shared-engine upgrade requires old workers to be removed using their owning installation's shutdown procedure.
+- On a shared Docker engine, two disposable Compose projects with distinct installation IDs each created a scoped worker. Scaling one to zero removed only its own worker. An unlabelled legacy container on the other project's network blocked reconciliation without being changed; reconciliation resumed after it was removed. This used a test image built from the packaged JAR, not the release Dockerfile image.
 - A disposable backup/restore rehearsal verified database and object checksums, installation identity, application stop/restart, an encrypted setting with the original key and an original archived payload read through the recovered API. The [runbook](backup-restore.md) records remaining recovery checks.
-- Recorded a [preliminary directory-flow measurement](performance-baseline.md) with throughput, queue sampling, latency, storage growth and output checks. Repeated and sustained workloads, other transports and resource peaks remain open.
+- Recorded [preliminary directory-flow measurements](performance-baseline.md) for a short burst and a paced 4 KiB workload, including throughput, queue sampling, latency, storage growth and output checks. Repeated longer workloads, other transports and resource peaks remain open.

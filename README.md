@@ -119,6 +119,8 @@ Normal shutdown preserves the `postgres_data`, `rabbitmq_data`, and `message_fil
 
 For an update, back up first, stop old workers, then rebuild and start the upgraded application with `sh scripts/docker.sh compose up --build -d`. It applies migrations before upgraded workers use the schema. Restore the pool target afterward. See [database migrations](docs/database-migrations.md) and [backup and restore](docs/backup-restore.md).
 
+Managed workers are scoped to the database's installation ID. Before upgrading from a version that used names such as `m3-worker-default-1`, use the old UI to set each pool target to zero and wait for those containers to be removed. The new controller will not adopt or delete legacy workers; it refuses to reconcile while one remains on its configured Docker network. On a shared Docker engine, identify the owning installation and network before removing anything manually. Restored database clones retain the same ID and must not run simultaneously with the original installation.
+
 ## Run locally for development
 
 You need **JDK 21**, PowerShell 7 for the scripts, and PostgreSQL and RabbitMQ. The Maven wrapper is included; no separate Maven installation is required. Docker is useful for dependencies and integration tests.
@@ -172,6 +174,8 @@ For IDE development, import `pom.xml`, select JDK 21, and run `com.sysadminanywh
 ## Your first message flow
 
 Start with a directory-to-directory flow to verify loading, rule execution, and delivery without configuring another remote system.
+
+An administrator can open **Overview → Set up your first message flow** to create a disabled rule from existing directory channels, then review and enable it. Use separate source and destination directories: the guide rejects obvious matching paths, but cannot detect every alias, mount or symbolic link in a worker's filesystem.
 
 1. **Create two directories in the worker's filesystem.** For a local Windows worker, use folders such as `D:\m3-data\in` and `D:\m3-data\out`. For Docker, use `/data/in` and `/data/out` in the shared `message_files` volume. After the Compose application starts, create them with:
 
