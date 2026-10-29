@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: m3
+      POSTGRES_USER: m3
+      POSTGRES_PASSWORD: m3
+    ports: ["5432:5432"]
+  community:
+    build: .
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/m3
+      DB_USER: m3
+      DB_PASSWORD: m3
+      M3_STORAGE_ROOT: /data/messages
+      M3_SECRET_KEY: ${M3_SECRET_KEY:-}
+      M3_API_TOKEN: ${M3_API_TOKEN:-}
+    ports: ["8080:8080"]
+    volumes:
+      - community-data:/data
+    depends_on: [postgres]
+volumes:
+  community-data:

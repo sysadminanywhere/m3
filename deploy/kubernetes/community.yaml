@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: m3-community-content
+spec:
+  accessModes: [ReadWriteMany]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: m3-community
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: m3-community}
+  template:
+    metadata:
+      labels: {app: m3-community}
+    spec:
+      containers:
+        - name: community
+          image: m3-community:2.0.0
+          env:
+            - {name: DB_URL, valueFrom: {secretKeyRef: {name: m3-database, key: jdbc-url}}}
+            - {name: DB_USER, valueFrom: {secretKeyRef: {name: m3-database, key: username}}}
+            - {name: DB_PASSWORD, valueFrom: {secretKeyRef: {name: m3-database, key: password}}}
+            - {name: M3_SECRET_KEY, valueFrom: {secretKeyRef: {name: m3-community-key, key: value}}}
+            - {name: M3_STORAGE_ROOT, value: /data/messages}
+          ports: [{containerPort: 8080}]
+          volumeMounts: [{name: content, mountPath: /data}]
+          readinessProbe: {httpGet: {path: /api/v2/health/ready, port: 8080}, initialDelaySeconds: 10}
+          livenessProbe: {httpGet: {path: /api/v2/health/live, port: 8080}, initialDelaySeconds: 15}
+      volumes:
+        - name: content
+          persistentVolumeClaim: {claimName: m3-community-content}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: m3-community
+spec:
+  selector: {app: m3-community}
+  ports: [{port: 8080, targetPort: 8080}]

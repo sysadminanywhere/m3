@@ -1,0 +1,7 @@
+{
+  "formatVersion": "2",
+  "connections": [{"id": "input-directory", "type": "directory", "settings": {"path": "/data/in"}}],
+  "sources": [{"id": "incoming-files", "connectionId": "input-directory", "ruleSelection": "ALL_MATCHING"}],
+  "recipients": [{"id": "archive", "type": "directory", "settings": {"path": "/data/archive"}}],
+  "rules": [{"id": "archive-all", "sourceIds": ["incoming-files"], "recipientId": "archive", "condition": {"fileNameEquals": "daily.txt"}, "enabled": true}]
+}

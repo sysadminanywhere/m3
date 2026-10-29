@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: M3 Community API
+  version: 2.0.0
+paths:
+  /api/v2/health/live: {get: {responses: {'200': {description: Service process is alive}}}}
+  /api/v2/health/ready: {get: {responses: {'200': {description: Database is reachable}, '503': {description: Not ready}}}}
+  /api/v2/configuration/schema: {get: {responses: {'200': {description: Supported configuration format}}}}
+  /api/v2/configuration/version: {get: {responses: {'200': {description: Current published version}}}}
+  /api/v2/jobs: {get: {responses: {'200': {description: Recent jobs and delivery state}}}}
+  /api/v2/messages: {get: {responses: {'200': {description: Recent immutable original messages}}}}
+  /api/v2/jobs/{id}/retry:
+    post:
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'202': {description: Delivery retry queued; a duplicate is possible}, '409': {description: Job is currently leased}}
+  /api/v2/configuration/validate:
+    post:
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Configuration'}}}}
+      responses: {'200': {description: Validation result}}
+  /api/v2/configuration/publish:
+    post:
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PublishRequest'}}}}
+      responses: {'200': {description: Published}, '400': {description: Invalid}, '409': {description: Version conflict}}
+components:
+  schemas:
+    Configuration:
+      type: object
+      required: [formatVersion]
+      properties:
+        formatVersion: {type: string, enum: ['2']}
+        connections: {type: array, items: {type: object}}
+        sources: {type: array, items: {type: object}}
+        recipients: {type: array, items: {type: object}}
+        rules: {type: array, items: {type: object}}
+    PublishRequest:
+      type: object
+      required: [document]
+      properties:
+        document: {$ref: '#/components/schemas/Configuration'}
+        expectedVersion: {type: integer, minimum: 0}
