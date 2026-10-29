@@ -1,1 +1,0 @@
-ALTER TABLE message ALTER COLUMN payload_type TYPE VARCHAR(255);
