@@ -7,12 +7,29 @@ paths:
   /api/v2/health/ready: {get: {responses: {'200': {description: Database is reachable}, '503': {description: Not ready}}}}
   /api/v2/configuration/schema: {get: {responses: {'200': {description: Supported configuration format}}}}
   /api/v2/configuration/version: {get: {responses: {'200': {description: Current published version}}}}
-  /api/v2/jobs: {get: {responses: {'200': {description: Recent jobs and delivery state}}}}
+  /api/v2/jobs: {get: {responses: {'200': {description: Recent jobs and delivery state; each item includes executionGroup}}}}
   /api/v2/messages: {get: {responses: {'200': {description: Recent immutable original messages}}}}
+  /api/v2/metrics/summary: {get: {responses: {'200': {description: Local operational summary}}}}
+  /api/v2/messages/{id}/integrity:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'200': {description: Original checksum verification}, '503': {description: Original content unavailable}}
+  /api/v2/messages/{id}/reprocess:
+    post:
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'202': {description: New jobs queued; a duplicate is possible}, '404': {description: No prior rule version found}}
   /api/v2/jobs/{id}/retry:
     post:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       responses: {'202': {description: Delivery retry queued; a duplicate is possible}, '409': {description: Job is currently leased}}
+  /api/v2/secrets/{id}:
+    put:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SecretRequest'}}}}
+      responses: {'204': {description: Secret stored; its value is never returned}, '400': {description: Empty identifier or value}}
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: Safe secret metadata only}}
   /api/v2/configuration/validate:
     post:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Configuration'}}}}
@@ -31,10 +48,28 @@ components:
         connections: {type: array, items: {type: object}}
         sources: {type: array, items: {type: object}}
         recipients: {type: array, items: {type: object}}
-        rules: {type: array, items: {type: object}}
+        rules: {type: array, items: {$ref: '#/components/schemas/Rule'}}
+    Rule:
+      type: object
+      required: [id, sourceIds, recipientId]
+      properties:
+        id: {type: string}
+        sourceIds: {type: array, items: {type: string}}
+        recipientId: {type: string}
+        executionGroup: {type: string, default: default}
+        enabled: {type: boolean, default: true}
+        condition:
+          type: object
+          properties:
+            fileNameEquals: {type: string}
     PublishRequest:
       type: object
       required: [document]
       properties:
         document: {$ref: '#/components/schemas/Configuration'}
         expectedVersion: {type: integer, minimum: 0}
+    SecretRequest:
+      type: object
+      required: [value]
+      properties:
+        value: {type: string, writeOnly: true}

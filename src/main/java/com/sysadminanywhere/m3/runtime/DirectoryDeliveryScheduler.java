@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -19,10 +20,13 @@ public class DirectoryDeliveryScheduler {
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
     private final String workerId;
+    private final String workerGroup;
 
     public DirectoryDeliveryScheduler(JdbcTemplate jdbc, ObjectMapper mapper,
-                                      @Value("${m3.worker.id:${HOSTNAME:community-local}}") String workerId) {
+                                      @Value("${m3.worker.id:${HOSTNAME:community-local}}") String workerId,
+                                      @Value("${M3_EXECUTION_GROUP:${m3.worker.group:default}}") String workerGroup) {
         this.jdbc = jdbc; this.mapper = mapper; this.workerId = workerId + "-" + UUID.randomUUID();
+        this.workerGroup = workerGroup == null || workerGroup.isBlank() ? "default" : workerGroup;
     }
 
     @Scheduled(fixedDelayString = "${m3.delivery.fixed-delay-ms:1000}")
@@ -37,14 +41,15 @@ public class DirectoryDeliveryScheduler {
 
     private List<Job> claim(int limit) {
         String sql = """
-                with candidate as (select id from community.execution_job where status = 'READY' and next_attempt_at <= now()
+                with candidate as (select id from community.execution_job where execution_group = ?
+                  and status = 'READY' and next_attempt_at <= now()
                   order by created_at for update skip locked limit ?)
                 update community.execution_job j set status='RUNNING', claimed_by=?, lease_until=now() + interval '60 seconds', attempts=attempts+1
                 from candidate where j.id=candidate.id
                 returning j.id, j.message_id, j.rule_id, j.rule_version, j.attempts
                 """;
         return jdbc.query(sql, (rs, row) -> new Job(UUID.fromString(rs.getString("id")), UUID.fromString(rs.getString("message_id")),
-                rs.getString("rule_id"), rs.getInt("rule_version"), rs.getInt("attempts")), limit, workerId);
+                rs.getString("rule_id"), rs.getInt("rule_version"), rs.getInt("attempts")), workerGroup, limit, workerId);
     }
 
     private void deliver(Job job) {
@@ -61,15 +66,34 @@ public class DirectoryDeliveryScheduler {
             if (recipient.path("settings").path("path").asText().isBlank()) throw new IllegalStateException("Recipient directory is not configured");
             Files.createDirectories(outputDirectory);
             Path target = outputDirectory.resolve(job.id() + "-" + payload.originalName());
-            Files.copy(Path.of(payload.storageKey()), target, StandardCopyOption.REPLACE_EXISTING);
+            copyAtomically(Path.of(payload.storageKey()), target);
             jdbc.update("update community.execution_job set status='DELIVERED', completed_at=now(), lease_until=null, claimed_by=null, last_error=null where id=? and status='RUNNING' and claimed_by=?", job.id(), workerId);
         } catch (Exception error) { retry(job, error); }
     }
 
+    static void copyAtomically(Path source, Path target) throws java.io.IOException {
+        Path temporary = target.resolveSibling("." + target.getFileName() + ".part-" + UUID.randomUUID());
+        try {
+            Files.copy(source, temporary, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
     private void retry(Job job, Exception error) {
-        long seconds = Math.min(300, (long) Math.pow(2, Math.min(job.attempts(), 8)));
+        long seconds = retryDelaySeconds(job.attempts());
         jdbc.update("update community.execution_job set status='READY', next_attempt_at=now() + (? * interval '1 second'), lease_until=null, claimed_by=null, last_error=? where id=? and status='RUNNING' and claimed_by=?",
                 seconds, truncate(error.getMessage()), job.id(), workerId);
+    }
+
+    static long retryDelaySeconds(int attempts) {
+        if (attempts < 1) return 1;
+        return Math.min(300, 1L << Math.min(attempts, 9));
     }
 
     static String truncate(String input) { return input == null ? "unknown failure" : input.substring(0, Math.min(input.length(), 1000)); }

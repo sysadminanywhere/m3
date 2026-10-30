@@ -1,6 +1,7 @@
 package com.sysadminanywhere.m3.security;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +19,14 @@ public class SecretService {
     private final JdbcTemplate jdbc;
     private final SecretKey key;
 
-    public SecretService(JdbcTemplate jdbc, @Value("${M3_SECRET_KEY:}") String encodedKey) {
+    @Autowired
+    public SecretService(JdbcTemplate jdbc, @Value("${M3_SECRET_KEY:}") String encodedKey,
+                         @Value("${M3_SECRET_KEY_FILE:}") String keyFile) {
+        this.jdbc = jdbc;
+        this.key = keyFrom(resolveExternalKey(encodedKey, keyFile));
+    }
+
+    public SecretService(JdbcTemplate jdbc, String encodedKey) {
         this.jdbc = jdbc;
         this.key = keyFrom(encodedKey);
     }
@@ -51,6 +59,12 @@ public class SecretService {
             if (raw.length != 32) throw new IllegalArgumentException();
             return new SecretKeySpec(raw, "AES");
         } catch (Exception e) { throw new IllegalStateException("M3_SECRET_KEY must be a base64-encoded 32-byte key"); }
+    }
+    static String resolveExternalKey(String encodedKey, String keyFile) {
+        if (encodedKey != null && !encodedKey.isBlank()) return encodedKey.trim();
+        if (keyFile == null || keyFile.isBlank()) return "";
+        try { return java.nio.file.Files.readString(java.nio.file.Path.of(keyFile)).trim(); }
+        catch (Exception e) { throw new IllegalStateException("Unable to read M3_SECRET_KEY_FILE"); }
     }
     record Encrypted(byte[] ciphertext, byte[] iv) {}
     public record SecretMetadata(String id, OffsetDateTime updatedAt) {}

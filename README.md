@@ -10,8 +10,10 @@ docker compose up --build
 
 Configuration is validated and published through `/api/v2/configuration`; see `docs/v2/api-contract.yaml` and `docs/v2/configuration.example.json`.
 
-Secrets use an external `M3_SECRET_KEY` (base64-encoded 32-byte key). Backup and restore requirements are in `docs/operations/backup-and-restore.md`.
+Secrets use an external `M3_SECRET_KEY` (base64-encoded 32-byte key) or `M3_SECRET_KEY_FILE` containing that value. The environment variable takes precedence. Backup and restore requirements are in `docs/operations/backup-and-restore.md`.
 
 For more than one Community replica, `M3_STORAGE_ROOT` must refer to the same shared volume or filesystem for every replica; container-local storage is not valid durable message storage.
+
+Set `M3_EXECUTION_GROUP` when running multiple logical execution groups. A worker only claims jobs assigned to its group; jobs already created retain their original group.
 
 Set `M3_API_TOKEN` in non-local installations. Community then requires the same `X-M3-Service-Token` on all non-health API calls; Enterprise sends it from `COMMUNITY_SERVICE_TOKEN`.

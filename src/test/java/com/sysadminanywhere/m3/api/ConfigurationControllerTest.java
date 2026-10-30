@@ -24,4 +24,10 @@ class ConfigurationControllerTest {
                 .content("{\"formatVersion\":\"2\",\"sources\":[],\"recipients\":[],\"rules\":[{\"sourceIds\":[\"missing\"]}]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.errors[0]").value("$.rules[0].sourceIds: unknown source 'missing'"));
     }
+    @Test void rejectsSourceReferencingUnknownConnection() throws Exception {
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
+                        .content("{\"formatVersion\":\"2\",\"connections\":[],\"sources\":[{\"id\":\"input\",\"connectionId\":\"missing\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0]").value("$.sources[0].connectionId: unknown connection 'missing'"));
+    }
 }

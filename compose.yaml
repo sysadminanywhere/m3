@@ -13,7 +13,9 @@ services:
       DB_USER: m3
       DB_PASSWORD: m3
       M3_STORAGE_ROOT: /data/messages
+      M3_EXECUTION_GROUP: ${M3_EXECUTION_GROUP:-default}
       M3_SECRET_KEY: ${M3_SECRET_KEY:-}
+      M3_SECRET_KEY_FILE: ${M3_SECRET_KEY_FILE:-}
       M3_API_TOKEN: ${M3_API_TOKEN:-}
     ports: ["8080:8080"]
     volumes:

@@ -14,17 +14,26 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class DirectoryIngestScheduler {
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
     private final Path storageRoot;
+    private final long stabilityWindowMs;
+    private final String workerId;
+    private final Map<Path, FileObservation> observations = new ConcurrentHashMap<>();
 
     public DirectoryIngestScheduler(JdbcTemplate jdbc, ObjectMapper mapper,
-                                    @Value("${M3_STORAGE_ROOT:${m3.storage.root:./data/messages}}") String storageRoot) {
+                                    @Value("${M3_STORAGE_ROOT:${m3.storage.root:./data/messages}}") String storageRoot,
+                                    @Value("${m3.ingest.stability-window-ms:1000}") long stabilityWindowMs,
+                                    @Value("${m3.worker.id:${HOSTNAME:community-local}}") String workerId) {
         this.jdbc = jdbc; this.mapper = mapper; this.storageRoot = Path.of(storageRoot);
+        this.stabilityWindowMs = Math.max(0, stabilityWindowMs);
+        this.workerId = workerId + "-" + UUID.randomUUID();
     }
 
     @Scheduled(fixedDelayString = "${m3.ingest.fixed-delay-ms:5000}")
@@ -39,11 +48,42 @@ public class DirectoryIngestScheduler {
     private void ingestConfiguredDirectories(JsonNode document, int configVersion) throws Exception {
         for (JsonNode source : document.path("sources")) {
             String sourceId = source.path("id").asText("");
+            if (sourceId.isBlank() || !acquireSourceLease(sourceId)) continue;
             JsonNode connection = find(document.path("connections"), source.path("connectionId").asText(""));
             if (!"directory".equals(connection.path("type").asText())) continue;
             Path input = Path.of(connection.path("settings").path("path").asText());
             if (!Files.isDirectory(input)) continue;
-            try (var files = Files.list(input)) { files.filter(Files::isRegularFile).forEach(file -> register(document, configVersion, sourceId, file)); }
+            try (var files = Files.list(input)) { files.filter(Files::isRegularFile).filter(this::isStable).forEach(file -> register(document, configVersion, sourceId, file)); }
+        }
+    }
+
+    private boolean acquireSourceLease(String sourceId) {
+        try {
+            String owner = jdbc.queryForObject("""
+                    insert into community.source_lease(source_id, owner_id, lease_until)
+                    values (?, ?, now() + interval '60 seconds')
+                    on conflict (source_id) do update set owner_id=excluded.owner_id,
+                        lease_until=excluded.lease_until, updated_at=now()
+                    where community.source_lease.lease_until < now()
+                       or community.source_lease.owner_id=excluded.owner_id
+                    returning owner_id
+                    """, String.class, sourceId, workerId);
+            return workerId.equals(owner);
+        } catch (org.springframework.dao.EmptyResultDataAccessException unavailable) {
+            return false;
+        }
+    }
+
+    private boolean isStable(Path file) {
+        try {
+            var attributes = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
+            long now = System.currentTimeMillis();
+            FileObservation current = new FileObservation(attributes.size(), attributes.lastModifiedTime().toMillis(), now);
+            FileObservation previous = observations.put(file, current);
+            return isStableObservation(previous, current, now, stabilityWindowMs);
+        } catch (Exception ignored) {
+            observations.remove(file);
+            return false;
         }
     }
 
@@ -64,7 +104,9 @@ public class DirectoryIngestScheduler {
             if (!rule.path("enabled").asBoolean(true) || !references(rule.path("sourceIds"), sourceId) || !matches(rule, messageId)) continue;
             String ruleId = rule.path("id").asText("");
             if (ruleId.isBlank()) continue;
-            jdbc.update("insert into community.execution_job(id, message_id, rule_id, rule_version, status) values (?, ?, ?, ?, 'READY')", UUID.randomUUID(), messageId, ruleId, configVersion);
+            String executionGroup = rule.path("executionGroup").asText("default");
+            if (executionGroup.isBlank()) executionGroup = "default";
+            jdbc.update("insert into community.execution_job(id, message_id, rule_id, rule_version, execution_group, status) values (?, ?, ?, ?, ?, 'READY')", UUID.randomUUID(), messageId, ruleId, configVersion, executionGroup);
             if (firstMatchOnly) return;
         }
     }
@@ -87,4 +129,13 @@ public class DirectoryIngestScheduler {
         try (InputStream input = Files.newInputStream(file)) { input.transferTo(new java.security.DigestOutputStream(java.io.OutputStream.nullOutputStream(), digest)); }
         return HexFormat.of().formatHex(digest.digest());
     }
+
+    static boolean isStableObservation(FileObservation previous, FileObservation current, long now, long windowMs) {
+        return previous != null
+                && previous.size() == current.size()
+                && previous.modifiedAt() == current.modifiedAt()
+                && now - previous.observedAt() >= windowMs;
+    }
+
+    record FileObservation(long size, long modifiedAt, long observedAt) {}
 }

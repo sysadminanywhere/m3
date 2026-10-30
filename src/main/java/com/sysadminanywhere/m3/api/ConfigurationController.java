@@ -32,6 +32,7 @@ public class ConfigurationController {
     public ResponseEntity<?> publish(@RequestBody PublishRequest request) {
         ValidationResponse validation = validateDocument(request.document());
         if (!validation.errors().isEmpty()) return ResponseEntity.badRequest().body(validation);
+        jdbc.execute("select pg_advisory_xact_lock(8273641)");
         Integer current = jdbc.queryForObject("select coalesce(max(version),0) from community.config_bundle", Integer.class);
         int expected = request.expectedVersion() == null ? current : request.expectedVersion();
         if (expected != current) return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "configuration_version_conflict", "currentVersion", current));
@@ -47,8 +48,14 @@ public class ConfigurationController {
             if (!d.has("formatVersion")) errors.add("$.formatVersion: required");
             else if (!"2".equals(d.get("formatVersion").asText())) errors.add("$.formatVersion: must be '2'");
             for (String key : List.of("connections", "sources", "recipients", "rules")) if (d.has(key) && !d.get(key).isArray()) errors.add("$." + key + ": must be an array");
+            Set<String> connections = identifiers(d.path("connections"), "connections", errors);
             Set<String> sources = identifiers(d.path("sources"), "sources", errors);
             Set<String> recipients = identifiers(d.path("recipients"), "recipients", errors);
+            for (int i = 0; i < d.path("sources").size(); i++) {
+                String connectionId = d.path("sources").get(i).path("connectionId").asText();
+                if (connectionId.isBlank()) errors.add("$.sources[" + i + "].connectionId: required");
+                else if (!connections.contains(connectionId)) errors.add("$.sources[" + i + "].connectionId: unknown connection '" + connectionId + "'");
+            }
             for (int i = 0; i < d.path("rules").size(); i++) {
                 JsonNode rule = d.path("rules").get(i);
                 for (JsonNode source : rule.path("sourceIds")) if (!sources.contains(source.asText())) errors.add("$.rules[" + i + "].sourceIds: unknown source '" + source.asText() + "'");
