@@ -8,7 +8,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,9 +50,8 @@ public class DirectoryIngestScheduler {
     }
 
     @Scheduled(fixedDelayString = "${m3.ingest.fixed-delay-ms:5000}")
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void poll() {
-        jdbc.execute("select pg_advisory_xact_lock(8273643)");
         jdbc.query("select version, document_json from community.config_bundle order by version desc limit 1", rs -> {
             try { ingestConfiguredDirectories(mapper.readTree(rs.getString(2)), rs.getInt(1)); }
             catch (Exception error) { throw new IllegalStateException("Directory ingestion failed", error); }
@@ -56,11 +62,25 @@ public class DirectoryIngestScheduler {
         for (JsonNode source : document.path("sources")) {
             String sourceId = source.path("id").asText("");
             if (sourceId.isBlank() || !acquireSourceLease(sourceId)) continue;
-            JsonNode connection = find(document.path("connections"), source.path("connectionId").asText(""));
-            if (!"directory".equals(connection.path("type").asText())) continue;
-            Path input = Path.of(connection.path("settings").path("path").asText());
-            if (!Files.isDirectory(input)) continue;
-            try (var files = Files.list(input)) { files.filter(Files::isRegularFile).filter(this::isStable).forEach(file -> register(document, configVersion, sourceId, file)); }
+            var lost = new AtomicBoolean();
+            var heartbeat = Executors.newSingleThreadScheduledExecutor(task -> {
+                Thread thread = new Thread(task, "m3-ingest-lease"); thread.setDaemon(true); return thread;
+            });
+            heartbeat.scheduleAtFixedRate(() -> {
+                try { if (!renewSourceLease(sourceId)) lost.set(true); }
+                catch (Exception error) { lost.set(true); log.warn("Source lease renewal failed: {}", sourceId, error); }
+            }, 10, 10, TimeUnit.SECONDS);
+            try {
+                JsonNode connection = find(document.path("connections"), source.path("connectionId").asText(""));
+                if (!"directory".equals(connection.path("type").asText())) continue;
+                Path input = Path.of(connection.path("settings").path("path").asText());
+                if (!Files.isDirectory(input)) continue;
+                try (var files = Files.list(input)) {
+                    files.filter(Files::isRegularFile).filter(this::isStable)
+                            .forEach(file -> { if (!lost.get()) register(document, configVersion, sourceId, file, lost); });
+                }
+            } finally { heartbeat.shutdownNow(); }
+
         }
     }
 
@@ -81,6 +101,10 @@ public class DirectoryIngestScheduler {
         }
     }
 
+    private boolean renewSourceLease(String sourceId) {
+        return jdbc.update("update community.source_lease set lease_until=clock_timestamp() + interval '60 seconds', updated_at=clock_timestamp() where source_id=? and owner_id=? and lease_until > clock_timestamp()", sourceId, workerId) == 1;
+    }
+
     private boolean isStable(Path file) {
         try {
             var attributes = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
@@ -95,43 +119,65 @@ public class DirectoryIngestScheduler {
         }
     }
 
-    private void register(JsonNode document, int configVersion, String sourceId, Path file) {
+    private void register(JsonNode document, int configVersion, String sourceId, Path file, AtomicBoolean lost) {
+        Path temporary = null;
+        UUID stagingId = UUID.randomUUID();
+        boolean stagingRegistered = false;
         try {
-            String checksum = sha256(file);
+            int reserved = jdbc.update("insert into community.ingest_staging(id,source_id,owner_id) select ?,source_id,owner_id from community.source_lease where source_id=? and owner_id=? and lease_until > clock_timestamp()", stagingId, sourceId, workerId);
+            stagingRegistered = reserved == 1;
+            if (!stagingRegistered || lost.get()) return;
+            Path temporaryRoot = storageRoot.resolve(".m3-ingest-tmp");
+            Files.createDirectories(temporaryRoot);
+            temporary = temporaryRoot.resolve(stagingId + ".part");
+            Files.copy(file, temporary);
+            String checksum = sha256(temporary);
+            if (!checksum.equals(sha256(file))) throw new IllegalStateException("Source changed during ingestion");
             Path target = storageRoot.resolve(checksum.substring(0, 2)).resolve(checksum);
-            storeOriginal(file, target, checksum);
-            UUID messageId = UUID.randomUUID();
-            int accepted = jdbc.update("insert into community.message_record(id, source_id, checksum, original_name, storage_key, status) values (?, ?, ?, ?, ?, 'RECEIVED') on conflict (source_id, checksum) do nothing", messageId, sourceId, checksum, file.getFileName().toString(), target.toString());
-            if (accepted == 1) {
-                createJobs(document, configVersion, sourceId, messageId, firstMatchOnly(document, sourceId));
-                jdbc.update("update community.message_record set status='NO_MATCH' where id=? and not exists (select 1 from community.execution_job where message_id=?)", messageId, messageId);
-            }
+            // Verify pre-existing content outside the global lock. The final transaction
+            // rechecks its identity before accepting it.
+            var existing = Files.exists(target) ? Files.readAttributes(target, java.nio.file.attribute.BasicFileAttributes.class) : null;
+            if (existing != null && !checksum.equals(sha256(target))) throw new IllegalStateException("Stored content checksum mismatch");
+            Path staged = temporary;
+            var tx = new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()));
+            tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            tx.executeWithoutResult(status -> {
+                jdbc.execute("select pg_advisory_xact_lock(8273643)");
+                jdbc.execute("select pg_advisory_xact_lock(8273641)");
+                Integer latest = jdbc.queryForObject("select coalesce(max(version),0) from community.config_bundle", Integer.class);
+                if (latest == null || latest != configVersion) return; // Reobserve using the latest source and rule definitions.
+                // This update locks the lease row until commit, fencing a successor.
+                if (lost.get() || !renewSourceLease(sourceId)) return;
+                try {
+                    Files.createDirectories(target.getParent());
+                    if (Files.exists(target)) {
+                        var current = Files.readAttributes(target, java.nio.file.attribute.BasicFileAttributes.class);
+                        if (existing == null || existing.size() != current.size() || !existing.lastModifiedTime().equals(current.lastModifiedTime()) || !java.util.Objects.equals(existing.fileKey(), current.fileKey())) throw new IllegalStateException("Stored content changed during ingestion; retry");
+                    } else {
+                        // Do not fall back to a copy: publication must be atomic.
+                        Files.move(staged, target, StandardCopyOption.ATOMIC_MOVE);
+                    }
+                } catch (IOException error) { throw new StorageFailure(storageReason(error), error); }
+                UUID messageId = UUID.randomUUID();
+                int accepted = jdbc.update("insert into community.message_record(id, source_id, checksum, original_name, storage_key, status) values (?, ?, ?, ?, ?, 'RECEIVED') on conflict (source_id, checksum) do nothing", messageId, sourceId, checksum, file.getFileName().toString(), target.toString());
+                if (accepted == 1) {
+                    createJobs(document, configVersion, sourceId, messageId, firstMatchOnly(document, sourceId));
+                    jdbc.update("update community.message_record set status='NO_MATCH' where id=? and not exists (select 1 from community.execution_job where message_id=?)", messageId, messageId);
+                }
+                if (lost.get() || !renewSourceLease(sourceId)) throw new IllegalStateException("Source lease expired during registration");
+            });
         } catch (StorageFailure error) {
             log.error("Original storage failure: reason={} storageRoot={}; ingestion stopped", error.reason, storageRoot, error);
             throw error;
-        } catch (Exception error) { throw new IllegalStateException("File registration failed: " + file, error); }
-    }
-
-    static void storeOriginal(Path file, Path target, String checksum) throws Exception {
-        try {
-            Files.createDirectories(target.getParent());
-            if (!Files.exists(target)) {
-                Path temporary = Files.createTempFile(target.getParent(), ".ingest-", ".part");
-                try {
-                    Files.copy(file, temporary, StandardCopyOption.REPLACE_EXISTING);
-                    if (!checksum.equals(sha256(temporary))) throw new IllegalStateException("Source changed during ingestion");
-                    try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE); }
-                    catch (java.nio.file.AtomicMoveNotSupportedException unsupported) { Files.move(temporary, target); }
-                    catch (java.nio.file.FileAlreadyExistsException concurrent) { /* Another source stored the same content. */ }
-                } catch (Exception error) {
-                    try { Files.deleteIfExists(temporary); } catch (IOException cleanup) { error.addSuppressed(cleanup); }
-                    throw error;
-                }
-                Files.deleteIfExists(temporary);
-            }
-            if (!checksum.equals(sha256(target))) throw new IllegalStateException("Stored content checksum mismatch");
         } catch (IOException error) {
             throw new StorageFailure(storageReason(error), error);
+        } catch (Exception error) { throw new IllegalStateException("File registration failed: " + file, error); }
+        finally {
+            boolean removed = temporary == null;
+            if (temporary != null) try { Files.deleteIfExists(temporary); removed = true; }
+            catch (IOException error) { log.warn("Cannot remove ingest temporary file {}", temporary, error); }
+            if (stagingRegistered && removed) try { jdbc.update("delete from community.ingest_staging where id=? and owner_id=?", stagingId, workerId); }
+            catch (Exception error) { log.warn("Cannot clear ingest staging record {}", stagingId, error); }
         }
     }
 

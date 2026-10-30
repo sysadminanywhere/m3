@@ -23,6 +23,19 @@ import static org.junit.jupiter.api.Assertions.*;
 @ExtendWith(DisposablePostgres.class)
 @EnabledIfEnvironmentVariable(named="M3_TEST_POSTGRES_URL", matches=".+")
 class RetentionPostgresTest {
+    @Test void cleansOnlyTrackedOldStagingWithoutAnActiveOwner(@TempDir Path storage, DriverManagerDataSource ds) throws Exception {
+        var jdbc=new JdbcTemplate(ds); var tx=new TransactionTemplate(new DataSourceTransactionManager(ds));
+        var staging=Files.createDirectory(storage.resolve(".m3-ingest-tmp"));
+        UUID stale=UUID.randomUUID(), active=UUID.randomUUID(), untracked=UUID.randomUUID();
+        for (UUID id : new UUID[]{stale,active,untracked}) Files.writeString(staging.resolve(id + ".part"), "content");
+        jdbc.update("insert into community.source_lease(source_id,owner_id,lease_until) values ('old','owner-old',now()-interval '1 hour'),('live','owner-live',now()+interval '1 hour')");
+        jdbc.update("insert into community.ingest_staging(id,source_id,owner_id,created_at) values (?,'old','owner-old',now()-interval '8 days'),(?,'live','owner-live',now()-interval '8 days')",stale,active);
+        tx.executeWithoutResult(s -> new OrphanCleanupScheduler(jdbc,storage.toString(),168).cleanup());
+        assertFalse(Files.exists(staging.resolve(stale + ".part")));
+        assertTrue(Files.exists(staging.resolve(active + ".part")));
+        assertTrue(Files.exists(staging.resolve(untracked + ".part")));
+        assertEquals(1,jdbc.queryForObject("select count(*) from community.ingest_staging",Integer.class));
+    }
     @Test void protectsActiveAndRetainedMessagesAndAuditsDeletion(@TempDir Path storage, DriverManagerDataSource ds) throws Exception {
         var jdbc = new JdbcTemplate(ds); var tx = new TransactionTemplate(new DataSourceTransactionManager(ds));
         var controller = new OperationsController(jdbc); var message = UUID.randomUUID(); var job = UUID.randomUUID();
@@ -100,6 +113,7 @@ class RetentionPostgresTest {
     @Test void reprocessAndDeletionSerialize(DriverManagerDataSource ds) throws Exception {
         var jdbc = new JdbcTemplate(ds); var tx = new TransactionTemplate(new DataSourceTransactionManager(ds));
         var controller = new OperationsController(jdbc); UUID message = UUID.randomUUID();
+        jdbc.update("insert into community.config_bundle(version,document_json) values (1,cast(? as jsonb))", "{\"sources\":[{\"id\":\"reprocess\"}],\"rules\":[{\"id\":\"r\",\"sourceIds\":[\"reprocess\"],\"recipientId\":\"out\"}]}");
         jdbc.update("insert into community.message_record(id,source_id,checksum,original_name,storage_key,status) values (?,'reprocess',?,'file','key','RECEIVED')", message, UUID.randomUUID().toString());
         jdbc.update("insert into community.execution_job(id,message_id,rule_id,rule_version,status) values (?,?,'r',1,'DELIVERED')", UUID.randomUUID(), message);
         var locked = new CountDownLatch(1); var release = new CountDownLatch(1);

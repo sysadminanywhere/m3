@@ -4,6 +4,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.MediaType;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -31,6 +36,18 @@ public class OperationsController {
     @GetMapping("/jobs/{id}/history") public List<JobEvent> history(@PathVariable UUID id) {
         return jdbc.query("select status,attempt,worker_id,error,occurred_at from community.job_event where job_id=? order by id", (rs,row) -> new JobEvent(rs.getString(1),rs.getInt(2),rs.getString(3),rs.getString(4),rs.getObject(5,OffsetDateTime.class)), id);
     }
+    @GetMapping("/jobs/search") public List<JobSummary> searchJobs(@RequestParam(required=false) String status,
+            @RequestParam(required=false) String group, @RequestParam(required=false) String source,
+            @RequestParam(defaultValue="100") int limit, @RequestParam(defaultValue="0") int offset) {
+        if (limit < 1 || limit > 500 || offset < 0) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid pagination");
+        StringBuilder sql = new StringBuilder("select j.id,j.message_id,j.rule_id,j.rule_version,j.execution_group,j.status,j.attempts,j.last_error,j.created_at,j.completed_at from community.execution_job j join community.message_record m on m.id=j.message_id where 1=1");
+        var parameters = new java.util.ArrayList<Object>();
+        if (status != null && !status.isBlank()) { sql.append(" and j.status=?"); parameters.add(status); }
+        if (group != null && !group.isBlank()) { sql.append(" and j.execution_group=?"); parameters.add(group); }
+        if (source != null && !source.isBlank()) { sql.append(" and m.source_id=?"); parameters.add(source); }
+        sql.append(" order by j.created_at desc,j.id desc limit ? offset ?"); parameters.add(limit); parameters.add(offset);
+        return jdbc.query(sql.toString(), (rs,row) -> new JobSummary(UUID.fromString(rs.getString(1)),UUID.fromString(rs.getString(2)),rs.getString(3),rs.getInt(4),rs.getString(5),rs.getString(6),rs.getInt(7),rs.getString(8),rs.getObject(9,OffsetDateTime.class),rs.getObject(10,OffsetDateTime.class)), parameters.toArray());
+    }
     @GetMapping("/metrics/summary") public Map<String,Object> summary() {
         Integer messages=jdbc.queryForObject("select count(*) from community.message_record",Integer.class);
         Map<String,Integer> jobs=new java.util.LinkedHashMap<>();
@@ -44,11 +61,29 @@ public class OperationsController {
     }
     @Transactional
     @PostMapping("/messages/{id}/reprocess") public ResponseEntity<?> reprocess(@PathVariable UUID id) {
-        if (jdbc.query("select id from community.message_record where id=? for update", (rs,row) -> rs.getObject(1), id).isEmpty()) return ResponseEntity.notFound().build();
-        List<RuleVersion> rules = jdbc.query("select distinct rule_id, rule_version, execution_group from community.execution_job where message_id=?", (rs,row) -> new RuleVersion(rs.getString(1), rs.getInt(2), rs.getString(3)), id);
-        if (rules.isEmpty()) return ResponseEntity.notFound().build();
-        for (RuleVersion rule : rules) jdbc.update("insert into community.execution_job(id,message_id,rule_id,rule_version,execution_group,status) values (?,?,?,?,?, 'READY')", UUID.randomUUID(), id, rule.id(), rule.version(), rule.group());
-        return ResponseEntity.accepted().body(Map.of("messageId", id, "createdJobs", rules.size(), "notice", "Reprocessing creates new delivery jobs and can create duplicates."));
+        var records = jdbc.query("select source_id,original_name from community.message_record where id=? for update", (rs,row) -> new ReprocessMessage(rs.getString(1),rs.getString(2)), id);
+        if (records.isEmpty()) return ResponseEntity.notFound().build();
+        var configurations = jdbc.query("select version,document_json::text from community.config_bundle order by version desc limit 1", (rs,row) -> new Configuration(rs.getInt(1),rs.getString(2)));
+        if (configurations.isEmpty()) return ResponseEntity.status(409).body(Map.of("error", "no_published_configuration"));
+        Configuration config = configurations.get(0); ReprocessMessage message = records.get(0);
+        JsonNode document;
+        try { document = new ObjectMapper().readTree(config.json()); }
+        catch (java.io.IOException error) { throw new IllegalStateException("Stored configuration is invalid", error); }
+        JsonNode source = null;
+        for (JsonNode item : document.path("sources")) if (message.sourceId().equals(item.path("id").asText())) { source=item; break; }
+        if (source == null) return ResponseEntity.status(409).body(Map.of("error", "source_not_in_current_configuration"));
+        boolean first = "FIRST_MATCHING".equals(source.path("ruleSelection").asText());
+        int created = 0;
+        for (JsonNode rule : document.path("rules")) {
+            boolean referenced = false; for (JsonNode candidate : rule.path("sourceIds")) if (message.sourceId().equals(candidate.asText())) referenced = true;
+            String condition = rule.path("condition").path("fileNameEquals").asText();
+            if (!referenced || !rule.path("enabled").asBoolean(true) || (!condition.isBlank() && !condition.equals(message.originalName()))) continue;
+            String group = rule.path("executionGroup").asText("default"); if (group.isBlank()) group="default";
+            jdbc.update("insert into community.execution_job(id,message_id,rule_id,rule_version,execution_group,status) values (?,?,?,?,?, 'READY')", UUID.randomUUID(), id, rule.path("id").asText(), config.version(), group);
+            created++; if (first) break;
+        }
+        if (created == 0) return ResponseEntity.status(409).body(Map.of("error", "no_matching_current_rules"));
+        return ResponseEntity.accepted().body(Map.of("messageId", id, "createdJobs", created, "configurationVersion",config.version(), "notice", "Reprocessing uses the current configuration and may create duplicate deliveries."));
     }
     @Transactional
     @PutMapping("/messages/{id}/retention") public ResponseEntity<?> retention(@PathVariable UUID id, @RequestBody RetentionRequest request) {
@@ -86,12 +121,22 @@ public class OperationsController {
         try { String actual=sha256(Path.of(record.storageKey())); return ResponseEntity.ok(Map.of("id",id,"valid",record.checksum().equals(actual),"checksum",record.checksum())); }
         catch (Exception e) { return ResponseEntity.status(503).body(Map.of("id",id,"valid",false,"error","original_unavailable")); }
     }
+    @GetMapping("/messages/{id}/original") public ResponseEntity<Resource> original(@PathVariable UUID id) {
+        var records = jdbc.query("select checksum,storage_key from community.message_record where id=?", (rs,row)->new MessageStorage(rs.getString(1),rs.getString(2)), id);
+        if (records.isEmpty()) return ResponseEntity.notFound().build();
+        Path path = Path.of(records.get(0).storageKey());
+        if (!Files.isRegularFile(path) || !Files.isReadable(path)) return ResponseEntity.status(503).build();
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header("Content-Disposition", "attachment; filename=\"" + id + ".bin\"")
+                .body(new FileSystemResource(path));
+    }
     public record MessageSummary(UUID id, String sourceId, String checksum, String originalName, String status, OffsetDateTime receivedAt, OffsetDateTime retainUntil) {}
     public record JobSummary(UUID id, UUID messageId, String ruleId, int ruleVersion, String executionGroup, String status, int attempts, String lastError, OffsetDateTime createdAt, OffsetDateTime completedAt) {}
     public record JobEvent(String status, int attempt, String workerId, String error, OffsetDateTime occurredAt) {}
     public record RetentionRequest(OffsetDateTime retainUntil) {}
     private record RetentionState(String sourceId, String checksum, boolean retained) {}
-    private record RuleVersion(String id, int version, String group) {}
+    private record ReprocessMessage(String sourceId, String originalName) {}
+    private record Configuration(int version, String json) {}
     private record MessageStorage(String checksum,String storageKey) {}
     private static String sha256(Path file) throws Exception { MessageDigest digest=MessageDigest.getInstance("SHA-256"); try (var input=Files.newInputStream(file)) { input.transferTo(new java.security.DigestOutputStream(java.io.OutputStream.nullOutputStream(),digest)); } return HexFormat.of().formatHex(digest.digest()); }
 }

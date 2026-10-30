@@ -8,6 +8,15 @@ paths:
   /api/v2/configuration/schema: {get: {responses: {'200': {description: Supported configuration format}}}}
   /api/v2/configuration/version: {get: {responses: {'200': {description: Current published version}}}}
   /api/v2/jobs: {get: {responses: {'200': {description: Recent jobs and delivery state; each item includes executionGroup}}}}
+  /api/v2/jobs/search:
+    get:
+      parameters:
+        - {name: status, in: query, schema: {type: string}}
+        - {name: group, in: query, schema: {type: string}}
+        - {name: source, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses: {'200': {description: Filtered page of jobs}, '400': {description: Invalid pagination}}
   /api/v2/messages: {get: {responses: {'200': {description: Recent immutable original messages}}}}
   /api/v2/metrics/summary: {get: {responses: {'200': {description: Local operational summary}}}}
   /api/v2/topology: {get: {responses: {'200': {description: Source and execution group identifiers from the published configuration}}}}
@@ -15,10 +24,17 @@ paths:
     get:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       responses: {'200': {description: Original checksum verification}, '503': {description: Original content unavailable}}
+  /api/v2/messages/{id}/original:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Immutable original bytes, content: {application/octet-stream: {schema: {type: string, format: binary}}}}
+        '404': {description: Message not found}
+        '503': {description: Original content unavailable}
   /api/v2/messages/{id}/reprocess:
     post:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
-      responses: {'202': {description: New jobs queued; a duplicate is possible}, '404': {description: No prior rule version found}}
+      responses: {'202': {description: New jobs queued using the current published configuration; a duplicate is possible}, '404': {description: Message not found}, '409': {description: No current configuration, source, or matching rule}}
   /api/v2/messages/{id}/retention:
     put:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]

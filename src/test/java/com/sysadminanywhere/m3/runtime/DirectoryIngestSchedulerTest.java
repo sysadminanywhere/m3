@@ -46,15 +46,16 @@ class DirectoryIngestSchedulerTest {
         Path blockedRoot = dir.resolve("not-a-directory");
         Files.writeString(blockedRoot, "blocked");
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.update(startsWith("insert into community.ingest_staging"), any(), any(), any())).thenReturn(1);
         var scheduler = new DirectoryIngestScheduler(jdbc, new ObjectMapper(), blockedRoot.toString(), 0, "test");
-        Method register = DirectoryIngestScheduler.class.getDeclaredMethod("register", com.fasterxml.jackson.databind.JsonNode.class, int.class, String.class, Path.class);
+        Method register = DirectoryIngestScheduler.class.getDeclaredMethod("register", com.fasterxml.jackson.databind.JsonNode.class, int.class, String.class, Path.class, java.util.concurrent.atomic.AtomicBoolean.class);
         register.setAccessible(true);
 
         var failure = assertThrows(InvocationTargetException.class,
-                () -> register.invoke(scheduler, new ObjectMapper().readTree("{}"), 1, "source", input));
+                () -> register.invoke(scheduler, new ObjectMapper().readTree("{}"), 1, "source", input, new java.util.concurrent.atomic.AtomicBoolean()));
         var storage = assertInstanceOf(DirectoryIngestScheduler.StorageFailure.class, failure.getCause());
         assertEquals("storage_unavailable", storage.reason);
-        verifyNoInteractions(jdbc);
+        verify(jdbc, never()).update(startsWith("insert into community.message_record"), any(), any(), any(), any(), any());
         assertEquals("original", Files.readString(input));
     }
 
@@ -64,15 +65,120 @@ class DirectoryIngestSchedulerTest {
         assertEquals("storage_unavailable", DirectoryIngestScheduler.storageReason(new FileSystemException("file", null, "Permission denied")));
     }
 
-    @Test void storesExactOriginalAndCleansTemporaryFile(@TempDir Path dir) throws Exception {
-        Path input = dir.resolve("input");
-        byte[] bytes = {0, 1, 2, (byte) 255};
-        Files.write(input, bytes);
-        String checksum = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        Path target = dir.resolve("storage").resolve(checksum);
-        DirectoryIngestScheduler.storeOriginal(input, target, checksum);
-        assertArrayEquals(bytes, Files.readAllBytes(target));
-        try (var files = Files.list(target.getParent())) { assertEquals(1, files.count()); }
+    @Test
+    @ExtendWith(DisposablePostgres.class)
+    @EnabledIfEnvironmentVariable(named = "M3_TEST_POSTGRES_URL", matches = ".+")
+    void copyAndHeartbeatRunOutsideLockAndLostOwnerCannotPublish(@TempDir Path dir, DriverManagerDataSource ds) throws Exception {
+        Path input = Files.createDirectory(dir.resolve("input"));
+        Path original = input.resolve("user.txt");
+        Files.writeString(original, "user content");
+        Path root = dir.resolve("store");
+        var jdbc = new JdbcTemplate(ds);
+        var mapper = new ObjectMapper();
+        var doc = mapper.createObjectNode();
+        doc.putArray("connections").addObject().put("id", "c").put("type", "directory").putObject("settings").put("path", input.toString());
+        doc.putArray("sources").addObject().put("id", "s").put("connectionId", "c");
+        doc.putArray("rules").addObject().put("id", "r").putArray("sourceIds").add("s");
+        jdbc.update("insert into community.config_bundle(version,document_json) values (1,cast(? as jsonb))", doc.toString());
+        var first = new DirectoryIngestScheduler(jdbc, mapper, root.toString(), 0, "first");
+        first.poll();
+        var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (var connection = ds.getConnection()) {
+            connection.setAutoCommit(false);
+            try (var stmt = connection.createStatement()) { stmt.execute("select pg_advisory_xact_lock(8273643)"); }
+            var future = pool.submit(first::poll);
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+            Path tempDir = root.resolve(".m3-ingest-tmp");
+            while ((!Files.isDirectory(tempDir) || isEmpty(tempDir)) && System.nanoTime() < deadline) Thread.sleep(50);
+            assertTrue(Files.isDirectory(tempDir) && !isEmpty(tempDir), "copy should finish while lock is held");
+            var before = jdbc.queryForObject("select updated_at from community.source_lease where source_id='s'", java.time.OffsetDateTime.class);
+            while (jdbc.queryForObject("select updated_at from community.source_lease where source_id='s'", java.time.OffsetDateTime.class).equals(before) && System.nanoTime() < deadline) Thread.sleep(100);
+            assertNotEquals(before, jdbc.queryForObject("select updated_at from community.source_lease where source_id='s'", java.time.OffsetDateTime.class), "heartbeat commits while publication waits");
+            jdbc.update("update community.source_lease set owner_id='successor', lease_until=clock_timestamp()+interval '60 seconds' where source_id='s'");
+            connection.commit();
+            future.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(0, jdbc.queryForObject("select count(*) from community.message_record", Integer.class));
+            assertEquals(0, jdbc.queryForObject("select count(*) from community.execution_job", Integer.class));
+            assertEquals("user content", Files.readString(original));
+            assertTrue(isEmpty(tempDir));
+            jdbc.update("update community.source_lease set lease_until=clock_timestamp()-interval '1 second' where source_id='s'");
+            var successor = new DirectoryIngestScheduler(jdbc, mapper, root.toString(), 0, "successor");
+            successor.poll(); successor.poll();
+            assertEquals(1, jdbc.queryForObject("select count(*) from community.message_record", Integer.class));
+            assertEquals(1, jdbc.queryForObject("select count(*) from community.execution_job", Integer.class));
+            assertEquals("user content", Files.readString(Path.of(jdbc.queryForObject("select storage_key from community.message_record", String.class))));
+        } finally { pool.shutdownNow(); }
+    }
+
+    @Test
+    @ExtendWith(DisposablePostgres.class)
+    @EnabledIfEnvironmentVariable(named = "M3_TEST_POSTGRES_URL", matches = ".+")
+    void failedRegistrationRollsBackAndCanRecover(@TempDir Path dir, DriverManagerDataSource ds) throws Exception {
+        Path input = Files.createDirectory(dir.resolve("input"));
+        Files.writeString(input.resolve("original"), "content");
+        Path root = dir.resolve("store");
+        var control = new JdbcTemplate(ds);
+        var jdbc = new JdbcTemplate(ds) {
+            @Override public int update(String sql, Object... args) {
+                if (sql.startsWith("insert into community.execution_job")) throw new IllegalStateException("simulated process failure");
+                return super.update(sql, args);
+            }
+        };
+        var mapper = new ObjectMapper();
+        var doc = mapper.createObjectNode();
+        doc.putArray("connections").addObject().put("id", "c").put("type", "directory").putObject("settings").put("path", input.toString());
+        doc.putArray("sources").addObject().put("id", "s").put("connectionId", "c");
+        doc.putArray("rules").addObject().put("id", "r").putArray("sourceIds").add("s");
+        control.update("insert into community.config_bundle(version,document_json) values (1,cast(? as jsonb))", doc.toString());
+        var failing = new DirectoryIngestScheduler(jdbc, mapper, root.toString(), 0, "failing");
+        failing.poll();
+        assertThrows(IllegalStateException.class, failing::poll);
+        assertEquals(0, control.queryForObject("select count(*) from community.message_record", Integer.class));
+        assertEquals(0, control.queryForObject("select count(*) from community.execution_job", Integer.class));
+        assertEquals("content", Files.readString(input.resolve("original")));
+        var cleanup = new OrphanCleanupScheduler(control, root.toString(), 168);
+        new TransactionTemplate(new DataSourceTransactionManager(ds)).executeWithoutResult(status -> cleanup.cleanup());
+        assertEquals(1, control.queryForObject("select count(*) from community.orphan_candidate", Integer.class));
+        control.update("update community.source_lease set lease_until=clock_timestamp()-interval '1 second'");
+        var retry = new DirectoryIngestScheduler(control, mapper, root.toString(), 0, "retry");
+        retry.poll(); retry.poll();
+        assertEquals(1, control.queryForObject("select count(*) from community.message_record", Integer.class));
+        assertEquals(1, control.queryForObject("select count(*) from community.execution_job", Integer.class));
+        assertEquals("content", Files.readString(Path.of(control.queryForObject("select storage_key from community.message_record", String.class))));
+    }
+
+    private static boolean isEmpty(Path dir) throws IOException {
+        try (var files = Files.list(dir)) { return files.findAny().isEmpty(); }
+    }
+
+    @Test
+    @ExtendWith(DisposablePostgres.class)
+    @EnabledIfEnvironmentVariable(named = "M3_TEST_POSTGRES_URL", matches = ".+")
+    void configChangeDuringCopyUsesNewVersionAndGroup(@TempDir Path dir, DriverManagerDataSource ds) throws Exception {
+        Path input=Files.createDirectory(dir.resolve("input")); Files.writeString(input.resolve("file"), "content");
+        Path root=dir.resolve("store"); var jdbc=new JdbcTemplate(ds); var mapper=new ObjectMapper();
+        var document=mapper.createObjectNode();
+        document.putArray("connections").addObject().put("id","c").put("type","directory").putObject("settings").put("path",input.toString());
+        document.putArray("sources").addObject().put("id","s").put("connectionId","c");
+        document.putArray("rules").addObject().put("id","r").put("executionGroup","old").putArray("sourceIds").add("s");
+        jdbc.update("insert into community.config_bundle(version,document_json) values (1,cast(? as jsonb))",document.toString());
+        var scheduler=new DirectoryIngestScheduler(jdbc,mapper,root.toString(),0,"test"); scheduler.poll();
+        var pool=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (var connection=ds.getConnection()) {
+            connection.setAutoCommit(false);
+            try (var stmt=connection.createStatement()) { stmt.execute("select pg_advisory_xact_lock(8273643)"); }
+            var future=pool.submit(scheduler::poll);
+            Path temp=root.resolve(".m3-ingest-tmp"); long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            while ((!Files.isDirectory(temp) || isEmpty(temp)) && System.nanoTime()<deadline) Thread.sleep(50);
+            assertTrue(Files.isDirectory(temp) && !isEmpty(temp));
+            ((com.fasterxml.jackson.databind.node.ObjectNode)document.path("rules").get(0)).put("executionGroup","new");
+            jdbc.update("insert into community.config_bundle(version,document_json) values (2,cast(? as jsonb))",document.toString());
+            connection.commit(); future.get(10,java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(0,jdbc.queryForObject("select count(*) from community.message_record",Integer.class));
+            scheduler.poll();
+            assertEquals("new",jdbc.queryForObject("select execution_group from community.execution_job",String.class));
+            assertEquals(2,jdbc.queryForObject("select rule_version from community.execution_job",Integer.class));
+        } finally { pool.shutdownNow(); }
     }
 
     @Test
@@ -104,7 +210,7 @@ class DirectoryIngestSchedulerTest {
             jdbc.update("insert into community.config_bundle(version,document_json) values (1,cast(? as jsonb))", document.toString());
             var scheduler = new DirectoryIngestScheduler(jdbc, mapper, root.toString(), 0, "test");
             var tx = new TransactionTemplate(new DataSourceTransactionManager(ds));
-            tx.executeWithoutResult(status -> scheduler.poll()); // Observe the source file.
+            scheduler.poll(); // Observe the source file.
 
             try (var output = Files.newOutputStream(filler)) {
                 byte[] block = new byte[8192];
@@ -113,7 +219,7 @@ class DirectoryIngestSchedulerTest {
                 });
                 assertEquals("storage_full", DirectoryIngestScheduler.storageReason(full));
             }
-            Exception failure = assertThrows(Exception.class, () -> tx.executeWithoutResult(status -> scheduler.poll()));
+            Exception failure = assertThrows(Exception.class, () -> scheduler.poll());
             Throwable cause = failure;
             while (cause != null && !(cause instanceof DirectoryIngestScheduler.StorageFailure)) cause = cause.getCause();
             assertNotNull(cause, "Expected the actual storage failure");
@@ -124,11 +230,11 @@ class DirectoryIngestSchedulerTest {
             try (var files = Files.list(target.getParent())) { assertEquals(0, files.count()); }
 
             Files.delete(filler);
-            tx.executeWithoutResult(status -> scheduler.poll());
+            scheduler.poll();
             assertArrayEquals(content, Files.readAllBytes(target));
             assertEquals(1, jdbc.queryForObject("select count(*) from community.message_record", Integer.class));
             assertEquals(1, jdbc.queryForObject("select count(*) from community.execution_job", Integer.class));
-            tx.executeWithoutResult(status -> scheduler.poll());
+            scheduler.poll();
             assertEquals(1, jdbc.queryForObject("select count(*) from community.message_record", Integer.class));
             assertEquals(1, jdbc.queryForObject("select count(*) from community.execution_job", Integer.class));
         } finally {

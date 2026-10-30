@@ -27,11 +27,31 @@ public class OrphanCleanupScheduler {
     public void cleanup() {
         jdbc.execute("select pg_advisory_xact_lock(8273643)");
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) return;
+        cleanStaging();
         try (var directories = Files.list(root)) {
             directories.filter(p -> p.getFileName().toString().matches("[0-9a-f]{2}") && Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS))
                     .forEach(this::cleanDirectory);
         } catch (java.io.IOException error) { log.warn("Cannot scan orphan storage", error); }
     }
+    private void cleanStaging() {
+        Path stagingRoot = root.resolve(".m3-ingest-tmp");
+        if (!Files.isDirectory(stagingRoot, LinkOption.NOFOLLOW_LINKS)) return;
+        var old = jdbc.query("select id,source_id,owner_id from community.ingest_staging where created_at < now() - (? * interval '1 hour')", (rs,row) -> new Staging(java.util.UUID.fromString(rs.getString(1)),rs.getString(2),rs.getString(3)), retentionHours);
+        for (Staging item : old) {
+            var leases = jdbc.query("select owner_id,lease_until > clock_timestamp() from community.source_lease where source_id=? for update", (rs,row)->new Lease(rs.getString(1),rs.getBoolean(2)), item.sourceId());
+            if (!leases.isEmpty() && leases.get(0).active() && item.ownerId().equals(leases.get(0).owner())) continue;
+            Path file = stagingRoot.resolve(item.id() + ".part");
+            try {
+                if (Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+                    if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) continue;
+                    Files.delete(file);
+                }
+                jdbc.update("delete from community.ingest_staging where id=?", item.id());
+            } catch (java.io.IOException error) { log.warn("Cannot remove stale ingest staging file {}", file, error); }
+        }
+    }
+    private record Staging(java.util.UUID id, String sourceId, String ownerId) {}
+    private record Lease(String owner, boolean active) {}
     private void cleanDirectory(Path directory) {
         try (var files = Files.list(directory)) {
             files.filter(p -> Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)).forEach(file -> {

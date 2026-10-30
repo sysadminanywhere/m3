@@ -94,6 +94,7 @@ public class ConfigurationController {
             Set<String> connections = identifiers(d.path("connections"), "connections", errors);
             Set<String> sources = identifiers(d.path("sources"), "sources", errors);
             Set<String> recipients = identifiers(d.path("recipients"), "recipients", errors);
+            identifiers(d.path("rules"), "rules", errors);
             for (String kind : List.of("connections", "recipients")) {
                 JsonNode items = d.path(kind);
                 for (int i = 0; i < items.size(); i++) {

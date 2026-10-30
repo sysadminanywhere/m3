@@ -17,6 +17,8 @@ services:
       M3_SECRET_KEY: ${M3_SECRET_KEY:-}
       M3_SECRET_KEY_FILE: ${M3_SECRET_KEY_FILE:-}
       M3_API_TOKEN: ${M3_API_TOKEN:-}
+      M3_BOOTSTRAP_ENABLED: ${M3_BOOTSTRAP_ENABLED:-false}
+      M3_BOOTSTRAP_FILE: ${M3_BOOTSTRAP_FILE:-}
     ports: ["8080:8080"]
     volumes:
       - community-data:/data
