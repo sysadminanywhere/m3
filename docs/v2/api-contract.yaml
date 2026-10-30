@@ -10,6 +10,7 @@ paths:
   /api/v2/jobs: {get: {responses: {'200': {description: Recent jobs and delivery state; each item includes executionGroup}}}}
   /api/v2/messages: {get: {responses: {'200': {description: Recent immutable original messages}}}}
   /api/v2/metrics/summary: {get: {responses: {'200': {description: Local operational summary}}}}
+  /api/v2/topology: {get: {responses: {'200': {description: Source and execution group identifiers from the published configuration}}}}
   /api/v2/messages/{id}/integrity:
     get:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
@@ -18,6 +19,22 @@ paths:
     post:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
       responses: {'202': {description: New jobs queued; a duplicate is possible}, '404': {description: No prior rule version found}}
+  /api/v2/messages/{id}/retention:
+    put:
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retainUntil: {type: string, format: date-time, nullable: true}
+      responses: {'204': {description: Retention updated}, '404': {description: Message not found}}
+  /api/v2/messages/{id}:
+    delete:
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'202': {description: Metadata removed and content scheduled for delayed cleanup}, '404': {description: Message not found}, '409': {description: Retention or active jobs prevent deletion}}
   /api/v2/jobs/{id}/retry:
     post:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
@@ -38,6 +55,10 @@ paths:
     post:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PublishRequest'}}}}
       responses: {'200': {description: Published}, '400': {description: Invalid}, '409': {description: Version conflict}}
+  /api/v2/jobs/{id}/history:
+    get:
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {'200': {description: Recorded job state transitions and attempts}}
 components:
   schemas:
     Configuration:
@@ -49,6 +70,14 @@ components:
         sources: {type: array, items: {type: object}}
         recipients: {type: array, items: {type: object}}
         rules: {type: array, items: {$ref: '#/components/schemas/Rule'}}
+        delete:
+          type: object
+          description: Explicit identifiers to remove; references are validated against the resulting configuration.
+          properties:
+            connections: {type: array, items: {type: string}}
+            sources: {type: array, items: {type: string}}
+            recipients: {type: array, items: {type: string}}
+            rules: {type: array, items: {type: string}}
     Rule:
       type: object
       required: [id, sourceIds, recipientId]
@@ -57,6 +86,8 @@ components:
         sourceIds: {type: array, items: {type: string}}
         recipientId: {type: string}
         executionGroup: {type: string, default: default}
+        processingMode: {type: string, enum: [PARALLEL, SEQUENTIAL], default: PARALLEL}
+        onError: {type: string, enum: [STOP, CONTINUE], default: STOP}
         enabled: {type: boolean, default: true}
         condition:
           type: object
@@ -64,7 +95,7 @@ components:
             fileNameEquals: {type: string}
     PublishRequest:
       type: object
-      required: [document]
+      required: [document, expectedVersion]
       properties:
         document: {$ref: '#/components/schemas/Configuration'}
         expectedVersion: {type: integer, minimum: 0}

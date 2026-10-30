@@ -2,24 +2,30 @@ package com.sysadminanywhere.m3.runtime;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class DirectoryIngestScheduler {
+    private static final Logger log = LoggerFactory.getLogger(DirectoryIngestScheduler.class);
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
     private final Path storageRoot;
@@ -39,9 +45,10 @@ public class DirectoryIngestScheduler {
     @Scheduled(fixedDelayString = "${m3.ingest.fixed-delay-ms:5000}")
     @Transactional
     public void poll() {
+        jdbc.execute("select pg_advisory_xact_lock(8273643)");
         jdbc.query("select version, document_json from community.config_bundle order by version desc limit 1", rs -> {
             try { ingestConfiguredDirectories(mapper.readTree(rs.getString(2)), rs.getInt(1)); }
-            catch (Exception ignored) { /* configuration validation reports errors; one bad source must not stop peers */ }
+            catch (Exception error) { throw new IllegalStateException("Directory ingestion failed", error); }
         });
     }
 
@@ -78,8 +85,9 @@ public class DirectoryIngestScheduler {
         try {
             var attributes = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
             long now = System.currentTimeMillis();
+            FileObservation previous = observations.get(file);
             FileObservation current = new FileObservation(attributes.size(), attributes.lastModifiedTime().toMillis(), now);
-            FileObservation previous = observations.put(file, current);
+            if (previous == null || previous.size() != current.size() || previous.modifiedAt() != current.modifiedAt()) observations.put(file, current);
             return isStableObservation(previous, current, now, stabilityWindowMs);
         } catch (Exception ignored) {
             observations.remove(file);
@@ -91,12 +99,57 @@ public class DirectoryIngestScheduler {
         try {
             String checksum = sha256(file);
             Path target = storageRoot.resolve(checksum.substring(0, 2)).resolve(checksum);
-            Files.createDirectories(target.getParent());
-            if (!Files.exists(target)) Files.copy(file, target, StandardCopyOption.COPY_ATTRIBUTES);
+            storeOriginal(file, target, checksum);
             UUID messageId = UUID.randomUUID();
             int accepted = jdbc.update("insert into community.message_record(id, source_id, checksum, original_name, storage_key, status) values (?, ?, ?, ?, ?, 'RECEIVED') on conflict (source_id, checksum) do nothing", messageId, sourceId, checksum, file.getFileName().toString(), target.toString());
-            if (accepted == 1) createJobs(document, configVersion, sourceId, messageId, firstMatchOnly(document, sourceId));
-        } catch (Exception ignored) { }
+            if (accepted == 1) {
+                createJobs(document, configVersion, sourceId, messageId, firstMatchOnly(document, sourceId));
+                jdbc.update("update community.message_record set status='NO_MATCH' where id=? and not exists (select 1 from community.execution_job where message_id=?)", messageId, messageId);
+            }
+        } catch (StorageFailure error) {
+            log.error("Original storage failure: reason={} storageRoot={}; ingestion stopped", error.reason, storageRoot, error);
+            throw error;
+        } catch (Exception error) { throw new IllegalStateException("File registration failed: " + file, error); }
+    }
+
+    static void storeOriginal(Path file, Path target, String checksum) throws Exception {
+        try {
+            Files.createDirectories(target.getParent());
+            if (!Files.exists(target)) {
+                Path temporary = Files.createTempFile(target.getParent(), ".ingest-", ".part");
+                try {
+                    Files.copy(file, temporary, StandardCopyOption.REPLACE_EXISTING);
+                    if (!checksum.equals(sha256(temporary))) throw new IllegalStateException("Source changed during ingestion");
+                    try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE); }
+                    catch (java.nio.file.AtomicMoveNotSupportedException unsupported) { Files.move(temporary, target); }
+                    catch (java.nio.file.FileAlreadyExistsException concurrent) { /* Another source stored the same content. */ }
+                } catch (Exception error) {
+                    try { Files.deleteIfExists(temporary); } catch (IOException cleanup) { error.addSuppressed(cleanup); }
+                    throw error;
+                }
+                Files.deleteIfExists(temporary);
+            }
+            if (!checksum.equals(sha256(target))) throw new IllegalStateException("Stored content checksum mismatch");
+        } catch (IOException error) {
+            throw new StorageFailure(storageReason(error), error);
+        }
+    }
+
+    static String storageReason(IOException error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            String detail = cause instanceof FileSystemException fs ? fs.getReason() : cause.getMessage();
+            if (detail != null) {
+                String normalized = detail.toLowerCase(Locale.ROOT);
+                if (normalized.contains("no space left") || normalized.contains("disk full")
+                        || normalized.contains("not enough space") || normalized.contains("quota exceeded")) return "storage_full";
+            }
+        }
+        return "storage_unavailable";
+    }
+
+    static final class StorageFailure extends IllegalStateException {
+        final String reason;
+        StorageFailure(String reason, IOException cause) { super("Original storage failure: " + reason, cause); this.reason = reason; }
     }
 
     private void createJobs(JsonNode document, int configVersion, String sourceId, UUID messageId, boolean firstMatchOnly) {

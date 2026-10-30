@@ -21,6 +21,9 @@ import static org.mockito.Mockito.when;
 class OperationsControllerTest {
     @Autowired MockMvc mvc; @MockBean JdbcTemplate jdbc;
     @Test void exposesJobsRoute() throws Exception { mvc.perform(get("/api/v2/jobs")).andExpect(status().isOk()); }
+    @Test void integrityOfMissingMessageReturnsNotFound() throws Exception {
+        mvc.perform(get("/api/v2/messages/" + UUID.randomUUID() + "/integrity")).andExpect(status().isNotFound());
+    }
 
     @Test void exposesExecutionGroupForOperationalRouting() throws Exception {
         when(jdbc.query(anyString(), any(RowMapper.class))).thenReturn(List.of(new OperationsController.JobSummary(

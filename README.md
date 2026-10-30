@@ -17,3 +17,5 @@ For more than one Community replica, `M3_STORAGE_ROOT` must refer to the same sh
 Set `M3_EXECUTION_GROUP` when running multiple logical execution groups. A worker only claims jobs assigned to its group; jobs already created retain their original group.
 
 Set `M3_API_TOKEN` in non-local installations. Community then requires the same `X-M3-Service-Token` on all non-health API calls; Enterprise sends it from `COMMUNITY_SERVICE_TOKEN`.
+
+PostgreSQL integration tests are opt-in via `M3_TEST_POSTGRES_URL`. Use an isolated test server with an `m3test`/`m3test` role granted `CREATEDB`: tests create and remove randomly named databases from `template0` without changing the database named in the URL. Abrupt termination may leave a test database behind. The full-storage test additionally requires an isolated small tmpfs through `M3_TEST_INGEST_TMPFS`; do not point it at a shared or production filesystem.

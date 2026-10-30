@@ -13,3 +13,5 @@ spring:
   main:
     lazy-initialization: true
 management.endpoints.web.exposure.include: health,info
+m3.bootstrap.enabled: ${M3_BOOTSTRAP_ENABLED:false}
+m3.bootstrap.file: ${M3_BOOTSTRAP_FILE:}
