@@ -59,6 +59,7 @@ public class DirectoryIngestScheduler {
     }
 
     private void ingestConfiguredDirectories(JsonNode document, int configVersion) throws Exception {
+        var observedFiles = new java.util.HashSet<Path>();
         for (JsonNode source : document.path("sources")) {
             String sourceId = source.path("id").asText("");
             if (sourceId.isBlank() || !acquireSourceLease(sourceId)) continue;
@@ -76,12 +77,13 @@ public class DirectoryIngestScheduler {
                 Path input = Path.of(connection.path("settings").path("path").asText());
                 if (!Files.isDirectory(input)) continue;
                 try (var files = Files.list(input)) {
-                    files.filter(Files::isRegularFile).filter(this::isStable)
+                    files.filter(Files::isRegularFile).peek(observedFiles::add).filter(this::isStable)
                             .forEach(file -> { if (!lost.get()) register(document, configVersion, sourceId, file, lost); });
                 }
             } finally { heartbeat.shutdownNow(); }
 
         }
+        observations.keySet().retainAll(observedFiles);
     }
 
     private boolean acquireSourceLease(String sourceId) {

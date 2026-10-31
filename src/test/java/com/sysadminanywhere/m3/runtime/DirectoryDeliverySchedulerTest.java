@@ -22,6 +22,13 @@ class DirectoryDeliverySchedulerTest {
         assertEquals(256, DirectoryDeliveryScheduler.retryDelaySeconds(8));
         assertEquals(300, DirectoryDeliveryScheduler.retryDelaySeconds(9));
         assertEquals(300, DirectoryDeliveryScheduler.retryDelaySeconds(100));
+        assertEquals(14, DirectoryDeliveryScheduler.retryDelaySeconds(1, 7, 50));
+        assertEquals(50, DirectoryDeliveryScheduler.retryDelaySeconds(5, 7, 50));
+        assertEquals(Long.MAX_VALUE, DirectoryDeliveryScheduler.retryDelaySeconds(100, Long.MAX_VALUE / 2, Long.MAX_VALUE));
+    }
+    @Test void rejectsInvalidRetrySettings() {
+        assertThrows(IllegalArgumentException.class, () -> new DirectoryDeliveryScheduler(null, null, null, "worker", "group", 0, 10));
+        assertThrows(IllegalArgumentException.class, () -> new DirectoryDeliveryScheduler(null, null, null, "worker", "group", 10, 5));
     }
     @Test void publishesOnlyAfterTheCompleteFileIsCopied() throws Exception {
         Path directory = Files.createTempDirectory("m3-delivery-test-");
@@ -45,6 +52,14 @@ class DirectoryDeliverySchedulerTest {
         assertFalse(Files.exists(target));
         try (var files = Files.list(directory)) { assertFalse(files.anyMatch(path -> path.getFileName().toString().contains(".part-"))); }
     }
+    @Test void corruptedCopyIsNotPublished() throws Exception {
+        Path directory = Files.createTempDirectory("m3-corrupt-delivery-");
+        Path source = Files.writeString(directory.resolve("source"), "corrupted");
+        Path target = directory.resolve("target");
+        assertThrows(java.io.IOException.class, () -> DirectoryDeliveryScheduler.copyAtomically(source, target, "0".repeat(64), () -> {}));
+        assertFalse(Files.exists(target));
+        try (var files = Files.list(directory)) { assertFalse(files.anyMatch(path -> path.getFileName().toString().contains(".part-"))); }
+    }
     @org.junit.jupiter.api.Test
     @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "M3_DISPOSABLE_POSTGRES", matches = "m3-fault-test-[a-z0-9]+")
     void postgresOutageAndLeaseExpiryAtDeliveryBoundaries(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
@@ -62,7 +77,7 @@ class DirectoryDeliverySchedulerTest {
             int version = control.queryForObject("select coalesce(max(version),0)+1 from community.config_bundle", Integer.class);
             control.update("insert into community.config_bundle(version,document_json) values (?,cast(? as jsonb))", version, config.toString());
             var message = java.util.UUID.randomUUID(); var job = java.util.UUID.randomUUID(); var group = java.util.UUID.randomUUID().toString();
-            control.update("insert into community.message_record(id,source_id,checksum,original_name,storage_key,status) values (?,'s',?,'file',?,'RECEIVED')", message, message.toString(), source.toString());
+            control.update("insert into community.message_record(id,source_id,checksum,original_name,storage_key,status) values (?, ?,?,'file',?,'RECEIVED')", message, message.toString(), DeliveryRetryPostgresTest.checksum(source), source.toString());
             control.update("insert into community.execution_job(id,message_id,rule_id,rule_version,execution_group,status) values (?,?,'r',?,?,'READY')", job, message, version, group);
             final int which = scenario;
             var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds) {

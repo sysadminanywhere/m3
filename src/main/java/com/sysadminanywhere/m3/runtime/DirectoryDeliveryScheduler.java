@@ -27,19 +27,51 @@ public class DirectoryDeliveryScheduler {
     private final String workerId;
     private final String workerGroup;
     private final TransactionTemplate transactions;
+    private final long retryBaseSeconds;
+    private final long retryMaxSeconds;
+    private final boolean allowAutoRetryUncertain;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public DirectoryDeliveryScheduler(JdbcTemplate jdbc, ObjectMapper mapper, PlatformTransactionManager transactionManager,
                                       @Value("${m3.worker.id:${HOSTNAME:community-local}}") String workerId,
-                                      @Value("${M3_EXECUTION_GROUP:${m3.worker.group:default}}") String workerGroup) {
+                                      @Value("${M3_EXECUTION_GROUP:${m3.worker.group:default}}") String workerGroup,
+                                      @Value("${m3.delivery.retry-base-seconds:1}") long retryBaseSeconds,
+                                      @Value("${m3.delivery.retry-max-seconds:300}") long retryMaxSeconds,
+                                      @Value("${m3.delivery.allow-auto-retry-uncertain:false}") boolean allowAutoRetryUncertain) {
+        if (retryBaseSeconds < 1 || retryMaxSeconds < retryBaseSeconds) throw new IllegalArgumentException("Delivery retry seconds must be positive and max must be at least base");
         this.jdbc = jdbc; this.mapper = mapper; this.workerId = workerId + "-" + UUID.randomUUID();
         this.workerGroup = workerGroup == null || workerGroup.isBlank() ? "default" : workerGroup;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.retryBaseSeconds = retryBaseSeconds; this.retryMaxSeconds = retryMaxSeconds; this.allowAutoRetryUncertain = allowAutoRetryUncertain;
+    }
+
+    public DirectoryDeliveryScheduler(JdbcTemplate jdbc, ObjectMapper mapper, PlatformTransactionManager transactionManager, String workerId, String workerGroup) {
+        this(jdbc, mapper, transactionManager, workerId, workerGroup, 1, 300, false);
+    }
+    public DirectoryDeliveryScheduler(JdbcTemplate jdbc, ObjectMapper mapper, PlatformTransactionManager transactionManager, String workerId, String workerGroup, long retryBaseSeconds, long retryMaxSeconds) {
+        this(jdbc, mapper, transactionManager, workerId, workerGroup, retryBaseSeconds, retryMaxSeconds, false);
     }
 
     @Scheduled(fixedDelayString = "${m3.delivery.fixed-delay-ms:1000}")
     public void dispatch() {
         recoverExpiredLeases();
+        if (allowAutoRetryUncertain) scheduleUncertainRetries();
         for (Job job : claim(1)) deliver(job);
+    }
+
+    private void scheduleUncertainRetries() {
+        transactions.executeWithoutResult(status -> {
+            var jobs = jdbc.query("""
+                    select j.id,j.attempts from community.execution_job j
+                    join community.config_bundle c on c.version=j.rule_version
+                    where j.status='UNCERTAIN' and j.execution_group=? and exists (
+                      select 1 from jsonb_array_elements(c.document_json->'rules') r
+                      where r->>'id'=j.rule_id and r->'autoRetryUncertain' = 'true'::jsonb)
+                    order by j.created_at,j.id for update of j skip locked limit 100
+                    """, (rs,row) -> new UncertainJob(UUID.fromString(rs.getString(1)),rs.getInt(2)), workerGroup);
+            for (var job : jobs) jdbc.update("update community.execution_job set status='RETRY',next_attempt_at=now()+(? * interval '1 second') where id=? and status='UNCERTAIN'",
+                    retryDelaySeconds(job.attempts(), retryBaseSeconds, retryMaxSeconds), job.id());
+        });
     }
 
     private void recoverExpiredLeases() {
@@ -80,9 +112,9 @@ public class DirectoryDeliveryScheduler {
         }, 15, 15, TimeUnit.SECONDS);
         try {
             JobPayload payload = jdbc.queryForObject("""
-                    select m.storage_key, m.original_name, c.document_json from community.execution_job j
+                    select m.storage_key, m.original_name, c.document_json, m.checksum from community.execution_job j
                     join community.message_record m on m.id=j.message_id join community.config_bundle c on c.version=j.rule_version where j.id=?
-                    """, (rs, row) -> new JobPayload(rs.getString(1), rs.getString(2), rs.getString(3)), job.id());
+                    """, (rs, row) -> new JobPayload(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)), job.id());
             JsonNode configuration = mapper.readTree(payload.configJson());
             JsonNode rule = find(configuration.path("rules"), job.ruleId());
             JsonNode recipient = find(configuration.path("recipients"), rule.path("recipientId").asText());
@@ -92,7 +124,7 @@ public class DirectoryDeliveryScheduler {
             if (!renew(job) || lost.get()) return;
             Files.createDirectories(outputDirectory);
             Path target = outputDirectory.resolve(job.id() + "-" + payload.originalName());
-            copyAtomically(Path.of(payload.storageKey()), target, () -> {
+            copyAtomically(Path.of(payload.storageKey()), target, payload.checksum(), () -> {
                 if (lost.get() || !renew(job)) throw new java.io.IOException("Delivery lease lost before publication");
                 publicationStarted.set(true);
             });
@@ -111,9 +143,20 @@ public class DirectoryDeliveryScheduler {
 
     @FunctionalInterface interface BeforePublish { void check() throws java.io.IOException; }
     static void copyAtomically(Path source, Path target, BeforePublish beforePublish) throws java.io.IOException {
+        copyAtomically(source, target, null, beforePublish);
+    }
+
+    static void copyAtomically(Path source, Path target, String expectedChecksum, BeforePublish beforePublish) throws java.io.IOException {
         Path temporary = target.resolveSibling("." + target.getFileName() + ".part-" + UUID.randomUUID());
         try {
             Files.copy(source, temporary, StandardCopyOption.REPLACE_EXISTING);
+            if (expectedChecksum != null) {
+                try {
+                    var digest = java.security.MessageDigest.getInstance("SHA-256");
+                    try (var input = Files.newInputStream(temporary)) { input.transferTo(new java.security.DigestOutputStream(java.io.OutputStream.nullOutputStream(), digest)); }
+                    if (!java.util.HexFormat.of().formatHex(digest.digest()).equals(expectedChecksum)) throw new java.io.IOException("Original content checksum mismatch");
+                } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+            }
             beforePublish.check();
             try {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -131,17 +174,25 @@ public class DirectoryDeliveryScheduler {
                     truncate(error.getMessage()), job.id(), workerId);
         } else {
             jdbc.update("update community.execution_job set status='RETRY', next_attempt_at=now() + (? * interval '1 second'), lease_until=null, claimed_by=null, last_error=? where id=? and status='RUNNING' and claimed_by=? and lease_until > now()",
-                    retryDelaySeconds(job.attempts()), truncate(error.getMessage()), job.id(), workerId);
+                    retryDelaySeconds(job.attempts(), retryBaseSeconds, retryMaxSeconds), truncate(error.getMessage()), job.id(), workerId);
         }
     }
 
     static long retryDelaySeconds(int attempts) {
-        if (attempts < 1) return 1;
-        return Math.min(300, 1L << Math.min(attempts, 9));
+        return retryDelaySeconds(attempts, 1, 300);
+    }
+    static long retryDelaySeconds(int attempts, long base, long max) {
+        long delay = base;
+        for (int i = 0; i < attempts && delay < max; i++) {
+            if (delay > max / 2) return max;
+            delay *= 2;
+        }
+        return Math.min(delay, max);
     }
 
     static String truncate(String input) { return input == null ? "unknown failure" : input.substring(0, Math.min(input.length(), 1000)); }
     private static JsonNode find(JsonNode array, String id) { for (JsonNode n : array) if (id.equals(n.path("id").asText())) return n; return com.fasterxml.jackson.databind.node.MissingNode.getInstance(); }
     record Job(UUID id, UUID messageId, String ruleId, int ruleVersion, int attempts) {}
-    record JobPayload(String storageKey, String originalName, String configJson) {}
+    private record UncertainJob(UUID id, int attempts) {}
+    record JobPayload(String storageKey, String originalName, String configJson, String checksum) {}
 }

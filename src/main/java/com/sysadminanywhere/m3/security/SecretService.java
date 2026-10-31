@@ -10,11 +10,10 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.security.SecureRandom;
-import java.time.OffsetDateTime;
 import java.util.Base64;
 
 @Service
-public class SecretService {
+public class SecretService implements SecretStore {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final JdbcTemplate jdbc;
     private final SecretKey key;
@@ -41,7 +40,7 @@ public class SecretService {
 
     public SecretMetadata metadata(String id) {
         return jdbc.queryForObject("select id, updated_at from community.secret_record where id=?", (rs, row) ->
-                new SecretMetadata(rs.getString(1), rs.getObject(2, OffsetDateTime.class)), id);
+                new SecretMetadata(rs.getString(1), rs.getObject(2, java.time.OffsetDateTime.class)), id);
     }
 
     Encrypted encrypt(String value) {
@@ -67,5 +66,4 @@ public class SecretService {
         catch (Exception e) { throw new IllegalStateException("Unable to read M3_SECRET_KEY_FILE"); }
     }
     record Encrypted(byte[] ciphertext, byte[] iv) {}
-    public record SecretMetadata(String id, OffsetDateTime updatedAt) {}
 }

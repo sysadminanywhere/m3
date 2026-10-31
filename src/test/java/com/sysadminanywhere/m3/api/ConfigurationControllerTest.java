@@ -16,6 +16,19 @@ import static org.mockito.Mockito.when;
 
 @WebMvcTest(ConfigurationController.class)
 class ConfigurationControllerTest {
+    @Test void warnsAboutExplicitUncertainAutoRetry() throws Exception {
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
+                .content("{\"formatVersion\":\"2\",\"rules\":[{\"id\":\"r\",\"sourceIds\":[],\"autoRetryUncertain\":true}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.warnings[0]").value("Rule 'r' allows automatic retry of uncertain deliveries when enabled on the worker; duplicate delivery is possible"));
+    }
+    @Test void rejectsAmbiguousRuleConditionsAndEnabledValues() throws Exception {
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
+                .content("{\"formatVersion\":\"2\",\"rules\":[{\"id\":\"r\",\"sourceIds\":[],\"enabled\":\"false\",\"condition\":{\"fileNameEquals\":\"  \"}}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[1]").value("$.rules[0].enabled: must be a boolean"))
+                .andExpect(jsonPath("$.errors[2]").value("$.rules[0].condition.fileNameEquals: nonempty filename required"));
+    }
     @Test void rejectsInlinePasswordWithoutEchoingValue() throws Exception {
         mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
                 .content("{\"formatVersion\":\"2\",\"connections\":[{\"id\":\"c\",\"type\":\"directory\",\"settings\":{\"path\":\"/in\",\"password\":\"do-not-echo\"}}]}"))

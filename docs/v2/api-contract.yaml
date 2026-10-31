@@ -2,11 +2,18 @@ openapi: 3.0.3
 info:
   title: M3 Community API
   version: 2.0.0
+  description: When M3_API_TOKEN is configured, non-health endpoints require the X-M3-Service-Token header. Health endpoints remain public.
 paths:
   /api/v2/health/live: {get: {responses: {'200': {description: Service process is alive}}}}
   /api/v2/health/ready: {get: {responses: {'200': {description: Database is reachable}, '503': {description: Not ready}}}}
   /api/v2/configuration/schema: {get: {responses: {'200': {description: Supported configuration format}}}}
   /api/v2/configuration/version: {get: {responses: {'200': {description: Current published version}}}}
+  /api/v2/configuration/current:
+    get:
+      responses:
+        '200':
+          description: Current version and published document; version zero returns an empty format version 2 document
+          content: {application/json: {schema: {$ref: '#/components/schemas/CurrentConfiguration'}}}
   /api/v2/jobs: {get: {responses: {'200': {description: Recent jobs and delivery state; each item includes executionGroup}}}}
   /api/v2/jobs/search:
     get:
@@ -23,7 +30,7 @@ paths:
   /api/v2/messages/{id}/integrity:
     get:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
-      responses: {'200': {description: Original checksum verification}, '503': {description: Original content unavailable}}
+      responses: {'200': {description: Original checksum verification}, '404': {description: Message not found}, '503': {description: Original content unavailable}}
   /api/v2/messages/{id}/original:
     get:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
@@ -54,7 +61,7 @@ paths:
   /api/v2/jobs/{id}/retry:
     post:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
-      responses: {'202': {description: Delivery retry queued; a duplicate is possible}, '409': {description: Job is currently leased}}
+      responses: {'202': {description: Delivery retry queued; a duplicate is possible}, '409': {description: Only delivered or uncertain jobs can be retried; includes unknown job IDs}}
   /api/v2/secrets/{id}:
     put:
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -66,11 +73,15 @@ paths:
   /api/v2/configuration/validate:
     post:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Configuration'}}}}
-      responses: {'200': {description: Validation result}}
+      responses:
+        '200': {description: Validation result, content: {application/json: {schema: {$ref: '#/components/schemas/ValidationResult'}}}}
   /api/v2/configuration/publish:
     post:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PublishRequest'}}}}
-      responses: {'200': {description: Published}, '400': {description: Invalid}, '409': {description: Version conflict}}
+      responses:
+        '200': {description: Published, content: {application/json: {schema: {$ref: '#/components/schemas/PublishResult'}}}}
+        '400': {description: Invalid request or configuration}
+        '409': {description: Expected version does not match the current version}
   /api/v2/jobs/{id}/history:
     get:
       parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
@@ -81,10 +92,12 @@ components:
       type: object
       required: [formatVersion]
       properties:
-        formatVersion: {type: string, enum: ['2']}
-        connections: {type: array, items: {type: object}}
-        sources: {type: array, items: {type: object}}
-        recipients: {type: array, items: {type: object}}
+        formatVersion:
+          description: Format version 2; the string form is recommended for JSON and YAML.
+          oneOf: [{type: string, enum: ['2']}, {type: integer, enum: [2]}]
+        connections: {type: array, items: {$ref: '#/components/schemas/DirectoryConnection'}}
+        sources: {type: array, items: {$ref: '#/components/schemas/DirectorySource'}}
+        recipients: {type: array, items: {$ref: '#/components/schemas/DirectoryRecipient'}}
         rules: {type: array, items: {$ref: '#/components/schemas/Rule'}}
         delete:
           type: object
@@ -94,27 +107,74 @@ components:
             sources: {type: array, items: {type: string}}
             recipients: {type: array, items: {type: string}}
             rules: {type: array, items: {type: string}}
+    DirectorySettings:
+      type: object
+      required: [path]
+      properties:
+        path: {type: string, minLength: 1, pattern: '\S', description: Directory path visible to the Community process}
+    DirectoryConnection:
+      type: object
+      required: [id, type, settings]
+      properties:
+        id: {type: string, minLength: 1, pattern: '\S'}
+        type: {type: string, enum: [directory]}
+        settings: {$ref: '#/components/schemas/DirectorySettings'}
+    DirectorySource:
+      type: object
+      required: [id, connectionId]
+      properties:
+        id: {type: string, minLength: 1, pattern: '\S'}
+        connectionId: {type: string, minLength: 1, description: Identifier of a configured directory connection}
+        ruleSelection: {type: string, enum: [ALL_MATCHING, FIRST_MATCHING], default: ALL_MATCHING}
+    DirectoryRecipient:
+      type: object
+      required: [id, type, settings]
+      properties:
+        id: {type: string, minLength: 1, pattern: '\S'}
+        type: {type: string, enum: [directory]}
+        settings: {$ref: '#/components/schemas/DirectorySettings'}
     Rule:
       type: object
       required: [id, sourceIds, recipientId]
       properties:
-        id: {type: string}
-        sourceIds: {type: array, items: {type: string}}
-        recipientId: {type: string}
-        executionGroup: {type: string, default: default}
+        id: {type: string, minLength: 1, pattern: '\S'}
+        sourceIds: {type: array, minItems: 1, items: {type: string}, description: Identifiers of configured sources}
+        recipientId: {type: string, minLength: 1, description: Identifier of a configured recipient}
+        executionGroup: {type: string, minLength: 1, pattern: '\S', default: default}
         processingMode: {type: string, enum: [PARALLEL, SEQUENTIAL], default: PARALLEL}
         onError: {type: string, enum: [STOP, CONTINUE], default: STOP}
         enabled: {type: boolean, default: true}
+        autoRetryUncertain: {type: boolean, default: false, description: Requires worker opt-in and may cause duplicate delivery}
         condition:
           type: object
+          additionalProperties: false
           properties:
-            fileNameEquals: {type: string}
+            fileNameEquals: {type: string, minLength: 1, pattern: '\S', description: Exact nonblank filename}
     PublishRequest:
       type: object
       required: [document, expectedVersion]
       properties:
         document: {$ref: '#/components/schemas/Configuration'}
         expectedVersion: {type: integer, minimum: 0}
+    CurrentConfiguration:
+      type: object
+      required: [version, document]
+      properties:
+        version: {type: integer, minimum: 0}
+        document: {$ref: '#/components/schemas/Configuration'}
+    ValidationResult:
+      type: object
+      required: [errors, warnings]
+      properties:
+        errors: {type: array, items: {type: string}}
+        warnings: {type: array, items: {type: string}}
+    PublishResult:
+      type: object
+      required: [version, status, warnings]
+      properties:
+        version: {type: integer, minimum: 1}
+        status: {type: string, enum: [published]}
+        warnings: {type: array, items: {type: string}}
     SecretRequest:
       type: object
       required: [value]

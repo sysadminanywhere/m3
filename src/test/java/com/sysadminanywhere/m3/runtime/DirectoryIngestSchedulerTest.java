@@ -23,6 +23,49 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class DirectoryIngestSchedulerTest {
+    @Test
+    @ExtendWith(DisposablePostgres.class)
+    @EnabledIfEnvironmentVariable(named = "M3_TEST_POSTGRES_URL", matches = ".+")
+    void forgetsFilesRemovedFromTheInputDirectory(@TempDir Path dir, DriverManagerDataSource ds) throws Exception {
+        Path input = Files.createDirectory(dir.resolve("input")); Path file = Files.writeString(input.resolve("short-lived.txt"), "content");
+        var jdbc = new JdbcTemplate(ds); var mapper = new ObjectMapper(); var document = mapper.createObjectNode();
+        document.putArray("connections").addObject().put("id", "c").put("type", "directory").putObject("settings").put("path", input.toString());
+        document.putArray("sources").addObject().put("id", "s").put("connectionId", "c");
+        jdbc.update("insert into community.config_bundle(version,document_json) values (1,cast(? as jsonb))", document.toString());
+        var scheduler = new DirectoryIngestScheduler(jdbc, mapper, dir.resolve("store").toString(), 1000, "test");
+        var field = DirectoryIngestScheduler.class.getDeclaredField("observations"); field.setAccessible(true);
+        var observations = (java.util.Map<?,?>) field.get(scheduler);
+        scheduler.poll(); assertEquals(1, observations.size());
+        Files.delete(file); scheduler.poll(); assertTrue(observations.isEmpty());
+        assertEquals(0, jdbc.queryForObject("select count(*) from community.message_record", Integer.class));
+    }
+    @Test
+    @ExtendWith(DisposablePostgres.class)
+    @EnabledIfEnvironmentVariable(named = "M3_TEST_POSTGRES_URL", matches = ".+")
+    void ingestionSelectsAllFirstAndRetainsUnmatchedOriginal(@TempDir Path dir, DriverManagerDataSource ds) throws Exception {
+        var jdbc = new JdbcTemplate(ds); var mapper = new ObjectMapper();
+        var document = mapper.createObjectNode(); var connections = document.putArray("connections"); var sources = document.putArray("sources");
+        for (String id : new String[]{"all", "first", "none"}) {
+            Path input = Files.createDirectory(dir.resolve(id)); Files.writeString(input.resolve("match.txt"), "payload-" + id);
+            connections.addObject().put("id", id).put("type", "directory").putObject("settings").put("path", input.toString());
+            sources.addObject().put("id", id).put("connectionId", id).put("ruleSelection", id.equals("first") ? "FIRST_MATCHING" : "ALL_MATCHING");
+        }
+        var rules = document.putArray("rules");
+        var firstRule = rules.addObject().put("id", "a").put("recipientId", "out"); firstRule.putArray("sourceIds").add("all").add("first"); firstRule.putObject("condition").put("fileNameEquals", "match.txt");
+        var secondRule = rules.addObject().put("id", "b").put("recipientId", "out"); secondRule.putArray("sourceIds").add("all").add("first");
+        var unmatchedRule = rules.addObject().put("id", "c").put("recipientId", "out"); unmatchedRule.putArray("sourceIds").add("none"); unmatchedRule.putObject("condition").put("fileNameEquals", "other.txt");
+        jdbc.update("insert into community.config_bundle(version,document_json) values (1,cast(? as jsonb))", document.toString());
+        var scheduler = new DirectoryIngestScheduler(jdbc, mapper, dir.resolve("store").toString(), 0, "test");
+        scheduler.poll(); scheduler.poll();
+        assertEquals(2, jdbc.queryForObject("select count(*) from community.execution_job j join community.message_record m on m.id=j.message_id where m.source_id='all'", Integer.class));
+        assertEquals("a", jdbc.queryForObject("select j.rule_id from community.execution_job j join community.message_record m on m.id=j.message_id where m.source_id='first'", String.class));
+        assertEquals("NO_MATCH", jdbc.queryForObject("select status from community.message_record where source_id='none'", String.class));
+        assertEquals(0, jdbc.queryForObject("select count(*) from community.execution_job j join community.message_record m on m.id=j.message_id where m.source_id='none'", Integer.class));
+        for (String id : new String[]{"all", "first", "none"}) {
+            String key = jdbc.queryForObject("select storage_key from community.message_record where source_id=?", String.class, id);
+            assertEquals("payload-" + id, Files.readString(Path.of(key)));
+        }
+    }
     @Test void recognizesSourceReference() throws Exception {
         Method method = DirectoryIngestScheduler.class.getDeclaredMethod("references", com.fasterxml.jackson.databind.JsonNode.class, String.class);
         method.setAccessible(true);

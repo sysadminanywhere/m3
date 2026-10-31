@@ -6,6 +6,13 @@ services:
       POSTGRES_USER: m3
       POSTGRES_PASSWORD: m3
     ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
   community:
     build: .
     environment:
@@ -14,6 +21,9 @@ services:
       DB_PASSWORD: m3
       M3_STORAGE_ROOT: /data/messages
       M3_EXECUTION_GROUP: ${M3_EXECUTION_GROUP:-default}
+      M3_DELIVERY_RETRY_BASE_SECONDS: ${M3_DELIVERY_RETRY_BASE_SECONDS:-1}
+      M3_DELIVERY_RETRY_MAX_SECONDS: ${M3_DELIVERY_RETRY_MAX_SECONDS:-300}
+      M3_DELIVERY_ALLOW_AUTO_RETRY_UNCERTAIN: ${M3_DELIVERY_ALLOW_AUTO_RETRY_UNCERTAIN:-false}
       M3_SECRET_KEY: ${M3_SECRET_KEY:-}
       M3_SECRET_KEY_FILE: ${M3_SECRET_KEY_FILE:-}
       M3_API_TOKEN: ${M3_API_TOKEN:-}
@@ -22,6 +32,9 @@ services:
     ports: ["8080:8080"]
     volumes:
       - community-data:/data
-    depends_on: [postgres]
+    depends_on:
+      postgres:
+        condition: service_healthy
 volumes:
   community-data:
+  postgres-data:

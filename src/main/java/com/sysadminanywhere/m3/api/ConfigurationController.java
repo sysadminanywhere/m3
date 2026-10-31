@@ -28,13 +28,24 @@ public class ConfigurationController {
     @GetMapping("/version")
     public Map<String, Integer> version() { return Map.of("version", jdbc.queryForObject("select coalesce(max(version),0) from community.config_bundle", Integer.class)); }
 
+    @GetMapping("/current")
+    public Map<String, Object> current() {
+        var rows = jdbc.query("select version,document_json::text from community.config_bundle order by version desc limit 1", (rs, index) -> new StoredConfiguration(rs.getInt(1), rs.getString(2)));
+        if (rows.isEmpty()) return Map.of("version", 0, "document", mapper.createObjectNode().put("formatVersion", "2"));
+        var current = rows.get(0);
+        try { return Map.of("version", current.version(), "document", mapper.readTree(current.document())); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException error) { throw new IllegalStateException("Stored configuration is invalid", error); }
+    }
+    private record StoredConfiguration(int version, String document) {}
+
     @PostMapping("/validate")
     public ValidationResponse validate(@RequestBody JsonNode document) {
         if (document == null || !document.isObject() || !document.has("formatVersion") || !"2".equals(document.path("formatVersion").asText())) return validateDocument(document);
         try {
             Integer version = jdbc.queryForObject("select coalesce(max(version),0) from community.config_bundle", Integer.class);
             JsonNode previous = version == null || version == 0 ? mapper.createObjectNode() : mapper.readTree(jdbc.queryForObject("select document_json::text from community.config_bundle where version=?", String.class, version));
-            return validateDocument(merge(previous, document));
+            JsonNode merged = merge(previous, document);
+            return withGroupChangeWarnings(validateDocument(merged), previous, merged);
         } catch (IllegalArgumentException error) {
             return new ValidationResponse(List.of(error.getMessage()), List.of());
         } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
@@ -52,15 +63,30 @@ public class ConfigurationController {
         int expected = request.expectedVersion();
         if (expected != current) return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "configuration_version_conflict", "currentVersion", current));
         JsonNode merged;
+        JsonNode previous;
         try {
-            JsonNode previous = current == 0 ? mapper.createObjectNode() : mapper.readTree(jdbc.queryForObject("select document_json::text from community.config_bundle where version=?", String.class, current));
+            previous = current == 0 ? mapper.createObjectNode() : mapper.readTree(jdbc.queryForObject("select document_json::text from community.config_bundle where version=?", String.class, current));
             merged = merge(previous, request.document());
         } catch (Exception error) { return ResponseEntity.badRequest().body(Map.of("error", "invalid_configuration", "message", error.getMessage())); }
-        ValidationResponse validation = validateDocument(merged);
+        ValidationResponse validation = withGroupChangeWarnings(validateDocument(merged), previous, merged);
         if (!validation.errors().isEmpty()) return ResponseEntity.badRequest().body(validation);
         int next = current + 1;
         jdbc.update("insert into community.config_bundle(version, document_json) values (?, cast(? as jsonb))", next, merged.toString());
         return ResponseEntity.ok(Map.of("version", next, "status", "published", "warnings", validation.warnings()));
+    }
+
+    private static ValidationResponse withGroupChangeWarnings(ValidationResponse validation, JsonNode previous, JsonNode updated) {
+        List<String> warnings = new ArrayList<>(validation.warnings());
+        for (JsonNode rule : updated.path("rules")) {
+            String id = rule.path("id").asText();
+            for (JsonNode old : previous.path("rules")) {
+                if (!id.equals(old.path("id").asText())) continue;
+                String oldGroup = old.path("executionGroup").asText("default"), newGroup = rule.path("executionGroup").asText("default");
+                if (!oldGroup.equals(newGroup)) warnings.add("Rule '" + id + "' moves from group '" + oldGroup + "' to '" + newGroup + "'; existing jobs remain in their original group");
+                break;
+            }
+        }
+        return new ValidationResponse(validation.errors(), warnings);
     }
 
     static JsonNode merge(JsonNode previous, JsonNode update) {
@@ -117,8 +143,12 @@ public class ConfigurationController {
                 String onError = rule.path("onError").asText("STOP");
                 if (!List.of("STOP", "CONTINUE").contains(onError)) errors.add("$.rules[" + i + "].onError: must be STOP or CONTINUE");
                 if (!rule.path("sourceIds").isArray() || rule.path("sourceIds").isEmpty()) errors.add("$.rules[" + i + "].sourceIds: nonempty array required");
+                if (rule.has("enabled") && !rule.path("enabled").isBoolean()) errors.add("$.rules[" + i + "].enabled: must be a boolean");
+                if (rule.has("autoRetryUncertain") && !rule.path("autoRetryUncertain").isBoolean()) errors.add("$.rules[" + i + "].autoRetryUncertain: must be a boolean");
+                if (rule.path("autoRetryUncertain").isBoolean() && rule.path("autoRetryUncertain").asBoolean()) warnings.add("Rule '" + rule.path("id").asText() + "' allows automatic retry of uncertain deliveries when enabled on the worker; duplicate delivery is possible");
                 if (rule.has("executionGroup") && (!rule.path("executionGroup").isTextual() || rule.path("executionGroup").asText().isBlank())) errors.add("$.rules[" + i + "].executionGroup: nonempty string required");
                 if (rule.has("condition") && (!rule.path("condition").isObject() || rule.path("condition").fieldNames().hasNext() && (!rule.path("condition").has("fileNameEquals") || rule.path("condition").size() != 1 || !rule.path("condition").path("fileNameEquals").isTextual()))) errors.add("$.rules[" + i + "].condition: only fileNameEquals is supported");
+                else if (rule.path("condition").has("fileNameEquals") && rule.path("condition").path("fileNameEquals").asText().isBlank()) errors.add("$.rules[" + i + "].condition.fileNameEquals: nonempty filename required");
                 for (JsonNode source : rule.path("sourceIds")) if (!sources.contains(source.asText())) errors.add("$.rules[" + i + "].sourceIds: unknown source '" + source.asText() + "'");
                 String recipient = rule.path("recipientId").asText();
                 if (recipient.isBlank()) errors.add("$.rules[" + i + "].recipientId: required");
