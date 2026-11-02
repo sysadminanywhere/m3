@@ -112,6 +112,33 @@ class DeliveryRetryPostgresTest {
         assertEquals("DELIVERED",jdbc.queryForObject("select status from community.execution_job where id=?",String.class,job));
         assertEquals("bytes",Files.readString(blockingFile.resolve("child").resolve(job + "-file")));
     }
+    @Test void staleAttemptCannotModifyReclaimedJob(DriverManagerDataSource ds) throws Exception {
+        var jdbc = new JdbcTemplate(ds);
+        var mapper = new ObjectMapper();
+        var config = mapper.createObjectNode();
+        config.putArray("rules").addObject().put("id", "r");
+        jdbc.update("insert into community.config_bundle(version,document_json) values (1,cast(? as jsonb))", config.toString());
+        UUID message = UUID.randomUUID(), id = UUID.randomUUID();
+        jdbc.update("insert into community.message_record(id,source_id,checksum,original_name,storage_key,status) values (?,'s',?,'file','/unused','RECEIVED')", message, "0".repeat(64));
+        jdbc.update("insert into community.execution_job(id,message_id,rule_id,rule_version,status) values (?,?,'r',1,'READY')", id, message);
+        var scheduler = new DirectoryDeliveryScheduler(jdbc, mapper, new DataSourceTransactionManager(ds), "worker", "default");
+        var claim = DirectoryDeliveryScheduler.class.getDeclaredMethod("claim", int.class);
+        claim.setAccessible(true);
+        var first = (DirectoryDeliveryScheduler.Job) ((java.util.List<?>) claim.invoke(scheduler, 1)).get(0);
+        jdbc.update("update community.execution_job set status='READY',claimed_by=null,lease_until=null where id=?", id);
+        var second = (DirectoryDeliveryScheduler.Job) ((java.util.List<?>) claim.invoke(scheduler, 1)).get(0);
+        assertEquals(first.attempts() + 1, second.attempts());
+        var renew = DirectoryDeliveryScheduler.class.getDeclaredMethod("renew", DirectoryDeliveryScheduler.Job.class);
+        renew.setAccessible(true);
+        assertEquals(false, renew.invoke(scheduler, first));
+        assertEquals(true, renew.invoke(scheduler, second));
+        var fail = DirectoryDeliveryScheduler.class.getDeclaredMethod("recordFailure", DirectoryDeliveryScheduler.Job.class, Exception.class, boolean.class);
+        fail.setAccessible(true);
+        fail.invoke(scheduler, first, new Exception("stale"), true);
+        fail.invoke(scheduler, first, new Exception("stale"), false);
+        assertEquals("RUNNING", jdbc.queryForObject("select status from community.execution_job where id=?", String.class, id));
+        assertNull(jdbc.queryForObject("select last_error from community.execution_job where id=?", String.class, id));
+    }
     static String checksum(Path path) throws Exception {
         return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)));
     }

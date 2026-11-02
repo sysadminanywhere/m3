@@ -1,8 +1,8 @@
 package com.sysadminanywhere.m3.api;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.test.web.servlet.MockMvc;
@@ -19,7 +19,7 @@ import static org.mockito.Mockito.when;
 
 @WebMvcTest(OperationsController.class)
 class OperationsControllerTest {
-    @Autowired MockMvc mvc; @MockBean JdbcTemplate jdbc;
+    @Autowired MockMvc mvc; @MockitoBean JdbcTemplate jdbc;
     @Test void exposesJobsRoute() throws Exception { mvc.perform(get("/api/v2/jobs")).andExpect(status().isOk()); }
     @Test void integrityOfMissingMessageReturnsNotFound() throws Exception {
         mvc.perform(get("/api/v2/messages/" + UUID.randomUUID() + "/integrity")).andExpect(status().isNotFound());

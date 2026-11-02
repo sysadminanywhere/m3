@@ -128,13 +128,13 @@ public class DirectoryDeliveryScheduler {
                 if (lost.get() || !renew(job)) throw new java.io.IOException("Delivery lease lost before publication");
                 publicationStarted.set(true);
             });
-            jdbc.update("update community.execution_job set status='DELIVERED', completed_at=now(), lease_until=null, claimed_by=null, last_error=null where id=? and status='RUNNING' and claimed_by=? and lease_until > now()", job.id(), workerId);
+            jdbc.update("update community.execution_job set status='DELIVERED', completed_at=now(), lease_until=null, claimed_by=null, last_error=null where id=? and status='RUNNING' and claimed_by=? and attempts=? and lease_until > now()", job.id(), workerId, job.attempts());
         } catch (Exception error) { recordFailure(job, error, publicationStarted.get()); }
         finally { heartbeat.shutdownNow(); }
     }
 
     private boolean renew(Job job) {
-        return jdbc.update("update community.execution_job set lease_until=now() + interval '60 seconds' where id=? and status='RUNNING' and claimed_by=? and lease_until > now()", job.id(), workerId) == 1;
+        return jdbc.update("update community.execution_job set lease_until=now() + interval '60 seconds' where id=? and status='RUNNING' and claimed_by=? and attempts=? and lease_until > now()", job.id(), workerId, job.attempts()) == 1;
     }
 
     static void copyAtomically(Path source, Path target) throws java.io.IOException {
@@ -170,11 +170,11 @@ public class DirectoryDeliveryScheduler {
 
     private void recordFailure(Job job, Exception error, boolean publicationStarted) {
         if (publicationStarted) {
-            jdbc.update("update community.execution_job set status='UNCERTAIN', lease_until=null, claimed_by=null, last_error=? where id=? and status='RUNNING' and claimed_by=?",
-                    truncate(error.getMessage()), job.id(), workerId);
+            jdbc.update("update community.execution_job set status='UNCERTAIN', lease_until=null, claimed_by=null, last_error=? where id=? and status='RUNNING' and claimed_by=? and attempts=?",
+                    truncate(error.getMessage()), job.id(), workerId, job.attempts());
         } else {
-            jdbc.update("update community.execution_job set status='RETRY', next_attempt_at=now() + (? * interval '1 second'), lease_until=null, claimed_by=null, last_error=? where id=? and status='RUNNING' and claimed_by=? and lease_until > now()",
-                    retryDelaySeconds(job.attempts(), retryBaseSeconds, retryMaxSeconds), truncate(error.getMessage()), job.id(), workerId);
+            jdbc.update("update community.execution_job set status='RETRY', next_attempt_at=now() + (? * interval '1 second'), lease_until=null, claimed_by=null, last_error=? where id=? and status='RUNNING' and claimed_by=? and attempts=? and lease_until > now()",
+                    retryDelaySeconds(job.attempts(), retryBaseSeconds, retryMaxSeconds), truncate(error.getMessage()), job.id(), workerId, job.attempts());
         }
     }
 
