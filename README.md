@@ -12,7 +12,7 @@ Configuration is validated and published through `/api/v2/configuration`; see `d
 
 Secrets use an external `M3_SECRET_KEY` (base64-encoded 32-byte key) or `M3_SECRET_KEY_FILE` containing that value. The environment variable takes precedence. Backup and restore requirements are in `docs/operations/backup-and-restore.md`.
 
-Secret writes and metadata use an internal `SecretStore` interface. The only supplied implementation stores encrypted values in PostgreSQL; no external secret-store adapter or secret retrieval integration is provided.
+Secret writes and metadata use an internal `SecretStore` interface backed by encrypted PostgreSQL values. SFTP credentials may instead be read from HashiCorp Vault KV v2; this is a read-only runtime integration, not a Vault administration or secret-write API. See `docs/SFTP.md` for the required token file, TLS and reference format.
 
 For more than one Community replica, `M3_STORAGE_ROOT` must refer to the same shared volume or filesystem for every replica; container-local storage is not valid durable message storage.
 

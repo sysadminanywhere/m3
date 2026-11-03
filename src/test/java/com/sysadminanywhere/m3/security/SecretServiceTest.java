@@ -44,4 +44,18 @@ class SecretServiceTest {
         assertEquals(key, SecretService.resolveExternalKey(key, file.toString()));
         Files.deleteIfExists(file);
     }
+    @Test void selectsProviderExplicitlyWithoutChangingExistingSecretIdsOrFallingBack() throws Exception {
+        var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class); var vault=mock(VaultKv2Resolver.class);
+        var service=new SecretService(jdbc,Base64.getEncoder().encodeToString(new byte[32]),"",vault); var encrypted=service.encrypt("community-value");
+        when(jdbc.queryForObject(anyString(),any(org.springframework.jdbc.core.RowMapper.class),anyString())).thenAnswer(call -> {
+            var rs=mock(java.sql.ResultSet.class); when(rs.getBytes(1)).thenReturn(encrypted.ciphertext()); when(rs.getBytes(2)).thenReturn(encrypted.iv());
+            return ((org.springframework.jdbc.core.RowMapper<?>)call.getArgument(1)).mapRow(rs,0);
+        });
+        assertEquals("community-value",new String(service.resolve("COMMUNITY","vault:existing-id"),java.nio.charset.StandardCharsets.UTF_8));
+        verifyNoInteractions(vault);
+        when(vault.resolve("secret/team#key")).thenThrow(new IllegalStateException("Unable to resolve Vault secret"));
+        assertThrows(IllegalStateException.class,() -> service.resolve("VAULT","secret/team#key"));
+        verify(jdbc,times(1)).queryForObject(anyString(),any(org.springframework.jdbc.core.RowMapper.class),anyString());
+        assertThrows(IllegalStateException.class,() -> service.resolve("UNKNOWN","ref"));
+    }
 }
