@@ -133,7 +133,7 @@ public class DirectoryIngestScheduler {
         String directory=settings.path("path").asText();
         if (!directory.startsWith("/") || directory.contains("\\") || directory.contains("\u0000") || java.util.Arrays.asList(directory.split("/",-1)).contains("..")) return;
         try (var connection=SftpConnection.open(settings.path("host").asText(),settings.path("port").asInt(22),settings.path("username").asText(),
-                settings.path("hostKeyFingerprint").asText(),settings.path("credentialRef").asText(),java.time.Duration.ofSeconds(30),secrets)) {
+                settings.path("hostKeyFingerprint").asText(),settings.path("credentialRef").asText(),settings.path("authMethod").asText("PASSWORD"),settings.path("credentialProvider").asText("COMMUNITY"),java.time.Duration.ofSeconds(30),secrets)) {
             SftpClient client=connection.client(); String prefix=directory.endsWith("/")?directory:directory+"/";
             for (var entry : client.readDir(directory)) {
                 String name=entry.getFilename();

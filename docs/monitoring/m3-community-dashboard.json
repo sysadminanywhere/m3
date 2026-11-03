@@ -1,0 +1,48 @@
+{
+  "title": "M3 Community operations",
+  "uid": "m3-community-operations",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [{ "name": "datasource", "label": "Prometheus", "type": "datasource", "query": "prometheus", "current": {} }] },
+  "panels": [
+    {
+      "id": 1, "title": "Open jobs", "type": "timeseries", "gridPos": { "x": 0, "y": 0, "w": 16, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "max by (status) (m3_jobs{status=~\"READY|RETRY|RUNNING|UNCERTAIN\"})", "legendFormat": "{{status}}" }]
+    },
+    {
+      "id": 2, "title": "Oldest open job", "type": "stat", "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "max(m3_oldest_open_job_seconds)", "instant": true }]
+    },
+    {
+      "id": 3, "title": "Deliveries in the last hour", "type": "timeseries", "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "max(m3_jobs_delivered_last_hour)", "legendFormat": "retained jobs" }]
+    },
+    {
+      "id": 4, "title": "Storage usable by instance", "type": "timeseries", "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" }, "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "m3_storage_usable_bytes", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "id": 5, "title": "Storage path availability", "type": "stat", "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "refId": "A", "expr": "m3_storage_available", "legendFormat": "{{instance}}", "instant": true }]
+    },
+    {
+      "id": 6, "title": "Scrape availability", "type": "stat", "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Set the Prometheus scrape job name to m3-community.",
+      "targets": [{ "refId": "A", "expr": "up{job=\"m3-community\"}", "legendFormat": "{{instance}}", "instant": true }]
+    },
+    {
+      "id": 7, "title": "Failure transitions in the last hour", "type": "timeseries", "gridPos": { "x": 0, "y": 22, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Retained retry or uncertain history entries, including initial entries; the same job can appear more than once.",
+      "targets": [{ "refId": "A", "expr": "max by (status) (m3_job_failure_events_last_hour)", "legendFormat": "{{status}}" }]
+    }
+  ]
+}

@@ -19,7 +19,7 @@ import org.apache.sshd.sftp.SftpModuleProperties;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.SftpClientFactory;
 
-/** Internal transport; not yet exposed as a supported configuration type. */
+/** Internal SFTP transport with a pinned server key. */
 final class SftpConnection implements AutoCloseable {
     private final SshClient client;
     private final ClientSession session;
@@ -29,14 +29,23 @@ final class SftpConnection implements AutoCloseable {
     }
     static SftpConnection open(String host, int port, String user, String fingerprint, String credentialRef,
                                Duration timeout, RuntimeSecretResolver secrets) throws IOException {
+        return open(host,port,user,fingerprint,credentialRef,"PASSWORD",timeout,secrets);
+    }
+    static SftpConnection open(String host, int port, String user, String fingerprint, String credentialRef,String authMethod,
+                               Duration timeout, RuntimeSecretResolver secrets) throws IOException {
+        return open(host,port,user,fingerprint,credentialRef,authMethod,"COMMUNITY",timeout,secrets);
+    }
+    static SftpConnection open(String host, int port, String user, String fingerprint, String credentialRef,String authMethod,String credentialProvider,
+                               Duration timeout, RuntimeSecretResolver secrets) throws IOException {
         if (host==null || host.isBlank() || user==null || user.isBlank() || port<1 || port>65535 || timeout==null
                 || timeout.isZero() || timeout.isNegative() || timeout.compareTo(Duration.ofMinutes(2))>0
-                || fingerprint==null || !fingerprint.matches("SHA256:[A-Za-z0-9+/]{43}"))
+                || fingerprint==null || !fingerprint.matches("SHA256:[A-Za-z0-9+/]{43}") || authMethod==null || !List.of("PASSWORD","PRIVATE_KEY").contains(authMethod)
+                || credentialProvider==null || !List.of("COMMUNITY","VAULT").contains(credentialProvider))
             throw new IllegalArgumentException("Invalid SFTP connection settings");
         SshClient client=SshClient.setUpDefaultClient(); ClientSession session=null;
         client.setHostConfigEntryResolver(HostConfigEntryResolver.EMPTY);
         client.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
-        client.setUserAuthFactories(List.of(BuiltinUserAuthFactories.PASSWORD.create()));
+        client.setUserAuthFactories(List.of(("PRIVATE_KEY".equals(authMethod)?BuiltinUserAuthFactories.PUBLICKEY:BuiltinUserAuthFactories.PASSWORD).create()));
         client.setServerKeyVerifier((ignored,address,key) -> MessageDigest.isEqual(
                 fingerprint.getBytes(StandardCharsets.US_ASCII),
                 KeyUtils.getFingerPrint(BuiltinDigests.sha256,key).getBytes(StandardCharsets.US_ASCII)));
@@ -47,9 +56,11 @@ final class SftpConnection implements AutoCloseable {
         try {
             client.start();
             session=client.connect(user,host,port).verify(timeout).getSession();
-            byte[] password=secrets.resolve(credentialRef);
-            try { session.addPasswordIdentity(new String(password,StandardCharsets.UTF_8)); }
-            finally { Arrays.fill(password,(byte)0); }
+            byte[] secret=secrets.resolve(credentialProvider,credentialRef);
+            try {
+                if ("PRIVATE_KEY".equals(authMethod)) session.addPublicKeyIdentity(SftpPrivateKey.parse(secret));
+                else session.addPasswordIdentity(new String(secret,StandardCharsets.UTF_8));
+            } finally { Arrays.fill(secret,(byte)0); }
             session.auth().verify(timeout);
             return new SftpConnection(client,session,SftpClientFactory.instance().createSftpClient(session));
         } catch (Exception failure) {

@@ -153,13 +153,15 @@ public class WebhookNotifier {
         return result;
     }
     private void finish(Claim claim,boolean delivered) {
-        if (claim.alertId()!=null) {
-            if (delivered) jdbc.update("update community.webhook_alert_delivery set state='DELIVERED',delivered_at=now(),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",claim.alertId(),claim.token());
-            else jdbc.update("update community.webhook_alert_delivery set state='RETRY',next_attempt_at=now()+(? * interval '1 second'),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",DirectoryDeliveryScheduler.retryDelaySeconds(claim.deliveryAttempt(),10,3600),claim.alertId(),claim.token());
-            return;
-        }
-        if (delivered) jdbc.update("update community.webhook_delivery set state='DELIVERED',delivered_at=now(),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",claim.eventId(),claim.token());
-        else jdbc.update("update community.webhook_delivery set state='RETRY',next_attempt_at=now()+(? * interval '1 second'),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",DirectoryDeliveryScheduler.retryDelaySeconds(claim.deliveryAttempt(),10,3600),claim.eventId(),claim.token());
+        transactions.executeWithoutResult(status -> {
+            String table=claim.alertId()==null?"webhook_delivery":"webhook_alert_delivery";
+            Object id=claim.alertId()==null?claim.eventId():claim.alertId();
+            int changed=delivered
+                    ? jdbc.update("update community."+table+" set state='DELIVERED',delivered_at=now(),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",id,claim.token())
+                    : jdbc.update("update community."+table+" set state='RETRY',next_attempt_at=now()+(? * interval '1 second'),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",DirectoryDeliveryScheduler.retryDelaySeconds(claim.deliveryAttempt(),10,3600),id,claim.token());
+            if (changed==1) jdbc.update("insert into community.notification_attempt(channel,event_key,attempt,outcome) values ('webhook',?,?,?)",
+                    claim.alertId()==null?Long.toString(claim.eventId()):"alert:"+claim.alertId(),claim.deliveryAttempt(),delivered?"ACCEPTED":"RETRY");
+        });
     }
     private record Claim(long eventId,UUID jobId,String status,int attempt,String occurredAt,int deliveryAttempt,UUID token,UUID alertId,String alertKey) {}
 }

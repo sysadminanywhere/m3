@@ -113,7 +113,7 @@ public class DirectoryDeliveryScheduler {
     private void deliver(Job job) {
         AtomicBoolean lost = new AtomicBoolean(false);
         AtomicBoolean publicationStarted = new AtomicBoolean(false);
-        AtomicBoolean sftpDelivery = new AtomicBoolean(false);
+        AtomicBoolean remoteDelivery = new AtomicBoolean(false);
         var heartbeat = Executors.newSingleThreadScheduledExecutor(task -> { Thread thread = new Thread(task, "m3-delivery-lease"); thread.setDaemon(true); return thread; });
         heartbeat.scheduleAtFixedRate(() -> {
             try { if (!renew(job)) lost.set(true); }
@@ -128,17 +128,28 @@ public class DirectoryDeliveryScheduler {
             JsonNode rule = find(configuration.path("rules"), job.ruleId());
             JsonNode recipient = find(configuration.path("recipients"), rule.path("recipientId").asText());
             if ("sftp".equals(recipient.path("type").asText())) {
-                sftpDelivery.set(true);
+                remoteDelivery.set(true);
                 if (secrets==null) throw new IllegalStateException("SFTP secret resolver unavailable");
                 JsonNode settings=recipient.path("settings");
                 try (var connection=SftpConnection.open(settings.path("host").asText(),settings.path("port").asInt(22),
                         settings.path("username").asText(),settings.path("hostKeyFingerprint").asText(),settings.path("credentialRef").asText(),
-                        java.time.Duration.ofSeconds(30),secrets)) {
+                        settings.path("authMethod").asText("PASSWORD"),settings.path("credentialProvider").asText("COMMUNITY"),java.time.Duration.ofSeconds(30),secrets)) {
                     SftpPublisher.publish(connection.client(),Path.of(payload.storageKey()),settings.path("path").asText(),job.id()+"-"+payload.originalName(),payload.checksum(),() -> {
                         if (lost.get() || !renew(job)) throw new java.io.IOException("Delivery lease lost before publication");
                         publicationStarted.set(true);
                     });
                 }
+                jdbc.update("update community.execution_job set status='DELIVERED', completed_at=now(), lease_until=null, claimed_by=null, last_error=null where id=? and status='RUNNING' and claimed_by=? and attempts=? and lease_until > now()",job.id(),workerId,job.attempts());
+                return;
+            }
+            if ("http".equals(recipient.path("type").asText())) {
+                remoteDelivery.set(true); JsonNode settings=recipient.path("settings");
+                String tokenRef=settings.path("tokenRef").asText("");
+                if (!tokenRef.isBlank() && secrets==null) throw new IllegalStateException("HTTP secret resolver unavailable");
+                HttpPublisher.publish(settings.path("url").asText(),tokenRef,Path.of(payload.storageKey()),payload.checksum(),job.id(),secrets,() -> {
+                    if (lost.get() || !renew(job)) throw new java.io.IOException("Delivery lease lost before publication");
+                    publicationStarted.set(true);
+                });
                 jdbc.update("update community.execution_job set status='DELIVERED', completed_at=now(), lease_until=null, claimed_by=null, last_error=null where id=? and status='RUNNING' and claimed_by=? and attempts=? and lease_until > now()",job.id(),workerId,job.attempts());
                 return;
             }
@@ -153,7 +164,7 @@ public class DirectoryDeliveryScheduler {
                 publicationStarted.set(true);
             });
             jdbc.update("update community.execution_job set status='DELIVERED', completed_at=now(), lease_until=null, claimed_by=null, last_error=null where id=? and status='RUNNING' and claimed_by=? and attempts=? and lease_until > now()", job.id(), workerId, job.attempts());
-        } catch (Exception error) { recordFailure(job, sftpDelivery.get()?new java.io.IOException("SFTP delivery failed"):error, publicationStarted.get()); }
+        } catch (Exception error) { recordFailure(job, remoteDelivery.get()?new java.io.IOException("Remote delivery failed"):error, publicationStarted.get()); }
         finally { heartbeat.shutdownNow(); }
     }
 

@@ -24,9 +24,16 @@ class EmailNotifierPostgresTest {
         try (var smtp=new TestSmtp()) {
             var notifier=new EmailNotifier(jdbc,tx,ref -> new byte[0],new OperationalAlerts(jdbc,tx),"127.0.0.1",smtp.port(),"","","m3@example.test","ops@example.test",true,1,"UNCERTAIN",0);
             notifier.poll(); assertEquals("RETRY",jdbc.queryForObject("select state from community.email_job_delivery",String.class));
+            var deliveries=new com.sysadminanywhere.m3.api.OperationsController(jdbc);
+            assertEquals("email",deliveries.notificationDeliveries(100,0).get(0).channel());
+            assertEquals("RETRY",deliveries.notificationDeliveries(100,0).get(0).state());
             assertEquals(1,smtp.received.get()); assertFalse(smtp.message.get().contains("key"));
             jdbc.update("update community.email_job_delivery set next_attempt_at=now()-interval '1 second'"); jdbc.update("update community.email_rate_limit set next_at=now()-interval '1 second'");
             notifier.poll(); assertEquals("DELIVERED",jdbc.queryForObject("select state from community.email_job_delivery",String.class));
+            assertEquals(2,deliveries.notificationDeliveries(100,0).get(0).attempts());
+            assertNotNull(deliveries.notificationDeliveries(100,0).get(0).deliveredAt());
+            var history=deliveries.notificationAttempts("email",deliveries.notificationDeliveries(100,0).get(0).eventId(),100,0);
+            assertEquals(2,history.size()); assertEquals("ACCEPTED",history.get(0).outcome()); assertEquals("RETRY",history.get(1).outcome());
             assertEquals(2,smtp.received.get()); assertTrue(smtp.message.get().contains("X-M3-Event-Id:"));
             assertEquals(0,jdbc.queryForObject("select count(*) from community.webhook_delivery",Integer.class));
             jdbc.update("update community.email_rate_limit set next_at=now()-interval '1 second'"); notifier.poll(); assertEquals(2,smtp.received.get());
@@ -68,7 +75,7 @@ class EmailNotifierPostgresTest {
         var notifier=new EmailNotifier(jdbc,tx,ref -> new byte[0],new OperationalAlerts(jdbc,tx),"127.0.0.1",Integer.parseInt(System.getenv("M3_TEST_SMTP_UNTRUSTED_PORT")),"","","m3@example.test","ops@example.test",false,1,"UNCERTAIN",0);
         notifier.poll(); assertEquals("RETRY",jdbc.queryForObject("select state from community.email_job_delivery",String.class)); notifier.shutdown();
     }
-    private static final class TestSmtp implements AutoCloseable {
+    static final class TestSmtp implements AutoCloseable {
         final ServerSocket socket; final Thread thread; final AtomicInteger received=new AtomicInteger(); final AtomicReference<String> message=new AtomicReference<>(""); final java.util.concurrent.atomic.AtomicBoolean authenticated=new java.util.concurrent.atomic.AtomicBoolean();
         TestSmtp() throws Exception {
             socket=new ServerSocket(0,10,java.net.InetAddress.getByName("127.0.0.1"));

@@ -63,6 +63,45 @@ public class OperationsController {
                 (org.springframework.jdbc.core.RowCallbackHandler) rs -> groups.computeIfAbsent(rs.getString(1),ignored -> new java.util.LinkedHashMap<>()).put(rs.getString(2),rs.getLong(3)));
         return Map.of("messages",messages,"jobsByStatus",jobs,"jobsByGroup",groups);
     }
+    @GetMapping("/notifications/deliveries") public List<NotificationDelivery> notificationDeliveries(
+            @RequestParam(defaultValue="100") int limit, @RequestParam(defaultValue="0") int offset) {
+        if (limit < 1 || limit > 500 || offset < 0) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid pagination");
+        return jdbc.query("""
+            select channel,event_key,event_type,state,attempts,occurred_at,next_attempt_at,delivered_at,recipient_id from (
+              select 'webhook' as channel, e.id::text as event_key, e.status as event_type, d.state,d.attempts,e.occurred_at,d.next_attempt_at,d.delivered_at,null::uuid as recipient_id
+                from community.webhook_delivery d join community.job_event e on e.id=d.event_id
+              union all
+              select 'webhook', 'alert:'||e.id::text,e.event_type,d.state,d.attempts,e.occurred_at,d.next_attempt_at,d.delivered_at,null::uuid
+                from community.webhook_alert_delivery d join community.operational_alert_event e on e.id=d.event_id
+              union all
+              select 'email',e.id::text,e.status,d.state,d.attempts,e.occurred_at,d.next_attempt_at,d.delivered_at,null::uuid
+                from community.email_job_delivery d join community.job_event e on e.id=d.event_id
+              union all
+              select 'email','alert:'||e.id::text,e.event_type,d.state,d.attempts,e.occurred_at,d.next_attempt_at,d.delivered_at,null::uuid
+                from community.email_alert_delivery d join community.operational_alert_event e on e.id=d.event_id
+              union all
+              select r.channel,e.id::text,e.status,d.state,d.attempts,e.occurred_at,d.next_attempt_at,d.delivered_at,r.id
+                from community.notification_recipient_job_delivery d join community.job_event e on e.id=d.event_id join community.notification_recipient r on r.id=d.recipient_id
+              union all
+              select r.channel,'alert:'||e.id::text,e.event_type,d.state,d.attempts,e.occurred_at,d.next_attempt_at,d.delivered_at,r.id
+                from community.notification_recipient_alert_delivery d join community.operational_alert_event e on e.id=d.event_id join community.notification_recipient r on r.id=d.recipient_id
+              union all
+              select r.channel,'test:'||d.event_id::text,'TEST',d.state,d.attempts,d.created_at,d.next_attempt_at,d.delivered_at,r.id
+                from community.notification_recipient_test_delivery d join community.notification_recipient r on r.id=d.recipient_id
+            ) deliveries order by occurred_at desc,channel,event_key,recipient_id nulls first limit ? offset ?
+            """, (rs,row) -> new NotificationDelivery(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),rs.getInt(5),
+                    rs.getObject(6,OffsetDateTime.class),rs.getObject(7,OffsetDateTime.class),rs.getObject(8,OffsetDateTime.class),rs.getObject(9,UUID.class)),limit,offset);
+    }
+    public record NotificationDelivery(String channel,String eventId,String eventType,String state,int attempts,OffsetDateTime occurredAt,OffsetDateTime nextAttemptAt,OffsetDateTime deliveredAt,UUID recipientId) {}
+    @GetMapping("/notifications/attempts") public List<NotificationAttempt> notificationAttempts(@RequestParam String channel,@RequestParam String eventId,
+            @RequestParam(required=false) UUID recipientId,@RequestParam(defaultValue="100") int limit,@RequestParam(defaultValue="0") int offset) {
+        if (!java.util.Set.of("webhook","email").contains(channel) || eventId.length()>80 || eventId.isBlank() || limit<1 || limit>500 || offset<0)
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Invalid notification history query");
+        return jdbc.query("select attempt,outcome,finished_at from community.notification_attempt where channel=? and recipient_id is not distinct from ? and event_key=? order by id desc limit ? offset ?",
+                (rs,row) -> new NotificationAttempt(rs.getInt(1),rs.getString(2),rs.getObject(3,OffsetDateTime.class)),channel,recipientId,eventId,limit,offset);
+    }
+    public List<NotificationAttempt> notificationAttempts(String channel,String eventId,int limit,int offset) { return notificationAttempts(channel,eventId,null,limit,offset); }
+    public record NotificationAttempt(int attempt,String outcome,OffsetDateTime finishedAt) {}
     @PostMapping("/jobs/{id}/retry") public ResponseEntity<?> retry(@PathVariable UUID id) {
         int changed = jdbc.update("update community.execution_job set status='READY', next_attempt_at=now(), claimed_by=null, lease_until=null, last_error=null, completed_at=null where id=? and status in ('DELIVERED','UNCERTAIN')", id);
         if (changed == 0) return ResponseEntity.status(409).body(Map.of("error", "job_cannot_be_retried", "message", "Only delivered or uncertain jobs can be retried."));

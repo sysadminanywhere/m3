@@ -132,8 +132,13 @@ public class EmailNotifier {
     }
     private void finish(Claim claim,boolean delivered) {
         String table=claim.alertId()==null?"email_job_delivery":"email_alert_delivery"; Object id=claim.alertId()==null?claim.jobEventId():claim.alertId();
-        if (delivered) jdbc.update("update community."+table+" set state='DELIVERED',delivered_at=now(),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",id,claim.token());
-        else jdbc.update("update community."+table+" set state='RETRY',next_attempt_at=now()+(? * interval '1 second'),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",DirectoryDeliveryScheduler.retryDelaySeconds(claim.attempt(),10,3600),id,claim.token());
+        transactions.executeWithoutResult(status -> {
+            int changed=delivered
+                    ? jdbc.update("update community."+table+" set state='DELIVERED',delivered_at=now(),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",id,claim.token())
+                    : jdbc.update("update community."+table+" set state='RETRY',next_attempt_at=now()+(? * interval '1 second'),claim_token=null,lease_until=null where event_id=? and state='SENDING' and claim_token=?",DirectoryDeliveryScheduler.retryDelaySeconds(claim.attempt(),10,3600),id,claim.token());
+            if (changed==1) jdbc.update("insert into community.notification_attempt(channel,event_key,attempt,outcome) values ('email',?,?,?)",
+                    claim.alertId()==null?Long.toString(claim.jobEventId()):"alert:"+claim.alertId(),claim.attempt(),delivered?"ACCEPTED":"RETRY");
+        });
     }
     private record Claim(long jobEventId,UUID alertId,String type,String reference,String occurredAt,int attempt,UUID token) {}
 }

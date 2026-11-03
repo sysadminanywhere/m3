@@ -158,13 +158,21 @@ public class ConfigurationController {
                 for (int i = 0; i < items.size(); i++) {
                     JsonNode item = items.get(i);
                     String type=item.path("type").asText(), base="$."+kind+"["+i+"]";
-                    if (!List.of("directory","sftp").contains(type)) errors.add(base+".type: unsupported type");
+                    if (!List.of("directory","sftp").contains(type) && !("recipients".equals(kind) && "http".equals(type))) errors.add(base+".type: unsupported type");
                     JsonNode settings=item.path("settings");
-                    if (!settings.path("path").isTextual() || settings.path("path").asText().isBlank()) errors.add(base+".settings.path: nonempty path required");
+                    if (!"http".equals(type) && (!settings.path("path").isTextual() || settings.path("path").asText().isBlank())) errors.add(base+".settings.path: nonempty path required");
+                    if ("http".equals(type)) {
+                        try { if (!settings.path("url").isTextual()) throw new IllegalArgumentException(); com.sysadminanywhere.m3.security.HttpDeliveryEndpoint.parse(settings.path("url").asText()); }
+                        catch (IllegalArgumentException invalid) { errors.add(base+".settings.url: HTTPS endpoint or loopback HTTP without credentials, query or fragment required"); }
+                        if (settings.has("tokenRef") && (!settings.path("tokenRef").isTextual() || settings.path("tokenRef").asText().isBlank())) errors.add(base+".settings.tokenRef: nonempty secret reference required");
+                    }
                     if ("sftp".equals(type)) {
                         String path=settings.path("path").asText();
                         if (!path.startsWith("/") || path.contains("\\") || path.contains("\u0000") || java.util.Arrays.asList(path.split("/",-1)).contains("..")) errors.add(base+".settings.path: absolute safe SFTP path required");
                         for (String field : List.of("host","username","credentialRef")) if (!settings.path(field).isTextual() || settings.path(field).asText().isBlank()) errors.add(base+".settings."+field+": nonempty value required");
+                        if (settings.has("authMethod") && (!settings.path("authMethod").isTextual() || !List.of("PASSWORD","PRIVATE_KEY").contains(settings.path("authMethod").asText()))) errors.add(base+".settings.authMethod: must be PASSWORD or PRIVATE_KEY");
+                        if (settings.has("credentialProvider") && (!settings.path("credentialProvider").isTextual() || !List.of("COMMUNITY","VAULT").contains(settings.path("credentialProvider").asText()))) errors.add(base+".settings.credentialProvider: must be COMMUNITY or VAULT");
+                        if ("VAULT".equals(settings.path("credentialProvider").asText()) && !com.sysadminanywhere.m3.security.VaultKv2Resolver.validReference(settings.path("credentialRef").asText())) errors.add(base+".settings.credentialRef: Vault reference must be mount/path#field");
                         if (!settings.path("hostKeyFingerprint").isTextual() || !settings.path("hostKeyFingerprint").asText().matches("SHA256:[A-Za-z0-9+/]{43}")) errors.add(base+".settings.hostKeyFingerprint: SHA256 fingerprint required");
                         if (settings.has("port") && (!settings.path("port").canConvertToInt() || !settings.path("port").isIntegralNumber() || settings.path("port").asInt()<1 || settings.path("port").asInt()>65535)) errors.add(base+".settings.port: integer from 1 to 65535 required");
                     }

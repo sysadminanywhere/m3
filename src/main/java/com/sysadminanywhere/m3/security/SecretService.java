@@ -17,17 +17,20 @@ public class SecretService implements SecretStore, RuntimeSecretResolver {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final JdbcTemplate jdbc;
     private final SecretKey key;
+    private final VaultKv2Resolver vault;
 
     @Autowired
     public SecretService(JdbcTemplate jdbc, @Value("${M3_SECRET_KEY:}") String encodedKey,
-                         @Value("${M3_SECRET_KEY_FILE:}") String keyFile) {
+                         @Value("${M3_SECRET_KEY_FILE:}") String keyFile, @org.springframework.context.annotation.Lazy VaultKv2Resolver vault) {
         this.jdbc = jdbc;
         this.key = keyFrom(resolveExternalKey(encodedKey, keyFile));
+        this.vault=vault;
     }
 
     public SecretService(JdbcTemplate jdbc, String encodedKey) {
         this.jdbc = jdbc;
         this.key = keyFrom(encodedKey);
+        this.vault=null;
     }
 
     public void replace(String id, String value) {
@@ -51,6 +54,11 @@ public class SecretService implements SecretStore, RuntimeSecretResolver {
             if (encrypted == null) throw new IllegalStateException();
             return decrypt(encrypted);
         } catch (Exception failure) { throw new IllegalStateException("Unable to resolve secret reference"); }
+    }
+    @Override public byte[] resolve(String provider,String id) {
+        if (provider==null || "COMMUNITY".equals(provider)) return resolve(id);
+        if ("VAULT".equals(provider) && vault!=null) return vault.resolve(id);
+        throw new IllegalStateException("Secret provider unavailable");
     }
 
     private byte[] decrypt(Encrypted encrypted) throws Exception {

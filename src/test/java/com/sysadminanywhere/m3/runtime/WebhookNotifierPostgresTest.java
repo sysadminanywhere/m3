@@ -35,10 +35,22 @@ class WebhookNotifierPostgresTest {
             var notifier=new WebhookNotifier(jdbc,new DataSourceTransactionManager(ds),new ObjectMapper(),ref -> "token-value".getBytes(StandardCharsets.UTF_8),
                     "http://127.0.0.1:"+server.getAddress().getPort()+"/event","token",1,"RETRY,UNCERTAIN");
             notifier.poll(); assertEquals("RETRY",jdbc.queryForObject("select state from community.webhook_delivery",String.class));
+            var operations=new com.sysadminanywhere.m3.api.OperationsController(jdbc);
+            var pending=operations.notificationDeliveries(100,0);
+            assertEquals(1,pending.size()); assertEquals("webhook",pending.get(0).channel());
+            assertEquals("RETRY",pending.get(0).state()); assertEquals(1,pending.get(0).attempts()); assertNull(pending.get(0).deliveredAt());
+            assertThrows(org.springframework.web.server.ResponseStatusException.class,() -> operations.notificationDeliveries(501,0));
             assertEquals(1,count.get()); assertFalse(body.get().contains("token-value")); assertEquals("Bearer token-value",auth.get());
             var eventId=event.get(); jdbc.update("update community.webhook_delivery set next_attempt_at=now()-interval '1 second'");
             jdbc.update("update community.webhook_rate_limit set next_at=now()-interval '1 second'");
             notifier.poll(); assertEquals("DELIVERED",jdbc.queryForObject("select state from community.webhook_delivery",String.class));
+            var delivered=operations.notificationDeliveries(100,0).get(0);
+            assertEquals("DELIVERED",delivered.state()); assertEquals(2,delivered.attempts()); assertNotNull(delivered.deliveredAt());
+            var history=operations.notificationAttempts("webhook",delivered.eventId(),100,0);
+            assertEquals(2,history.size()); assertEquals("ACCEPTED",history.get(0).outcome()); assertEquals("RETRY",history.get(1).outcome());
+            jdbc.update("update community.notification_attempt set finished_at=now()-interval '31 days' where channel='webhook' and attempt=1");
+            new NotificationAttemptRetention(jdbc).cleanup();
+            assertEquals(1,operations.notificationAttempts("webhook",delivered.eventId(),100,0).size());
             assertEquals(eventId,event.get()); assertEquals(2,count.get());
             jdbc.update("update community.webhook_rate_limit set next_at=now()-interval '1 second'"); notifier.poll(); assertEquals(2,count.get());
             assertEquals(job.toString(),new ObjectMapper().readTree(body.get()).path("jobId").asText());

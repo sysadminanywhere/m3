@@ -16,6 +16,13 @@ import static org.mockito.Mockito.when;
 
 @WebMvcTest(ConfigurationController.class)
 class ConfigurationControllerTest {
+    @Test void validatesHttpRecipientAndRejectsUnsafeUrls() throws Exception {
+        String template="{\"formatVersion\":\"2\",\"recipients\":[{\"id\":\"out\",\"type\":\"http\",\"settings\":{\"url\":\"%s\",\"tokenRef\":\"ref\"}}]}";
+        for (String endpoint : java.util.List.of("https://example.com/receive","http://127.0.0.1:8080/receive"))
+            mvc.perform(post("/api/v2/configuration/validate").contentType("application/json").content(template.formatted(endpoint))).andExpect(status().isOk()).andExpect(jsonPath("$.errors").isEmpty());
+        for (String endpoint : java.util.List.of("http://example.com/receive","https://u:p@example.com/receive","https://example.com/?secret=x","https://example.com/#part","https://example.com:99999/"))
+            mvc.perform(post("/api/v2/configuration/validate").contentType("application/json").content(template.formatted(endpoint))).andExpect(status().isOk()).andExpect(jsonPath("$.errors[0]").exists());
+    }
     @Test void validatesSftpSettingsWithoutInlineCredentials() throws Exception {
         String settings="{\"path\":\"/upload\",\"host\":\"localhost\",\"port\":22,\"username\":\"u\",\"credentialRef\":\"ref\",\"hostKeyFingerprint\":\"SHA256:"+"A".repeat(43)+"\"}";
         mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
@@ -25,6 +32,19 @@ class ConfigurationControllerTest {
         mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
                 .content("{\"formatVersion\":\"2\",\"recipients\":[{\"id\":\"out\",\"type\":\"sftp\",\"settings\":{\"path\":\"/../escape\",\"port\":0,\"hostKeyFingerprint\":\"bad\"}}]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.errors.length()").value(6));
+    }
+    @Test void validatesSftpAuthenticationMethod() throws Exception {
+        String settings="{\"path\":\"/upload\",\"host\":\"localhost\",\"username\":\"u\",\"credentialRef\":\"ref\",\"hostKeyFingerprint\":\"SHA256:"+"A".repeat(43)+"\",\"authMethod\":\"%s\"}";
+        String document="{\"formatVersion\":\"2\",\"recipients\":[{\"id\":\"out\",\"type\":\"sftp\",\"settings\":%s}]}";
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json").content(document.formatted(settings.formatted("PRIVATE_KEY"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.errors").isEmpty());
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json").content(document.formatted(settings.formatted("invalid"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.errors[0]").value("$.recipients[0].settings.authMethod: must be PASSWORD or PRIVATE_KEY"));
+    }
+    @Test void validatesVaultSftpReference() throws Exception {
+        String document="{\"formatVersion\":\"2\",\"recipients\":[{\"id\":\"out\",\"type\":\"sftp\",\"settings\":{\"path\":\"/upload\",\"host\":\"localhost\",\"username\":\"u\",\"credentialRef\":\"%s\",\"hostKeyFingerprint\":\"SHA256:"+"A".repeat(43)+"\",\"authMethod\":\"PRIVATE_KEY\",\"credentialProvider\":\"VAULT\"}}]}";
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json").content(document.formatted("secret/team/key#private_key"))).andExpect(status().isOk()).andExpect(jsonPath("$.errors").isEmpty());
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json").content(document.formatted("secret/../bad#key"))).andExpect(status().isOk()).andExpect(jsonPath("$.errors[0]").exists());
     }
     @Test void warnsAboutExplicitUncertainAutoRetry() throws Exception {
         mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
