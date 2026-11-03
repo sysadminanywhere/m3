@@ -37,6 +37,19 @@ public class ConfigurationController {
         catch (com.fasterxml.jackson.core.JsonProcessingException error) { throw new IllegalStateException("Stored configuration is invalid", error); }
     }
     private record StoredConfiguration(int version, String document) {}
+    @GetMapping("/versions") public List<VersionInfo> versions(@RequestParam(defaultValue="100") int limit,@RequestParam(defaultValue="0") int offset) {
+        if (limit<1 || limit>500 || offset<0) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST,"invalid_pagination");
+        return jdbc.query("select version,published_at from community.config_bundle order by version desc limit ? offset ?",
+                (rs,row) -> new VersionInfo(rs.getInt(1),rs.getObject(2,java.time.OffsetDateTime.class)),limit,offset);
+    }
+    @GetMapping("/versions/{version}") public ResponseEntity<?> versionDocument(@PathVariable int version) {
+        if (version<1) return ResponseEntity.badRequest().build();
+        var rows=jdbc.query("select document_json::text from community.config_bundle where version=?",(rs,row) -> rs.getString(1),version);
+        if (rows.isEmpty()) return ResponseEntity.notFound().build();
+        try { return ResponseEntity.ok(Map.of("version",version,"document",mapper.readTree(rows.get(0)))); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException invalid) { throw new IllegalStateException("Stored configuration is invalid",invalid); }
+    }
+    public record VersionInfo(int version,java.time.OffsetDateTime publishedAt) {}
 
     @PostMapping("/validate")
     public ValidationResponse validate(@RequestBody JsonNode document) {
@@ -73,6 +86,25 @@ public class ConfigurationController {
         int next = current + 1;
         jdbc.update("insert into community.config_bundle(version, document_json) values (?, cast(? as jsonb))", next, merged.toString());
         return ResponseEntity.ok(Map.of("version", next, "status", "published", "warnings", validation.warnings()));
+    }
+
+    @PostMapping("/validate-replacement") public ValidationResponse validateReplacement(@RequestBody JsonNode document) {
+        if (document==null || !document.isObject() || document.has("delete")) return new ValidationResponse(List.of("Full replacement document required; delete directives are not allowed"),List.of());
+        ValidationResponse validation=validateDocument(document);
+        var current=(JsonNode)current().get("document");
+        return withGroupChangeWarnings(validation,current,document);
+    }
+    @Transactional @PostMapping("/publish-replacement") public ResponseEntity<?> publishReplacement(@RequestBody PublishRequest request) {
+        if (request==null || request.expectedVersion()==null || request.expectedVersion()<0 || request.document()==null || !request.document().isObject()
+                || request.document().has("delete") || !"2".equals(request.document().path("formatVersion").asText()))
+            return ResponseEntity.badRequest().body(Map.of("error","full_replacement_and_expected_version_required"));
+        jdbc.execute("select pg_advisory_xact_lock(8273641)");
+        int current=jdbc.queryForObject("select coalesce(max(version),0) from community.config_bundle",Integer.class);
+        if (request.expectedVersion()!=current) return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error","configuration_version_conflict","currentVersion",current));
+        ValidationResponse validation=validateReplacement(request.document());
+        if (!validation.errors().isEmpty()) return ResponseEntity.badRequest().body(validation);
+        int next=current+1; jdbc.update("insert into community.config_bundle(version,document_json) values (?,cast(? as jsonb))",next,request.document().toString());
+        return ResponseEntity.ok(Map.of("version",next,"status","published","warnings",validation.warnings()));
     }
 
     private static ValidationResponse withGroupChangeWarnings(ValidationResponse validation, JsonNode previous, JsonNode updated) {
@@ -125,8 +157,17 @@ public class ConfigurationController {
                 JsonNode items = d.path(kind);
                 for (int i = 0; i < items.size(); i++) {
                     JsonNode item = items.get(i);
-                    if (!"directory".equals(item.path("type").asText())) errors.add("$." + kind + "[" + i + "].type: only directory is supported");
-                    if (!item.path("settings").path("path").isTextual() || item.path("settings").path("path").asText().isBlank()) errors.add("$." + kind + "[" + i + "].settings.path: nonempty path required");
+                    String type=item.path("type").asText(), base="$."+kind+"["+i+"]";
+                    if (!List.of("directory","sftp").contains(type)) errors.add(base+".type: unsupported type");
+                    JsonNode settings=item.path("settings");
+                    if (!settings.path("path").isTextual() || settings.path("path").asText().isBlank()) errors.add(base+".settings.path: nonempty path required");
+                    if ("sftp".equals(type)) {
+                        String path=settings.path("path").asText();
+                        if (!path.startsWith("/") || path.contains("\\") || path.contains("\u0000") || java.util.Arrays.asList(path.split("/",-1)).contains("..")) errors.add(base+".settings.path: absolute safe SFTP path required");
+                        for (String field : List.of("host","username","credentialRef")) if (!settings.path(field).isTextual() || settings.path(field).asText().isBlank()) errors.add(base+".settings."+field+": nonempty value required");
+                        if (!settings.path("hostKeyFingerprint").isTextual() || !settings.path("hostKeyFingerprint").asText().matches("SHA256:[A-Za-z0-9+/]{43}")) errors.add(base+".settings.hostKeyFingerprint: SHA256 fingerprint required");
+                        if (settings.has("port") && (!settings.path("port").canConvertToInt() || !settings.path("port").isIntegralNumber() || settings.path("port").asInt()<1 || settings.path("port").asInt()>65535)) errors.add(base+".settings.port: integer from 1 to 65535 required");
+                    }
                 }
             }
             for (int i = 0; i < d.path("sources").size(); i++) {
@@ -156,6 +197,13 @@ public class ConfigurationController {
             }
             if (!d.has("rules") || d.get("rules").isEmpty()) warnings.add("No rules are configured; accepted messages will be retained for review");
             for (JsonNode source : d.path("sources")) if ("FIRST_MATCHING".equals(source.path("ruleSelection").asText())) warnings.add("Source '" + source.path("id").asText() + "' uses FIRST_MATCHING; rule order affects delivery");
+            for (JsonNode connection : d.path("connections")) if ("sftp".equals(connection.path("type").asText()))
+                for (JsonNode recipient : d.path("recipients")) if ("sftp".equals(recipient.path("type").asText())) {
+                    JsonNode a=connection.path("settings"), b=recipient.path("settings");
+                    if (a.path("host").asText().equalsIgnoreCase(b.path("host").asText()) && a.path("port").asInt(22)==b.path("port").asInt(22)
+                            && a.path("username").asText().equals(b.path("username").asText()) && a.path("path").asText().replaceAll("/+$","").equals(b.path("path").asText().replaceAll("/+$","")))
+                        warnings.add("SFTP source and recipient use the same directory; delivered files can be ingested again");
+                }
             if (d.path("rules").size() > 0) warnings.add("Delivery is at-least-once; retries and reprocessing can create duplicates at recipients");
         }
         return new ValidationResponse(errors, warnings);

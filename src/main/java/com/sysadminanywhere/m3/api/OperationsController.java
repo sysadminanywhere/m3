@@ -36,6 +36,12 @@ public class OperationsController {
     @GetMapping("/jobs/{id}/history") public List<JobEvent> history(@PathVariable UUID id) {
         return jdbc.query("select status,attempt,worker_id,error,occurred_at from community.job_event where job_id=? order by id", (rs,row) -> new JobEvent(rs.getString(1),rs.getInt(2),rs.getString(3),rs.getString(4),rs.getObject(5,OffsetDateTime.class)), id);
     }
+    @GetMapping("/messages/{id}/jobs") public List<JobSummary> messageJobs(@PathVariable UUID id,
+            @RequestParam(defaultValue="100") int limit, @RequestParam(defaultValue="0") int offset) {
+        if (limit < 1 || limit > 500 || offset < 0) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid pagination");
+        return jdbc.query("select id,message_id,rule_id,rule_version,execution_group,status,attempts,last_error,created_at,completed_at from community.execution_job where message_id=? order by created_at desc,id desc limit ? offset ?",
+                (rs,row) -> new JobSummary(UUID.fromString(rs.getString(1)),UUID.fromString(rs.getString(2)),rs.getString(3),rs.getInt(4),rs.getString(5),rs.getString(6),rs.getInt(7),rs.getString(8),rs.getObject(9,OffsetDateTime.class),rs.getObject(10,OffsetDateTime.class)), id,limit,offset);
+    }
     @GetMapping("/jobs/search") public List<JobSummary> searchJobs(@RequestParam(required=false) String status,
             @RequestParam(required=false) String group, @RequestParam(required=false) String source,
             @RequestParam(defaultValue="100") int limit, @RequestParam(defaultValue="0") int offset) {
@@ -49,10 +55,13 @@ public class OperationsController {
         return jdbc.query(sql.toString(), (rs,row) -> new JobSummary(UUID.fromString(rs.getString(1)),UUID.fromString(rs.getString(2)),rs.getString(3),rs.getInt(4),rs.getString(5),rs.getString(6),rs.getInt(7),rs.getString(8),rs.getObject(9,OffsetDateTime.class),rs.getObject(10,OffsetDateTime.class)), parameters.toArray());
     }
     @GetMapping("/metrics/summary") public Map<String,Object> summary() {
-        Integer messages=jdbc.queryForObject("select count(*) from community.message_record",Integer.class);
-        Map<String,Integer> jobs=new java.util.LinkedHashMap<>();
-        jdbc.query("select status,count(*) from community.execution_job group by status", (org.springframework.jdbc.core.RowCallbackHandler) rs -> jobs.put(rs.getString(1),rs.getInt(2)));
-        return Map.of("messages",messages,"jobsByStatus",jobs);
+        Long messages=jdbc.queryForObject("select count(*) from community.message_record",Long.class);
+        Map<String,Long> jobs=new java.util.LinkedHashMap<>();
+        jdbc.query("select status,count(*) from community.execution_job group by status order by status", (org.springframework.jdbc.core.RowCallbackHandler) rs -> jobs.put(rs.getString(1),rs.getLong(2)));
+        Map<String,Map<String,Long>> groups=new java.util.LinkedHashMap<>();
+        jdbc.query("select execution_group,status,count(*) from community.execution_job group by execution_group,status order by execution_group,status",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> groups.computeIfAbsent(rs.getString(1),ignored -> new java.util.LinkedHashMap<>()).put(rs.getString(2),rs.getLong(3)));
+        return Map.of("messages",messages,"jobsByStatus",jobs,"jobsByGroup",groups);
     }
     @PostMapping("/jobs/{id}/retry") public ResponseEntity<?> retry(@PathVariable UUID id) {
         int changed = jdbc.update("update community.execution_job set status='READY', next_attempt_at=now(), claimed_by=null, lease_until=null, last_error=null, completed_at=null where id=? and status in ('DELIVERED','UNCERTAIN')", id);

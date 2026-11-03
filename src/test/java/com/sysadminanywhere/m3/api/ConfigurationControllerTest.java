@@ -16,6 +16,16 @@ import static org.mockito.Mockito.when;
 
 @WebMvcTest(ConfigurationController.class)
 class ConfigurationControllerTest {
+    @Test void validatesSftpSettingsWithoutInlineCredentials() throws Exception {
+        String settings="{\"path\":\"/upload\",\"host\":\"localhost\",\"port\":22,\"username\":\"u\",\"credentialRef\":\"ref\",\"hostKeyFingerprint\":\"SHA256:"+"A".repeat(43)+"\"}";
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
+                .content("{\"formatVersion\":\"2\",\"connections\":[{\"id\":\"c\",\"type\":\"sftp\",\"settings\":"+settings+"}],\"recipients\":[{\"id\":\"out\",\"type\":\"sftp\",\"settings\":"+settings+"}]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.errors").isEmpty())
+                .andExpect(jsonPath("$.warnings[1]").value("SFTP source and recipient use the same directory; delivered files can be ingested again"));
+        mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
+                .content("{\"formatVersion\":\"2\",\"recipients\":[{\"id\":\"out\",\"type\":\"sftp\",\"settings\":{\"path\":\"/../escape\",\"port\":0,\"hostKeyFingerprint\":\"bad\"}}]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.errors.length()").value(6));
+    }
     @Test void warnsAboutExplicitUncertainAutoRetry() throws Exception {
         mvc.perform(post("/api/v2/configuration/validate").contentType("application/json")
                 .content("{\"formatVersion\":\"2\",\"rules\":[{\"id\":\"r\",\"sourceIds\":[],\"autoRetryUncertain\":true}]}"))

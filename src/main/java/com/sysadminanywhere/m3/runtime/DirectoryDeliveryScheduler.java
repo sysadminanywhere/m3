@@ -18,6 +18,7 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import com.sysadminanywhere.m3.security.RuntimeSecretResolver;
 
 /** PostgreSQL-backed work dispatcher. SKIP LOCKED allows identical Community replicas to share work. */
 @Component
@@ -30,6 +31,7 @@ public class DirectoryDeliveryScheduler {
     private final long retryBaseSeconds;
     private final long retryMaxSeconds;
     private final boolean allowAutoRetryUncertain;
+    private final RuntimeSecretResolver secrets;
 
     @org.springframework.beans.factory.annotation.Autowired
     public DirectoryDeliveryScheduler(JdbcTemplate jdbc, ObjectMapper mapper, PlatformTransactionManager transactionManager,
@@ -37,12 +39,18 @@ public class DirectoryDeliveryScheduler {
                                       @Value("${M3_EXECUTION_GROUP:${m3.worker.group:default}}") String workerGroup,
                                       @Value("${m3.delivery.retry-base-seconds:1}") long retryBaseSeconds,
                                       @Value("${m3.delivery.retry-max-seconds:300}") long retryMaxSeconds,
-                                      @Value("${m3.delivery.allow-auto-retry-uncertain:false}") boolean allowAutoRetryUncertain) {
+                                      @Value("${m3.delivery.allow-auto-retry-uncertain:false}") boolean allowAutoRetryUncertain,
+                                      @org.springframework.context.annotation.Lazy RuntimeSecretResolver secrets) {
         if (retryBaseSeconds < 1 || retryMaxSeconds < retryBaseSeconds) throw new IllegalArgumentException("Delivery retry seconds must be positive and max must be at least base");
         this.jdbc = jdbc; this.mapper = mapper; this.workerId = workerId + "-" + UUID.randomUUID();
         this.workerGroup = workerGroup == null || workerGroup.isBlank() ? "default" : workerGroup;
         this.transactions = new TransactionTemplate(transactionManager);
         this.retryBaseSeconds = retryBaseSeconds; this.retryMaxSeconds = retryMaxSeconds; this.allowAutoRetryUncertain = allowAutoRetryUncertain;
+        this.secrets=secrets;
+    }
+
+    public DirectoryDeliveryScheduler(JdbcTemplate jdbc, ObjectMapper mapper, PlatformTransactionManager transactionManager, String workerId, String workerGroup, long retryBaseSeconds, long retryMaxSeconds, boolean allowAutoRetryUncertain) {
+        this(jdbc,mapper,transactionManager,workerId,workerGroup,retryBaseSeconds,retryMaxSeconds,allowAutoRetryUncertain,null);
     }
 
     public DirectoryDeliveryScheduler(JdbcTemplate jdbc, ObjectMapper mapper, PlatformTransactionManager transactionManager, String workerId, String workerGroup) {
@@ -105,6 +113,7 @@ public class DirectoryDeliveryScheduler {
     private void deliver(Job job) {
         AtomicBoolean lost = new AtomicBoolean(false);
         AtomicBoolean publicationStarted = new AtomicBoolean(false);
+        AtomicBoolean sftpDelivery = new AtomicBoolean(false);
         var heartbeat = Executors.newSingleThreadScheduledExecutor(task -> { Thread thread = new Thread(task, "m3-delivery-lease"); thread.setDaemon(true); return thread; });
         heartbeat.scheduleAtFixedRate(() -> {
             try { if (!renew(job)) lost.set(true); }
@@ -118,7 +127,22 @@ public class DirectoryDeliveryScheduler {
             JsonNode configuration = mapper.readTree(payload.configJson());
             JsonNode rule = find(configuration.path("rules"), job.ruleId());
             JsonNode recipient = find(configuration.path("recipients"), rule.path("recipientId").asText());
-            if (!"directory".equals(recipient.path("type").asText())) throw new IllegalStateException("Only directory recipients are supported in v2 first release");
+            if ("sftp".equals(recipient.path("type").asText())) {
+                sftpDelivery.set(true);
+                if (secrets==null) throw new IllegalStateException("SFTP secret resolver unavailable");
+                JsonNode settings=recipient.path("settings");
+                try (var connection=SftpConnection.open(settings.path("host").asText(),settings.path("port").asInt(22),
+                        settings.path("username").asText(),settings.path("hostKeyFingerprint").asText(),settings.path("credentialRef").asText(),
+                        java.time.Duration.ofSeconds(30),secrets)) {
+                    SftpPublisher.publish(connection.client(),Path.of(payload.storageKey()),settings.path("path").asText(),job.id()+"-"+payload.originalName(),payload.checksum(),() -> {
+                        if (lost.get() || !renew(job)) throw new java.io.IOException("Delivery lease lost before publication");
+                        publicationStarted.set(true);
+                    });
+                }
+                jdbc.update("update community.execution_job set status='DELIVERED', completed_at=now(), lease_until=null, claimed_by=null, last_error=null where id=? and status='RUNNING' and claimed_by=? and attempts=? and lease_until > now()",job.id(),workerId,job.attempts());
+                return;
+            }
+            if (!"directory".equals(recipient.path("type").asText())) throw new IllegalStateException("Unsupported recipient type");
             Path outputDirectory = Path.of(recipient.path("settings").path("path").asText());
             if (recipient.path("settings").path("path").asText().isBlank()) throw new IllegalStateException("Recipient directory is not configured");
             if (!renew(job) || lost.get()) return;
@@ -129,7 +153,7 @@ public class DirectoryDeliveryScheduler {
                 publicationStarted.set(true);
             });
             jdbc.update("update community.execution_job set status='DELIVERED', completed_at=now(), lease_until=null, claimed_by=null, last_error=null where id=? and status='RUNNING' and claimed_by=? and attempts=? and lease_until > now()", job.id(), workerId, job.attempts());
-        } catch (Exception error) { recordFailure(job, error, publicationStarted.get()); }
+        } catch (Exception error) { recordFailure(job, sftpDelivery.get()?new java.io.IOException("SFTP delivery failed"):error, publicationStarted.get()); }
         finally { heartbeat.shutdownNow(); }
     }
 

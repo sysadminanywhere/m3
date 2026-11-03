@@ -29,6 +29,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import com.sysadminanywhere.m3.security.RuntimeSecretResolver;
+import org.apache.sshd.sftp.client.SftpClient;
 
 @Component
 public class DirectoryIngestScheduler {
@@ -38,15 +40,28 @@ public class DirectoryIngestScheduler {
     private final Path storageRoot;
     private final long stabilityWindowMs;
     private final String workerId;
-    private final Map<Path, FileObservation> observations = new ConcurrentHashMap<>();
+    private final Map<ObservationKey, FileObservation> observations = new ConcurrentHashMap<>();
+    private final RuntimeSecretResolver secrets;
+    private final OperationalAlerts alerts;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public DirectoryIngestScheduler(JdbcTemplate jdbc, ObjectMapper mapper,
                                     @Value("${M3_STORAGE_ROOT:${m3.storage.root:./data/messages}}") String storageRoot,
                                     @Value("${m3.ingest.stability-window-ms:1000}") long stabilityWindowMs,
-                                    @Value("${m3.worker.id:${HOSTNAME:community-local}}") String workerId) {
+                                    @Value("${m3.worker.id:${HOSTNAME:community-local}}") String workerId,
+                                    @org.springframework.context.annotation.Lazy RuntimeSecretResolver secrets,
+                                    @org.springframework.context.annotation.Lazy OperationalAlerts alerts) {
         this.jdbc = jdbc; this.mapper = mapper; this.storageRoot = Path.of(storageRoot);
         this.stabilityWindowMs = Math.max(0, stabilityWindowMs);
         this.workerId = workerId + "-" + UUID.randomUUID();
+        this.secrets=secrets;
+        this.alerts=alerts;
+    }
+    public DirectoryIngestScheduler(JdbcTemplate jdbc,ObjectMapper mapper,String storageRoot,long stabilityWindowMs,String workerId) {
+        this(jdbc,mapper,storageRoot,stabilityWindowMs,workerId,null,null);
+    }
+    public DirectoryIngestScheduler(JdbcTemplate jdbc,ObjectMapper mapper,String storageRoot,long stabilityWindowMs,String workerId,RuntimeSecretResolver secrets) {
+        this(jdbc,mapper,storageRoot,stabilityWindowMs,workerId,secrets,null);
     }
 
     @Scheduled(fixedDelayString = "${m3.ingest.fixed-delay-ms:5000}")
@@ -59,7 +74,7 @@ public class DirectoryIngestScheduler {
     }
 
     private void ingestConfiguredDirectories(JsonNode document, int configVersion) throws Exception {
-        var observedFiles = new java.util.HashSet<Path>();
+        var observedFiles = new java.util.HashSet<ObservationKey>();
         for (JsonNode source : document.path("sources")) {
             String sourceId = source.path("id").asText("");
             if (sourceId.isBlank() || !acquireSourceLease(sourceId)) continue;
@@ -73,12 +88,18 @@ public class DirectoryIngestScheduler {
             }, 10, 10, TimeUnit.SECONDS);
             try {
                 JsonNode connection = find(document.path("connections"), source.path("connectionId").asText(""));
+                if ("sftp".equals(connection.path("type").asText())) {
+                    ingestSftp(document,configVersion,sourceId,connection.path("settings"),lost,observedFiles);
+                    continue;
+                }
                 if (!"directory".equals(connection.path("type").asText())) continue;
                 Path input = Path.of(connection.path("settings").path("path").asText());
                 if (!Files.isDirectory(input)) continue;
                 try (var files = Files.list(input)) {
-                    files.filter(Files::isRegularFile).peek(observedFiles::add).filter(this::isStable)
-                            .forEach(file -> { if (!lost.get()) register(document, configVersion, sourceId, file, lost); });
+                    files.filter(Files::isRegularFile).forEach(file -> {
+                        var key=new ObservationKey(configVersion,sourceId,file.toAbsolutePath().normalize().toString()); observedFiles.add(key);
+                        if (!lost.get() && isStable(file,key)) register(document,configVersion,sourceId,file,lost);
+                    });
                 }
             } finally { heartbeat.shutdownNow(); }
 
@@ -107,24 +128,74 @@ public class DirectoryIngestScheduler {
         return jdbc.update("update community.source_lease set lease_until=clock_timestamp() + interval '60 seconds', updated_at=clock_timestamp() where source_id=? and owner_id=? and lease_until > clock_timestamp()", sourceId, workerId) == 1;
     }
 
-    private boolean isStable(Path file) {
+    private void ingestSftp(JsonNode document,int version,String sourceId,JsonNode settings,AtomicBoolean lost,java.util.Set<ObservationKey> observed) {
+        if (secrets==null) return;
+        String directory=settings.path("path").asText();
+        if (!directory.startsWith("/") || directory.contains("\\") || directory.contains("\u0000") || java.util.Arrays.asList(directory.split("/",-1)).contains("..")) return;
+        try (var connection=SftpConnection.open(settings.path("host").asText(),settings.path("port").asInt(22),settings.path("username").asText(),
+                settings.path("hostKeyFingerprint").asText(),settings.path("credentialRef").asText(),java.time.Duration.ofSeconds(30),secrets)) {
+            SftpClient client=connection.client(); String prefix=directory.endsWith("/")?directory:directory+"/";
+            for (var entry : client.readDir(directory)) {
+                String name=entry.getFilename();
+                if (lost.get()) return;
+                if (name==null || name.isBlank() || name.equals(".") || name.equals("..") || name.contains("/") || name.contains("\\") || name.contains("\u0000") || (name.startsWith(".m3-") && name.endsWith(".part"))) continue;
+                String remote=prefix+name; var attrs=client.lstat(remote);
+                if (!stableAttributes(attrs)) continue;
+                var key=new ObservationKey(version,sourceId,"sftp:"+remote); observed.add(key);
+                long now=System.currentTimeMillis(); var current=new FileObservation(attrs.getSize(),attrs.getModifyTime().toMillis(),now);
+                var previous=observations.get(key);
+                if (previous==null || previous.size()!=current.size() || previous.modifiedAt()!=current.modifiedAt()) observations.put(key,current);
+                if (!isStableObservation(previous,current,now,stabilityWindowMs)) continue;
+                register(document,version,sourceId,name,lost,temporary -> {
+                    java.io.InputStream input;
+                    try { input=client.read(remote); } catch (IOException failure) { throw new RemoteSourceFailure(); }
+                    try (var output=Files.newOutputStream(temporary)) {
+                        byte[] buffer=new byte[65536];
+                        while (true) {
+                            int read; try { read=input.read(buffer); } catch (IOException failure) { throw new RemoteSourceFailure(); }
+                            if (read<0) break; output.write(buffer,0,read);
+                        }
+                    } finally { try { input.close(); } catch (IOException ignored) { } }
+                    SftpClient.Attributes after;
+                    try { after=client.lstat(remote); } catch (IOException failure) { throw new RemoteSourceFailure(); }
+                    if (!stableAttributes(after) || after.getSize()!=current.size() || after.getModifyTime().toMillis()!=current.modifiedAt()
+                            || Files.size(temporary)!=current.size()) throw new RemoteSourceFailure();
+                });
+            }
+        } catch (StorageFailure failure) { throw failure; }
+        catch (Exception failure) { log.warn("SFTP source unavailable or changed: sourceId={}",sourceId); }
+    }
+    private static boolean stableAttributes(SftpClient.Attributes attrs) {
+        return attrs!=null && attrs.isRegularFile() && !attrs.isSymbolicLink() && attrs.getFlags().contains(SftpClient.Attribute.Size)
+                && attrs.getFlags().contains(SftpClient.Attribute.ModifyTime) && attrs.getModifyTime()!=null;
+    }
+    private static final class RemoteSourceFailure extends RuntimeException {}
+
+    private boolean isStable(Path file, ObservationKey key) {
         try {
             var attributes = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
             long now = System.currentTimeMillis();
-            FileObservation previous = observations.get(file);
+            FileObservation previous = observations.get(key);
             FileObservation current = new FileObservation(attributes.size(), attributes.lastModifiedTime().toMillis(), now);
-            if (previous == null || previous.size() != current.size() || previous.modifiedAt() != current.modifiedAt()) observations.put(file, current);
+            if (previous == null || previous.size() != current.size() || previous.modifiedAt() != current.modifiedAt()) observations.put(key, current);
             return isStableObservation(previous, current, now, stabilityWindowMs);
         } catch (Exception ignored) {
-            observations.remove(file);
+            observations.remove(key);
             return false;
         }
     }
 
-    private void register(JsonNode document, int configVersion, String sourceId, Path file, AtomicBoolean lost) {
+    @FunctionalInterface private interface CopySource { void copy(Path temporary) throws Exception; }
+    private void register(JsonNode document,int version,String sourceId,Path file,AtomicBoolean lost) {
+        register(document,version,sourceId,file.getFileName().toString(),lost,temporary -> {
+            Files.copy(file,temporary); if (!sha256(temporary).equals(sha256(file))) throw new IOException("Source changed during ingestion");
+        });
+    }
+    private void register(JsonNode document, int configVersion, String sourceId, String originalName, AtomicBoolean lost, CopySource copy) {
         Path temporary = null;
         UUID stagingId = UUID.randomUUID();
         boolean stagingRegistered = false;
+        var registered=new AtomicBoolean();
         try {
             int reserved = jdbc.update("insert into community.ingest_staging(id,source_id,owner_id) select ?,source_id,owner_id from community.source_lease where source_id=? and owner_id=? and lease_until > clock_timestamp()", stagingId, sourceId, workerId);
             stagingRegistered = reserved == 1;
@@ -132,9 +203,8 @@ public class DirectoryIngestScheduler {
             Path temporaryRoot = storageRoot.resolve(".m3-ingest-tmp");
             Files.createDirectories(temporaryRoot);
             temporary = temporaryRoot.resolve(stagingId + ".part");
-            Files.copy(file, temporary);
+            copy.copy(temporary);
             String checksum = sha256(temporary);
-            if (!checksum.equals(sha256(file))) throw new IllegalStateException("Source changed during ingestion");
             Path target = storageRoot.resolve(checksum.substring(0, 2)).resolve(checksum);
             // Verify pre-existing content outside the global lock. The final transaction
             // rechecks its identity before accepting it.
@@ -161,19 +231,25 @@ public class DirectoryIngestScheduler {
                     }
                 } catch (IOException error) { throw new StorageFailure(storageReason(error), error); }
                 UUID messageId = UUID.randomUUID();
-                int accepted = jdbc.update("insert into community.message_record(id, source_id, checksum, original_name, storage_key, status) values (?, ?, ?, ?, ?, 'RECEIVED') on conflict (source_id, checksum) do nothing", messageId, sourceId, checksum, file.getFileName().toString(), target.toString());
+                int accepted = jdbc.update("insert into community.message_record(id, source_id, checksum, original_name, storage_key, status) values (?, ?, ?, ?, ?, 'RECEIVED') on conflict (source_id, checksum) do nothing", messageId, sourceId, checksum, originalName, target.toString());
                 if (accepted == 1) {
                     createJobs(document, configVersion, sourceId, messageId, firstMatchOnly(document, sourceId));
                     jdbc.update("update community.message_record set status='NO_MATCH' where id=? and not exists (select 1 from community.execution_job where message_id=?)", messageId, messageId);
                 }
                 if (lost.get() || !renewSourceLease(sourceId)) throw new IllegalStateException("Source lease expired during registration");
+                registered.set(true);
             });
-        } catch (StorageFailure error) {
+            if (registered.get()) storageAlert(sourceId,false);
+        } catch (RemoteSourceFailure error) { throw error; }
+        catch (StorageFailure error) {
+            if ("storage_full".equals(error.reason)) storageAlert(sourceId,true);
             log.error("Original storage failure: reason={} storageRoot={}; ingestion stopped", error.reason, storageRoot, error);
             throw error;
         } catch (IOException error) {
-            throw new StorageFailure(storageReason(error), error);
-        } catch (Exception error) { throw new IllegalStateException("File registration failed: " + file, error); }
+            var storage=new StorageFailure(storageReason(error), error);
+            if ("storage_full".equals(storage.reason)) storageAlert(sourceId,true);
+            throw storage;
+        } catch (Exception error) { throw new IllegalStateException("File registration failed", error); }
         finally {
             boolean removed = temporary == null;
             if (temporary != null) try { Files.deleteIfExists(temporary); removed = true; }
@@ -181,6 +257,12 @@ public class DirectoryIngestScheduler {
             if (stagingRegistered && removed) try { jdbc.update("delete from community.ingest_staging where id=? and owner_id=?", stagingId, workerId); }
             catch (Exception error) { log.warn("Cannot clear ingest staging record {}", stagingId, error); }
         }
+    }
+
+    private void storageAlert(String sourceId,boolean active) {
+        if (alerts==null) return;
+        try { alerts.set("storage:"+sourceId,"STORAGE_FULL",active); }
+        catch (RuntimeException failure) { log.warn("Could not persist storage alert state"); }
     }
 
     static String storageReason(IOException error) {
@@ -239,4 +321,5 @@ public class DirectoryIngestScheduler {
     }
 
     record FileObservation(long size, long modifiedAt, long observedAt) {}
+    private record ObservationKey(int version,String sourceId,String path) {}
 }

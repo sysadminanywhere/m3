@@ -13,7 +13,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 @Service
-public class SecretService implements SecretStore {
+public class SecretService implements SecretStore, RuntimeSecretResolver {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final JdbcTemplate jdbc;
     private final SecretKey key;
@@ -41,6 +41,22 @@ public class SecretService implements SecretStore {
     public SecretMetadata metadata(String id) {
         return jdbc.queryForObject("select id, updated_at from community.secret_record where id=?", (rs, row) ->
                 new SecretMetadata(rs.getString(1), rs.getObject(2, java.time.OffsetDateTime.class)), id);
+    }
+
+    @Override public byte[] resolve(String id) {
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("Secret reference is required");
+        try {
+            Encrypted encrypted=jdbc.queryForObject("select ciphertext,iv from community.secret_record where id=?",
+                    (rs,row) -> new Encrypted(rs.getBytes(1),rs.getBytes(2)),id);
+            if (encrypted == null) throw new IllegalStateException();
+            return decrypt(encrypted);
+        } catch (Exception failure) { throw new IllegalStateException("Unable to resolve secret reference"); }
+    }
+
+    private byte[] decrypt(Encrypted encrypted) throws Exception {
+        Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE,key,new GCMParameterSpec(128,encrypted.iv()));
+        return cipher.doFinal(encrypted.ciphertext());
     }
 
     Encrypted encrypt(String value) {

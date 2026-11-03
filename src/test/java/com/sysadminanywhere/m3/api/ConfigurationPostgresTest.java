@@ -29,6 +29,11 @@ class ConfigurationPostgresTest {
         assertTrue(((java.util.List<?>) ((java.util.Map<?,?>) response.getBody()).get("warnings")).stream().anyMatch(w -> w.toString().contains("existing jobs remain")));
         assertEquals("default", jdbc.queryForObject("select execution_group from community.execution_job where id=?", String.class, job));
         assertEquals("UNCERTAIN", jdbc.queryForObject("select status from community.execution_job where id=?", String.class, job));
+        assertEquals(java.util.List.of(2,1),controller.versions(10,0).stream().map(ConfigurationController.VersionInfo::version).toList());
+        assertEquals(1,controller.versions(1,1).get(0).version());
+        assertEquals(404,controller.versionDocument(99).getStatusCode().value());
+        assertEquals("r",((com.fasterxml.jackson.databind.JsonNode)((java.util.Map<?,?>)controller.versionDocument(1).getBody()).get("document")).path("rules").get(0).path("id").asText());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,() -> controller.versions(501,0));
     }
     @Test void rejectsAmbiguousRuleWithoutPublishingPartialConfiguration(DriverManagerDataSource ds) throws Exception {
         var jdbc = new JdbcTemplate(ds); var mapper = new ObjectMapper();
@@ -55,5 +60,13 @@ class ConfigurationPostgresTest {
         assertEquals(400, tx.execute(s -> controller.publish(new ConfigurationController.PublishRequest(remove, 2))).getStatusCode().value());
         assertEquals(2, jdbc.queryForObject("select max(version) from community.config_bundle", Integer.class));
         assertEquals(409, tx.execute(s -> controller.publish(new ConfigurationController.PublishRequest(patch, 1))).getStatusCode().value());
+        var versionOne=(com.fasterxml.jackson.databind.JsonNode)((java.util.Map<?,?>)controller.versionDocument(1).getBody()).get("document");
+        assertEquals(409,tx.execute(s -> controller.publishReplacement(new ConfigurationController.PublishRequest(versionOne,1))).getStatusCode().value());
+        assertEquals(200,tx.execute(s -> controller.publishReplacement(new ConfigurationController.PublishRequest(versionOne,2))).getStatusCode().value());
+        assertEquals(versionOne,controller.current().get("document"));
+        assertEquals(1,((com.fasterxml.jackson.databind.JsonNode)controller.current().get("document")).path("connections").size());
+        assertEquals(3,jdbc.queryForObject("select count(*) from community.config_bundle",Integer.class));
+        var invalidReplacement=mapper.readTree("{\"formatVersion\":\"2\",\"delete\":{}}");
+        assertEquals(400,tx.execute(s -> controller.publishReplacement(new ConfigurationController.PublishRequest(invalidReplacement,3))).getStatusCode().value());
     }
 }

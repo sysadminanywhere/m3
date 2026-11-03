@@ -107,6 +107,16 @@ class DirectoryIngestSchedulerTest {
         assertEquals("storage_full", DirectoryIngestScheduler.storageReason(new FileSystemException("file", null, "Disk quota exceeded")));
         assertEquals("storage_unavailable", DirectoryIngestScheduler.storageReason(new FileSystemException("file", null, "Permission denied")));
     }
+    @Test void reportsFullStorageWithoutReplacingTheOriginalError(@TempDir Path dir) throws Exception {
+        Path input=Files.writeString(dir.resolve("input"),"data"); JdbcTemplate jdbc=mock(JdbcTemplate.class); var alerts=mock(OperationalAlerts.class);
+        var full=new DirectoryIngestScheduler.StorageFailure("storage_full",new java.io.IOException("disk full"));
+        when(jdbc.update(startsWith("insert into community.ingest_staging"),any(),any(),any())).thenThrow(full);
+        var scheduler=new DirectoryIngestScheduler(jdbc,new ObjectMapper(),dir.toString(),0,"test",null,alerts);
+        Method register=DirectoryIngestScheduler.class.getDeclaredMethod("register",com.fasterxml.jackson.databind.JsonNode.class,int.class,String.class,Path.class,java.util.concurrent.atomic.AtomicBoolean.class);
+        register.setAccessible(true);
+        var error=assertThrows(InvocationTargetException.class,() -> register.invoke(scheduler,new ObjectMapper().readTree("{}"),1,"s",input,new java.util.concurrent.atomic.AtomicBoolean()));
+        assertSame(full,error.getCause()); verify(alerts).set("storage:s","STORAGE_FULL",true);
+    }
 
     @Test
     @ExtendWith(DisposablePostgres.class)
@@ -218,7 +228,7 @@ class DirectoryIngestSchedulerTest {
             jdbc.update("insert into community.config_bundle(version,document_json) values (2,cast(? as jsonb))",document.toString());
             connection.commit(); future.get(10,java.util.concurrent.TimeUnit.SECONDS);
             assertEquals(0,jdbc.queryForObject("select count(*) from community.message_record",Integer.class));
-            scheduler.poll();
+            scheduler.poll(); scheduler.poll(); // A new configuration version requires a fresh stability observation.
             assertEquals("new",jdbc.queryForObject("select execution_group from community.execution_job",String.class));
             assertEquals(2,jdbc.queryForObject("select rule_version from community.execution_job",Integer.class));
         } finally { pool.shutdownNow(); }
